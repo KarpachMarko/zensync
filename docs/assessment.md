@@ -1,12 +1,14 @@
 # Music-only SoulSync rewrite assessment
 
+Historical assessment from 1 November 2026. The [implementation plan](implementation-plan.md) and [multi-user design](multi-user-design.md), revised 2 November, supersede its product scope, build order and estimates. Phase 1 now uses Apple XML migration with explicit Navidrome handover, followed by acquisition-only operation; it excludes public-link/file-format imports and ongoing collection synchronization. Artist release notifications move to phase 2 without automatic acquisition. Retain the source investigation below as reference, not as the current delivery contract.
+
 Investigated 1 November 2026; updated with the user’s d-fi and XML-import decisions. Target: Nezreka/SoulSync, not the unrelated streaming apps with the same name.
 
 **Recommendation: Go backend + SQLite + a small React/TypeScript web UI, using the user’s working d-fi Go binary for Deezer downloads. Build a new music-only service with a SoulSync compatibility adapter.** A credible first version is feasible. The difficult work is reliable acquisition, track identity, library imports and observable compatibility, rather than serving HTTP requests.
 
 Planning estimate for one experienced engineer familiar with Go: a technical proof in 2–4 working days; a limited personal-use MVP in 3–5 weeks; a dependable scoped v1 in 7–12 weeks total. These are engineering estimates, not measured implementation results. The dependable version includes Wavio artist watchlists, basic playlist refresh, failures/retries and recovery after restart. Private Apple library access, old database migration, broad third-party API parity is excluded from that original estimate. Multi-user support has since been added to the implementation plan and requires a new estimate.
 
-## Current implementation requirements
+## Implementation requirements at the original assessment
 
 The user has confirmed a shared music library with personal user collections, admin-approved music requests, an optional direct-acquisition grant and admin-only file deletion; see [multi-user requirements](multi-user-design.md). The user has also specified a collapsible sidebar based on option 1, a playlist view based on option 3, dedicated routed pages, Library views for Songs/Artists/Albums/Favorites, a unified Activity queue/history, complete Apple XML library ingestion, and durable Skip for now placeholders for failed/unresolved playlist entries. These requirements supersede the earlier minimal-UI assumption and any recommendation to use option 2 as the main interface. See [the implementation plan](implementation-plan.md) for the authoritative product behavior, state model, build sequence and acceptance gates. UI prototypes are under `../mockups/`; application backend implementation has not started.
 

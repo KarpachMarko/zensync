@@ -1,172 +1,171 @@
-# Music-only SoulSync implementation plan
+# ZenSync implementation plan
 
-Status: implementation planning; application backend work has not started. UI prototypes are maintained separately under `../mockups/`. This document records the user's decisions after reviewing the five mockups and takes precedence over the earlier UI recommendation in the assessment.
+Status: planning; backend implementation has not started. Updated 2 November 2026 after the product-decision review. This document and [multi-user design](multi-user-design.md) are authoritative. The assessment and existing mockups are historical references where they describe broader or different behavior.
 
-## Product decisions
+## Product purpose and ownership
 
-- Go backend, SQLite, a small React/TypeScript UI and the user's working d-fi Go binary for Deezer downloads.
-- Apple/iTunes and Deezer metadata; Apple Music XML library exports and public playlist links; other playlist files as previously scoped.
-- Navidrome stores/serves playable music; Wavio is the first client compatibility target.
-- A collapsible sidebar based on Collection (option 1), combined with the playlist sleeve and ordered list from Mixtape (option 3). The chosen project name is ZenSync; repository/folder name: zensync.
-- Dedicated routed pages for normal workflows. Do not implement navigation, search, library browsing, imports, queues, settings or match resolution as dialogs. Dialogs are reserved for short confirmations, such as removing a playlist.
-- A Library with Songs, Artists, Albums and personal Favorites.
-- Multiple users share the base audio library; personal collections remain user-owned. Member acquisition requires admin approval unless explicitly granted, and members cannot delete song files.
-- Compact rows and controls: about 44px ordinary desktop song rows, with additional space only for unresolved reasons/actions and comfortable mobile touch targets.
-- Use **Activity** as the navigation label for work running or queued on the server, plus review needs and history. It covers more than downloads without exposing the term “jobs” as the main product concept.
-- Failure to identify or import one song must not force immediate manual matching or block the rest of a library/playlist import. Provide **Skip for now** and keep a persistent placeholder in the song's playlist position.
+ZenSync is a self-hosted companion for migrating music into Navidrome and acquiring additional music afterward. Use Go, SQLite, a compact React/TypeScript UI and the user's existing working d-fi Go binary for Deezer acquisition. Apple/iTunes and Deezer supply metadata.
 
-## Multiple users and acquisition approval
+One Navidrome instance is configured by the administrator for all ZenSync users. Users share the base audio library, but have separate Navidrome accounts for personal playlists, favorites and listening state. Wavio and other players connect directly to Navidrome for browsing, playback and collection edits. ZenSync is not a playback server or an OpenSubsonic gateway.
 
-Confirmed scope: one shared base music library, with separate user accounts and personal playlists, favorites, imports and followed artists. Members request new music for administrator approval by default. Admin may grant **Add music without approval** independently; this never grants permission to delete song files. File deletion and user/service administration remain admin-only. Apply the same ownership and approval checks to Wavio, schedules, wishlist processing and all native API paths.
+Navidrome is the source of truth for personal collections. ZenSync has limited permission to populate migration playlists and imported favorites while a migration is open. After explicit handover, it stops writing those collections. Normal ongoing use is search → request/approval → acquisition → Navidrome indexing; users organize newly acquired songs through Navidrome or Wavio.
 
-See [multi-user design and acceptance criteria](multi-user-design.md) for roles, permission gates, request states, personal/shared data, identity mapping, API keys, job deduplication, account lifecycle and isolation tests. These requirements replace the earlier single-profile assumptions. Build authorization and request approval before connecting acquisition workers.
+Keep application login separate from Navidrome account linking. The shared service connection supports common-library lookup, scans and acquisition verification. Personal linking is required to publish migration playlists and favorites into the correct user's account, but is not required for search or acquisition requests. Never fall back to the shared account for a personal migration write.
 
-## Navigation and dedicated pages
+## Confirmed phase 1 scope
 
-The sidebar contains Library, Playlists, Search, Imports, Requests, Activity, Followed artists and Settings. Expanded form shows labels and relevant counts. Collapsed form keeps icons, accessible labels/tooltips and the active page. Persist the desktop collapse preference locally; it must not depend on connection credentials. On small screens use an accessible slide-out navigation drawer that closes after navigation and returns focus correctly.
+- Apple Music XML migration only: full exported music catalog, playlist membership, and favorite/loved information when present. Also accept individual playlist XML exports.
+- One-time migration from a fixed source snapshot, not persistent Apple synchronization. No source refresh schedules or updated-XML merge engine.
+- Matching, manual review, persistent unresolved migration entries and **Skip for now**. Importing metadata never automatically downloads the whole library.
+- Search for tracks, albums and artists; acquisition through d-fi; safe file placement and verified Navidrome availability.
+- Admin approval for member acquisitions by default, with an independent **Add music without approval** grant. Members cannot delete shared audio.
+- Per-user ordered quality profiles, explicit quality upgrades, and admin-approved replacement of old files.
+- Persistent requests/tasks, Activity, retries, cancellation, restart recovery, user isolation and Wavio acquisition compatibility.
+- Dedicated routed pages with the chosen collapsible sidebar, compact song rows and Mixtape-inspired migration playlist detail.
 
-All main pages have stable URLs, browser back/forward support, a page title and consistent breadcrumbs where a parent exists. Preserve selected tabs, filters and search in query parameters when useful. A page reload should return to the same item, rather than the start screen.
+Phase 2: followed-artist checks and new-release notifications only. Notifications do not automatically acquire music; an explicit request follows the usual approval rules. Phase 1 does not implement artist monitoring or automatic release downloads.
 
-| Page | Example URL | Main content |
+Outside phase 1: public Apple playlist links; CSV/TSV/TXT/M3U/M3U8 imports; private Apple API access; ongoing Apple synchronization; ordinary playlist/favorites management in ZenSync; collaborative playlist editing; additional media servers; torrents; recommendations; movies, audiobooks and podcasts; playback/transcoding; broad SoulSync API parity. Public links and extra file formats have no committed delivery phase.
+
+## Migration lifecycle
+
+A migration belongs to one ZenSync user and records a fixed Apple source snapshot, target Navidrome account, selected playlists, source songs, ordered entries, imported favorite intent, matching decisions and acquisition links.
+
+1. **Stage and preview.** Parse XML without external DTD/entity retrieval and with bounded size, nesting and memory use. Read source-library and persistent IDs where supplied; track IDs are references scoped to the snapshot, not provider/global identifiers. Preserve original metadata separately from enriched values.
+2. **Record the complete music catalog.** Include songs outside every playlist. Preserve playlist folders/parents, repeated occurrences and ordered references. Missing references become explicit placeholders. Exclude identifiable non-music records and report them. Treat special/system playlists explicitly; smart playlists use exported membership only.
+3. **Choose migration contents.** Preview total songs, unplaylisted songs, playlist counts, missing references and parse problems. Default to catalog metadata plus normal music playlists, allowing playlist deselection. Allow favorite import when fields exist. Retain source context for unresolved records.
+4. **Commit independently of providers.** Save source records and entries before matching. Provider outages must not lose the migration. Retrying the same upload/commit must not create duplicate migrations, playlists or jobs: use owner-scoped upload identity and idempotency keys, and offer to return to the existing migration. This is retry protection, not re-import merging. A changed XML file is a separate explicit migration, never an automatic update to existing collections.
+5. **Match and acquire separately.** Automatically accept confident matches of the intended recording/version. Remasters, alternate editions or other substitutions require user review. Resolve can attach existing music without a download. Downloading missing songs is an explicit selection, subject to approval and the quality policy.
+6. **Publish and fill while open.** Use the linked personal account to create migration playlists from currently available entries and import favorite intent. Missing songs retain their local positions; successful later acquisitions can fill them while migration remains open and the playlist is not paused.
+7. **Finish migration explicitly.** Show coverage, unresolved entries, pending requests and paused playlists. Handover need not wait for all songs. Finish all remaining migration-owned playlists and stop all playlist/favorite writes for that migration. Preserve a report of unfinished items. A per-playlist handover is also available when resolving an external-edit pause.
+
+Outstanding acquisition requests survive handover: approved work continues, pending approval still needs approval, and deferred acquisition remains deferred. Later songs enter the shared library, but are not inserted into handed-over playlists or starred by ZenSync. Users organize late arrivals themselves. Handover is not an implicit retry, approval or download request.
+
+Implementation default: make handover final for that migration rather than automatically reopening it on another upload. Serialize handover with in-flight collection writes, stop scheduling new writes, and acknowledge completion only after any already-started write has settled and been reported. Queued or replayed completion events must recheck the migration/playlist write gate.
+
+## Migration playlist writes and external edits
+
+Use durable migration playlist entries with their own IDs and order keys. Entries reference source metadata and nullable recording/server-song mappings. Never represent the full migration solely as an array of playable IDs.
+
+During open migration, Navidrome receives only available entries with valid server IDs. For `[A, unresolved B, C]`, publish `[A, C]`; when B is available, publish `[A, B, C]`. Preserve duplicate occurrences. Do not create fake songs, silent audio or invalid IDs for placeholders. Show both migration coverage and remote write status.
+
+Store the remote playlist ID, owner, last verified ordered membership and managed metadata. Serialize ZenSync writes per playlist; fetch and compare remote state before changing it, then verify after the write. A partial/untrusted inventory or failed scan cannot authorize a destructive write.
+
+**External edits pause updates to the affected playlist.** This includes remote reordering, additions/removals, renaming or deletion. Preserve the external version and display a dedicated review page. The owner can:
+
+- Finish migration for that playlist, leaving its remote state in control of Navidrome.
+- Explicitly resume migration after reviewing the proposed difference and authorizing any replacement of external changes. Do not silently overwrite or attempt automatic merging.
+
+Other migration playlists and acquisition jobs continue. A deleted remote playlist must not be automatically recreated without a user decision.
+
+The standard remote write contract does not provide a conditional revision write. Compare-before-write and read-back verification reduce risk but cannot guarantee exclusion of an external edit during the write. Preserve prior snapshots and proposed writes for recovery, surface detected divergence, and do not claim atomic cross-client conflict prevention. Verify actual behavior against the pinned Navidrome/Wavio versions in the integration proof.
+
+## Imported favorites
+
+Favorites belong to the linked Navidrome user. During open migration, apply explicit favorite/loved information to identified available songs. An absent XML field never means unfavorite. No continuous two-way favorite synchronization or general favorite editor is needed in ZenSync.
+
+Implementation default: import positive favorite intent once per source song, with durable attempt/outcome tracking. Do not repeatedly re-star a song after the user unfavorites it in Navidrome. If a remote write outcome is uncertain after a crash, reconcile or surface review instead of blindly overwriting possible user changes. Newly available songs can receive their pending imported star only while migration is open. After handover, stop all imported favorite writes, including retries.
+
+## Identity, Skip for now and state boundaries
+
+Preserve source song identity separately from canonical recording, release/provider track identity, file asset and Navidrome mapping. Provider references are provider-qualified. Match using corroborating evidence such as version, duration, album and identifiers; a title/artist collision or ISRC alone is not proof of the intended edition. Keep matching evidence and reversible manual decisions. Corrections are scoped to the owner's source records unless an explicit broader correction is authorized.
+
+**Skip for now defers work, not reuse of existing music.** It stops new acquisition/retry work for that entry and survives restarts. It does not cancel work needed by another subscriber. If a confidently matched song later exists in the shared library, the entry may fill automatically without Resume or a new download. Playlist insertion still requires an open migration and an unpaused playlist. Alternative versions still require review. After handover, update the report/library availability only.
+
+Resolving a match also resumes already-requested work, subject to approval, without a second Resume click. Resolving metadata alone must never create an acquisition request. If the approved target changes, re-evaluate approval before acquisition. An import failure retains the accepted identity; retry the failed stage rather than forcing a fresh match.
+
+Use separate persisted states for:
+
+- Identification: unresolved, ambiguous or resolved, with evidence and chosen identity.
+- Acquisition request: decision (awaiting approval, approved, declined, withdrawn), acquisition policy (active/deferred), target/profile snapshot and fulfillment outcome.
+- Execution: queued, downloading, validating/importing, awaiting scan, available, failed or cancelled; attempts and errors are separate records.
+- Migration: staged, open or handed over; each playlist additionally has active, external-edit-paused or handed-over write state.
+- Projection: desired membership versus last verified remote membership. File availability and playlist write success are distinct.
+
+A request is durable acquisition intent, not a worker task. Bulk requests have item-level targets, approvals and outcomes; unresolved children cannot become implicitly approved substitutions. Jobs can serve multiple requests while each request retains its owner, policy and approval. Skipping/removing one entry never suppresses other subscribers or deletes audio.
+
+## Quality profiles and explicit upgrades
+
+Users select/configure an ordered list of allowed qualities, similar in purpose to SoulSync quality profiles. The default prefers lossless, then allows supported lower qualities in descending preference. Pin the exact d-fi quality mapping during integration; do not assume every advertised quality is available for every recording or account.
+
+Try allowed qualities in order and report the actual acquired quality and any fallback. Never silently use a quality excluded by the selected profile. Snapshot profile settings on submission/approval so editing preferences does not silently change pending approved work; an explicit request update re-evaluates authorization where needed. Deduplicate only when a shared job's target/version and quality outcome can satisfy its subscribers.
+
+An existing playable file of the correct recording/version satisfies an ordinary request regardless of a preference for higher quality. Profile changes do not automatically upgrade the library. A user must explicitly choose **Upgrade**.
+
+A successful upgrade replaces the old file only after validating the new asset and reconciling affected Navidrome references. Replacement requires explicit admin approval even for members with direct-acquisition permission, because it removes shared audio. Keep the old file recoverable until the replacement has been verified. If reference preservation cannot be demonstrated, stop replacement and retain the old asset for review.
+
+This is a narrow maintenance exception to the post-migration collection-write boundary: preserve references to the same recording during an approved asset replacement, without changing playlist membership/order or favorite intent. Prefer stable server identity; prove reference handling across users before enabling replacement. Never use the shared admin identity to assume ownership of private collections. Replacement feasibility is an early integration gate, not a promise that IDs survive every file change.
+
+## Library and dedicated web pages
+
+Keep the Collection-inspired collapsible sidebar and Mixtape-inspired playlist sleeve/ordered rows. Ordinary desktop song rows target about 44px, with additional space for unresolved reasons and comfortable mobile touch targets. Persist sidebar preference locally. Mobile navigation must manage focus and close after navigation.
+
+All normal workflows use dedicated URLs, browser history and reload-safe state. Use dialogs only for short confirmations. Phase 1 sidebar: Library, Search, Imports, Requests, Activity and Settings. Migration playlist detail is reached from Imports. Do not build a competing ongoing playlist/favorites editor. Followed artists is a phase 2 destination.
+
+| Page | Example URL | Purpose |
 | --- | --- | --- |
-| Library / Songs | `/library/songs` | Searchable track list, availability and source filters, favorites |
-| Library / Artists | `/library/artists` | Artist collection and links to detail pages |
-| Artist | `/library/artists/:id` | Albums, songs, ownership and follow controls |
-| Library / Albums | `/library/albums` | Album artwork grid with availability and missing tracks |
-| Album | `/library/albums/:id` | Ordered disc/track list with download/import state |
-| Library / Favorites | `/library/favorites` | Favorited songs; artist/album stars can be added later |
-| Playlists | `/playlists` | Imported and managed playlists, coverage, source and refresh state |
-| Playlist | `/playlists/:id` | Mixtape-style sleeve and ordered song list, including placeholders |
-| Search | `/search?q=...&source=deezer` | Track, album and artist search; explicit metadata source |
-| New import | `/imports/new` | Choose Apple XML, public link or another file |
-| Import preview | `/imports/:id/preview` | All-song summary, playlist selection and import choices |
-| Import result | `/imports/:id` | Counts, partial failures, source snapshot and re-import action |
-| Requests | `/requests` | Member request history or administrator approval inbox |
-| Request detail | `/requests/:id` | Requested music, requester, approval decision and acquisition progress |
-| People & permissions | `/settings/people` | Admin account management and direct-acquisition grants |
-| Activity | `/activity?view=running` | Running, queued, needs attention and history views |
-| Activity detail | `/activity/:id` | Task stages, counts, attempts, errors and supported actions |
-| Review item | `/review/:id` | Source metadata, candidate matches, retry and Skip for now |
-| Followed artists | `/followed-artists` | Follow management and release checks required by Wavio |
-| Settings | `/settings/connections` | Navidrome, Deezer, quality and API settings |
+| Library / Songs, Artists, Albums | `/library/songs`, `/library/artists`, `/library/albums` | Shared availability, metadata, acquisition/upgrade actions |
+| Song / Artist / Album | `/library/songs/:id`, `/library/artists/:id`, `/library/albums/:id` | Identity, availability and relevant acquisition state |
+| Search | `/search?q=...&source=deezer` | Provider-specific track, album and artist results |
+| Imports / New migration | `/imports`, `/imports/new` | XML migration history and upload |
+| Migration preview | `/imports/:id/preview` | Complete catalog and playlist selection |
+| Migration detail | `/imports/:id` | Coverage, review, favorite import status and handover |
+| Migration playlist | `/imports/:id/playlists/:playlistId` | Ordered entries, placeholders, external-edit pause and handover |
+| Review item | `/review/:id` | Candidate evidence, Resolve, Retry and Skip for now |
+| Requests / Request detail | `/requests`, `/requests/:id` | Own requests or admin approval inbox and decisions |
+| Activity / Task detail | `/activity`, `/activity/:id` | Running, queued, needs attention and history |
+| Settings | `/settings/connections`, `/settings/quality`, `/settings/people` | Shared connections, personal linking/quality, admin user management |
 
-Track rows link to a dedicated song page at `/library/songs/:id` when resolved, or the review page when unresolved. A playlist entry's review page provides a link back to the original playlist and position. Candidate comparison is part of that page, not a forced modal.
+Show available shared music separately from owner-private imported/unavailable source records. Unplaylisted imported songs remain visible to their owner. Do not leak another user's XML metadata through global search/groupings. Availability, identification, deferral and failure are separate concepts in filters and responses. Imported metadata is not evidence that a playable file exists.
 
-## Library semantics
+## Activity, persistence and file handling
 
-The application catalog includes both actual Navidrome music and music described by imported sources. Do not pretend that an XML record is a downloaded file. Show availability explicitly: In library, Not downloaded, Needs matching, Import failed or Deferred. Library Songs supports All and Available in Navidrome filters, plus source, artist, album, favorite and review status. Imported songs outside every playlist must still be visible.
+Persist tasks, attempts, dependency edges and events in SQLite from the first executable slice. Activity covers downloads, metadata lookup, XML parsing/matching, validation/tagging/placement, scans, migration writes and approved upgrades. Show actual stages and indeterminate progress when totals are unknown. Approval waits are decisions, not running transfers. Deferred review holds no worker slot. Bulk counts distinguish completed, failed, deferred and pending work.
 
-Use a source record before identification and a canonical recording after identification. A song can have several source records and files. Artist/album groupings should preserve imported names for unresolved records and merge only with adequate evidence; a name collision is not enough to establish identity. Search and pagination must work for large full-library imports.
+Use bounded worker pools, per-provider rate limits, global/per-user fairness and coalesced scans. Use transactional job claims, leases and stale-worker commit guards. Reconcile filesystem and remote state before retrying side effects; process exit is not proof of playable availability. A worker must acknowledge a safe cancellation boundary before releasing its claim. Browser closure must not stop work. Native live updates use SSE with authorized snapshots/replay; Wavio keeps polling.
 
-Favorites initially apply to songs. For resolved library songs, reconcile favorites with the connected user's Navidrome stars through the adapter after checking the supported API behavior. Keep local favorite intent for imported/unavailable songs and apply it when a server mapping is established. Import XML favorite/loved information only when present; never assume an absent field means “unfavorite.” Do not overwrite newer explicit user changes on re-import. Do not promise reverse synchronization into Apple Music. Favorite changes and acquisition intent are independent.
+Implementation defaults for the first release:
 
-## Apple Music XML is a complete source library
+- One service process owns API, workers and scheduling infrastructure; local-disk SQLite with WAL, short transactions and migrations. Do not place the database on a network share. Music storage may use a mounted path with explicitly configured local/server path mapping.
+- Stage each download outside the watched music library. Validate audio, metadata/artwork and output paths before publication. Invoke the pinned d-fi binary with argument arrays; protect credentials and redact output. Do not treat an XML location as permission to read arbitrary host files.
+- Do not overwrite existing files based on filename alone. Use stable asset identity, collision handling and an import journal. For cross-filesystem placement, copy into a temporary destination and validate before final publication; do not assume a move is atomic across mounts.
+- Check disk headroom, bound staging/log/event retention and retain recoverable failures under an explicit cleanup policy. Missing/unmounted storage must not be interpreted as an empty library or a reason to remove remote entries.
+- Provide health/readiness, structured redacted errors, safe database/config/key backup and a documented restore path. Validate migrations and restart recovery before release. Protect stored personal credentials independently of normal configuration exports.
+- Initial packaging target: Docker on Linux, with supported architectures determined by the pinned downloader/tooling. Other native deployments are not a phase 1 commitment.
 
-A library export contains a track dictionary for all exported songs, playlist definitions and ordered references identifying which songs belong to each playlist. It is not a flat list of unrelated playlists. Support standalone playlist exports too.
+Operational limits and supported versions are implementation choices to record during the proof. Establish a representative large XML fixture and numerical import-memory, query-latency and concurrency budgets before the catalog/UI milestone; the earlier estimate is not a release commitment.
 
-Import phases:
+## Wavio adapter and native APIs
 
-1. Parse the property-list XML into a staged source snapshot. Read source-library identity and persistent IDs when supplied. Track IDs are references scoped to that source snapshot; do not treat them as Deezer, Apple catalog or globally unique application IDs.
-2. Ingest the complete exported music-track dictionary, including tracks referenced by no playlist. Preserve original title, artist, album, duration, disc/track numbers and additional useful identifiers. Keep original source metadata separate from later matched/enriched values.
-3. Ingest playlist definitions, folders/parent relationships where present, and ordered entry references. Preserve repeated occurrences of a song. One source song may belong to multiple playlists. Missing track references become explicit placeholders with the known source reference, rather than being silently dropped.
-4. Show a preview: total music songs, songs not in any playlist, playlists, ignored non-music records, missing references and parse problems. Default to importing the catalog metadata and all normal music playlists; allow deselecting playlists and previewing changes. Treat special/system playlists explicitly rather than duplicating the entire library as an ordinary playlist. Mixed-content playlists retain their music entries and report excluded non-music entries.
-5. Commit the chosen source catalog and playlist structure independently of network matching. A temporary provider failure must not undo or block recording the source library. Matching and reconciliation run as background Activity tasks.
-6. Downloading is an explicit separate choice: selected songs, missing songs in selected playlists, or missing songs in the entire imported library. Never automatically download all songs merely because the XML describes all songs.
-7. Re-import into the same source library, diff by source-scoped persistent IDs when present, then use careful fallback identity rules when absent. Present ambiguous changes for review. Importing a new source library is a separate explicit choice. Preserve deferred decisions, manual matches, favorite overrides and stable playlist-entry identity where correspondence is reliable.
+Keep `/api/v1` as a compatibility adapter for the phase 1 Wavio acquisition flow: readiness, search, wishlist/process, downloads and recent additions/artwork. Wavio talks directly to Navidrome for ordinary playlist/favorite operations. No client change is required for approval details: **Queued in Wavio is acceptable; the ZenSync Requests page explains approval status and rejection reasons.**
 
-Store import versions and previous source snapshots so a malformed/partial XML does not silently erase playlists or catalog records. Show removals in the preview; applying a new source snapshot must never delete audio files as a side effect. Smart playlists initially use exported membership only. A fresh XML upload is required to see subsequent Apple Music changes.
+Scope keys to authenticated ZenSync users and authorize profile selectors; never default an unknown profile to admin. Failed/deferred/declined intent must not disappear in a way Wavio interprets as success. Test withdrawal and terminal-task retention explicitly. Avoid exposing internal enum values or fake playable placeholders. Existing music may satisfy deferred intent without starting acquisition; report completion only after validating availability.
 
-The exported file describes library state and metadata; it is not the audio. Parse without external DTD/entity retrieval and enforce bounded resource usage.
+Phase 1 does not claim the original full Wavio watchlist contract. Determine the pinned client's handling of unavailable watchlist operations in the proof, provide an explicit unsupported response where appropriate, and document the limitation. Do not fabricate successful scans or require phase 2 artist checks for phase 1 release.
 
-## Activity: live server work and history
-
-Activity is an overview of authorized work, not only work initiated from the current browser. Members see their own work; administrators can inspect a server overview. Requests awaiting approval are separate from running acquisitions. Include requests originating in Wavio, schedules, imports and manual actions.
-
-Visible activity types:
-
-- Downloading music through d-fi.
-- Looking up or refreshing metadata through Apple/iTunes and Deezer.
-- Importing files: validation, tagging, artwork and library placement.
-- Scanning/reconciling the Navidrome library.
-- Importing XML/file records and matching imported songs.
-- Writing/updating a Navidrome playlist.
-- Checking followed artists for missing releases.
-
-The page separates Running, Queued, Needs attention and History; show type filters and an aggregate All view. Each item exposes its subject (song/album/playlist/library), operation, stage, status, origin, created/started time, elapsed duration, real progress if available and a concise error when relevant. Use indeterminate progress when a provider has no reliable total. Display dependencies honestly, for example “Waiting for Navidrome scan”; do not label waiting work as actively downloading.
-
-Bulk tasks show both aggregate progress and child items. Counts distinguish processed, completed, failed and deferred. A batch can finish with issues; never report a fully successful import if some songs were skipped or failed. A deferred review item belongs under Needs attention, not Running. Queued work includes the reason it is waiting, such as concurrency or a prerequisite.
-
-Offer Retry, Cancel, View song/playlist and Skip for now where appropriate. Only show pause/resume when the underlying operation actually supports it; do not promise resumable d-fi transfers without verifying support. Cancellation of one subscriber to a shared download must not cancel another playlist's acquisition request. Stopping an operation prevents its pending downstream work; already committed files are retained and reported.
-
-Persist tasks, attempts and events in SQLite. Use bounded worker pools and separate concurrency/rate limits for downloads, metadata and import/scan operations. Reuse or coalesce server scans when possible. Recover interrupted tasks with leases and idempotent stages; reconcile the filesystem/server before repeating side effects. Closing the browser must not stop work. Expose live updates with SSE plus a snapshot/reconnect path, while preserving Wavio's polling contract.
-
-## Skip for now and persistent placeholders
-
-### User behavior
-
-Every unresolved metadata match, missing track and failed file import has **Skip for now** beside Resolve and Retry. This is an optional decision at the affected item; there is no mandatory matching step that traps the user. Batch actions also allow Skip unresolved items for now.
-
-Skipping records the deferred decision immediately and prevents new downstream work for that item. An active worker must acknowledge a safe stop/cancellation boundary before releasing its claim; do not release a lease while the same worker can still commit side effects. Preserve original metadata and already staged valid files, with a clear retained-file/cleanup policy. Other songs continue. It must survive restarts, re-imports and scheduled playlist refreshes until the user chooses Resume/Retry/Resolve. Retry policy must not repeatedly retry an explicitly deferred item. Offer Remove from playlist as a separate action with clear consequences; skipping does not remove an entry.
-
-The ordered playlist keeps a visible placeholder showing its intended position, original title/artist where known, state and actions: Resolve, Retry, Resume or Remove. Distinguish reasons such as “No reliable metadata match,” “Song not available from Deezer,” and “File could not be imported.” A known matched recording with an import failure retains its identity; it does not need to be matched again merely because the file import failed.
-
-Accepting a match through Resolve also resumes that entry’s remaining work; avoid requiring a second Resume click for the same explicit decision. Resolving identity does not mean a song is playable. The placeholder remains until a valid file is imported and a usable Navidrome mapping exists. It can show Matched → Downloading → Importing → Waiting for library scan along the way. A later failure returns to an actionable state without losing the intended playlist slot.
-
-### Data and state design
-
-Use a durable `playlist_entry` with its own ID, playlist ID, ordinal/order key and source-entry correspondence. It stores or references the original source metadata and can have nullable resolved-recording and Navidrome-song mappings. Never model a playlist solely as an array of playable server IDs.
-
-Separate three concerns:
-
-- Identification: unresolved, ambiguous or resolved; candidate evidence and chosen mapping.
-- Acquisition/import: absent, queued, downloading, importing, awaiting server scan, available or failed; keep stage errors and retry history.
-- User policy: active or deferred, with reason and time. Removal is an explicit playlist edit, not another download state.
-
-An import creates source records and entries first. Matching attaches a canonical recording without replacing the entry. Downloading produces a file; import/reconciliation attaches the server-song mapping. Duplicate requests for the same recording can share acquisition work, while repeated playlist occurrences remain separate entries. Resolve a shared source-song identity once; playlist inclusion/deferral decisions stay per entry or acquisition intent so skipping one does not suppress unrelated requests. Provide an explicit “Apply to all occurrences of this source song” option when useful.
-
-Auto-matching can fill a deferred placeholder only after the user resumes it or explicitly accepts a suggested match; a background refresh must not silently override the decision to defer.
-
-### Navidrome projection
-
-The application's full ordered playlist is authoritative for source-managed playlists, including placeholders. Navidrome receives the ordered projection of only available entries with valid server IDs. Do not upload silent audio, fake files or invalid IDs to represent placeholders. Wavio/Navidrome can therefore show fewer playable entries than the application's full source playlist; show a clear coverage summary in the web app.
-
-For source order `[A, unresolved B, C]`, Navidrome initially has `[A, C]`. When B is imported and reconciled, update it to `[A, B, C]`. The full source ordering remains intact throughout, including duplicate occurrences.
-
-Record the last successfully verified remote playlist revision/membership. Check for external edits and partial/unstable inventories before applying a new projection. If remote changes conflict, mark the sync as needing attention rather than silently discarding them. Defer any sync whose snapshot cannot be trusted. Serialize application writes per playlist and verify membership after writing. Mark a placeholder fulfilled only when its file/server identity is valid; mark playlist synchronization separately so a failed playlist write cannot masquerade as success.
-
-## API compatibility and native APIs
-
-Keep the already documented Wavio `/api/v1` contract as an adapter. Expose new Activity, import, placeholder and defer controls through a native `/api/v2` API. Do not force Wavio to understand new enum values or placeholder records to retain its existing functionality.
-
-Planned native resource groups: source libraries and import snapshots; catalog songs/artists/albums/favorites; playlists and entries; candidate matches and review decisions; acquisition intents; tasks/attempts/events; connections/settings. Mutation requests must be idempotent or accept idempotency keys where repeated submission would create duplicate work.
-
-A deferred/failed Wavio acquisition remains visible in the legacy wishlist with compatible failure information and without being marked completed. Do not remove it in a way that Wavio interprets as success. Honor entry/intent deferral when Wavio calls wishlist processing; an explicit resume is required in the native web UI. Preserve known legacy statuses and map richer internal states through the adapter. Validate this with the pinned Wavio release, including queue polling, rate limits, artwork and restart behavior.
-
-Do not create fake playable songs for placeholders in either legacy library responses or Navidrome. Native API responses can return entry metadata, nullable recording/server IDs, reason and allowed actions explicitly.
+Native `/api/v2` resources cover catalog availability, owned migrations/snapshots/entries, review decisions, requests and item approvals, quality profiles, tasks/attempts/events, users/grants, keys and connections. Mutations that can duplicate work accept idempotency keys. Restrict native playlist/favorite writes to the migration lifecycle and the separately approved reference-preserving upgrade path.
 
 ## Build sequence and acceptance gates
 
-First implement account/session identity, ownership/query scoping, role/grant authorization and the shared acquisition approval gate described in the multi-user design. Include native Requests and People pages in the web milestones below. Every acquisition entry point must enforce authenticated ownership and the shared approval gate.
+1. **Decisions, fixtures and protected foundation.** Pin d-fi, Wavio and Navidrome versions; obtain representative XML and contract fixtures. Define ownership, identity, request/approval, migration write gates, quality snapshots and durable task schema. Implement bootstrap/login, scoped queries and approval before wiring acquisition workers.
+2. **Real integration proof.** Exercise member request → approval → d-fi → validated placement → Navidrome scan → verified availability → Wavio completion. Add two linked users, a migration playlist and a favorite. Restart and cancel at side-effect boundaries. Prove duplicate/version matching, external-edit detection, handover fencing, quality fallback and upgrade reference preservation. Unsupported Wavio watchlist behavior must be understood here.
+3. **XML migration and catalog.** Implement staged complete-library ingestion, preview, ordered entries, manual matching, skip/reuse, favorite import, external-edit pause and explicit handover. Retry the same snapshot idempotently; do not build source-refresh merging. Validate the agreed large-library performance budgets.
+4. **Complete acquisition and web workflows.** Build dedicated Search, Library, Imports, review, Requests, Activity and Settings pages against the native API. Complete per-user quality settings, approval inbox, direct-acquisition grants, explicit upgrade approval and safe replacement. Activity and recovery already exist; this milestone exposes them fully.
+5. **Release verification and packaging.** Run real Wavio/device flows and isolation tests; test expired credentials, disk-full/mount failures, scan delays, conflicting remote edits, partial writes, backup/restore and migration upgrades. Package the service, UI, database migrations and pinned executable/tooling. Re-estimate against evidence from the proof rather than the historical single-user schedule.
+6. **Phase 2, separately scheduled.** Follow artists, check for new releases and notify users. Downloading remains explicit and subject to normal approval.
 
+Required end-to-end acceptance scenarios:
 
-1. **Model and contract foundation.** Define source libraries/tracks, canonical recordings, ordered playlist entries, files/server mappings, favorite overrides, acquisition intents and persistent tasks. Capture the pinned Wavio contract. Test duplicate source IDs, playlist duplicates and deferred state before wiring downloads.
-2. **XML import and library catalog.** Stage complete library exports, preview songs plus playlist memberships, commit catalog records independently of matching and implement idempotent re-import. Verify songs outside playlists and mixed/non-music records.
-3. **Acquisition and server integration.** Wrap the existing d-fi binary, add metadata adapters, safe file import, Navidrome inventory/scans and verified playlist projection. Use SoulSync's relevant implementation and regression cases as references.
-4. **Failure handling and Activity.** Persist task dependencies/history, partial-success summaries, retry/cancel behavior, Skip for now and deferred placeholders. Verify a failure never blocks unrelated songs, and resuming a placeholder inserts the correct playable entry later.
-5. **Dedicated web pages.** Build the collapsible sidebar, Library views, Mixtape-based playlist detail, import routes, search, review routes, Activity and connection settings against native APIs. Navigation and task state must survive reloads; no core workflow should require a dialog.
-6. **Wavio and deployment verification.** Run real request/poll flows plus contract tests; verify favorites and cover art with Navidrome; exercise restart recovery, conflicting remote edits, large XML exports and partial provider failures. Package Go, UI assets, SQLite migrations and the pinned d-fi executable for the target platforms.
-
-Required end-to-end scenarios:
-
-- A full XML import includes an unplaylisted song, two playlists sharing a song and a playlist containing that song twice; catalog and ordered membership remain correct.
-- Re-importing the same XML creates neither duplicate playlists nor duplicate acquisition jobs; applying an updated XML preserves stable placeholders and manual decisions.
-- A metadata lookup fails for B in `[A, B, C]`. The user skips B, leaves the page and restarts the service. A/C complete, B retains its position and deferred policy, and Navidrome contains A/C.
-- The user resolves and resumes B later. After successful file import and a Navidrome scan, the application verifies A/B/C on the server. Repeating the completion event does not add a second B.
-- File import fails after a correct match. Retry resumes acquisition/import work without discarding the match; other songs complete and Activity reports the issue accurately.
-- Skipping one playlist occurrence does not cancel a shared download still needed elsewhere. Deferred placeholders are not automatically retried by source refresh or Wavio processing.
-- A deferred Wavio request does not disappear as a false success. Native placeholders never appear as fake playable tracks.
-- Running work started by Wavio appears on Activity in another browser, continues after the originating browser closes and remains inspectable after restart.
-- Favorites from imported data survive resolution and re-import without overwriting a newer explicit user change.
-- An external Navidrome playlist edit or failed scan prevents an unverified destructive projection update and produces an actionable sync issue.
-
-The previous single-user assessment is a preliminary estimate, not a fixed commitment for this expanded plan. Multi-user identity, approval requests and permission/isolation tests add foundational scope. Dedicated library pages, unified Activity and durable deferred placeholders are required v1 work. Refine the estimate against these acceptance gates before implementation scheduling; do not treat them as cosmetic adjustments to the mockups.
+- Full XML includes unplaylisted songs, mixed content, missing references, shared songs across playlists and duplicate occurrences. Source data and order survive partial provider failure.
+- Retrying an upload/commit creates no duplicate migration, remote playlist or acquisition. A changed XML cannot silently modify a previous migration.
+- Importing metadata or resolving identity without acquisition intent starts no download. Substitutions require review; changed approved targets require renewed approval where applicable.
+- In `[A, B, C]`, skip B and restart. A/C complete. A later confident existing-library match for B fills it without Resume or new acquisition while migration is open. Paused/handed-over playlists are not changed.
+- Two users share one acquisition/file while source records, decisions, playlists, stars and quality preferences remain personal. Identical source IDs or playlist names do not collide.
+- Wavio member requests remain queued pending approval; decline, defer and withdrawal never become false download successes. Library availability, cover art and terminal polling work on the pinned client.
+- External changes, including playlist deletion, pause only the affected migration playlist. Explicit resume previews consequences; per-playlist handover preserves external edits.
+- Finish migration with pending requests. Existing requests continue under approval/defer rules, but late completion, restarts and replayed events cannot write playlists or favorites after handover.
+- Favorite import is owner-scoped, never infers unstar from absent data, and does not repeatedly undo an external unstar. Uncertain write outcomes are actionable.
+- Default profile falls back through allowed qualities and reports the result; disallowed qualities are never silently chosen. Existing audio is reused until an explicit Upgrade request.
+- Direct-acquisition permission does not authorize replacement/deletion. Approved upgrade validates new audio and preserves affected references before retiring the old file; failure retains a recoverable old asset.
+- Crash tests cover download, validation, placement before database commit, scan, remote playlist/star write, handover and replacement. Repeated events do not duplicate assets or entries.
+- Authorization, revocation, private counts/errors/SSE replay, safe credential handling, recovery and backup/restore pass the [multi-user acceptance criteria](multi-user-design.md).

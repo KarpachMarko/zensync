@@ -1,83 +1,105 @@
 # Multi-user requirements and access model
 
-Confirmed user decision: all accounts share the base music library and downloaded files. Playlists, favorites, imports and other personal collections belong to individual users. New music requested by a regular user requires administrator approval unless that user is explicitly granted permission to add music directly. Non-admin users cannot delete song files, including users allowed to download without approval.
+Updated 2 November 2026. This document supplements the authoritative [implementation plan](implementation-plan.md). These are requirements, not implemented security. Phase 1 uses one admin-configured Navidrome server and a common audio library, with separate accounts for personal collections. ZenSync owns migration/acquisition state; Navidrome owns ongoing playlists and favorites.
 
-This document supplements `implementation-plan.md`; it replaces the earlier single-profile assumption. These are implementation requirements, not implemented application security.
+## Accounts and server connections
 
-## Accounts, identity and permissions
+- Separate ZenSync accounts and individual sessions. Admin creates/invites accounts; public registration is off initially. First-run setup creates an administrator. Prevent disabling/deleting/demoting the last active administrator and provide a documented recovery procedure.
+- Use an established password/session implementation, protected cookies, CSRF defenses for cookie-authenticated mutations, rate limits and explicit session revocation. Authenticate requests and authorize resource/action access on the server.
+- One Navidrome server URL and shared service connection are configured by the admin. All intended users receive access to the same Navidrome music library; separate accounts do not require duplicate audio files. The service connection supports shared inventory, scan and acquisition verification.
+- Users link their own account on that configured Navidrome server to publish migration playlists and favorites. Search and acquisition requests need no personal link. Linking does not create a second server configuration or replace ZenSync login. Native Navidrome account provisioning is not a phase 1 requirement; link existing accounts.
+- Verify the personal login and target identity before publication. Store credentials securely, scoped to their owner. Never distribute the shared service credential to clients or fall back to it when a personal link is missing, expired or fails. Pause affected migration writes and ask the owner to repair the link.
+- Wavio and other players connect directly to Navidrome with their own user credentials. ZenSync's API key is a separate credential used for acquisition requests.
 
-- Separate application accounts with individual sessions. Use an established password/session implementation, protected cookies, CSRF defenses for cookie-authenticated mutations, rate limits and explicit session revocation. Admin creates/invites accounts; public registration is off initially. First-run setup creates an administrator. Prevent disabling/deleting/demoting the last active administrator.
-- Two initial roles: **Admin** and **Member**. Members may browse the shared library, maintain their personal collection, and request music. The independent permission **Add music without approval** defaults off. Only admins may grant or revoke it.
-- File deletion is admin-only. A member granted direct acquisition is still forbidden from deleting files. No file deletion controls should appear in member views, and the server must reject direct API calls attempting deletion. Removing a personal playlist, removing its entry, withdrawing a request, or unfavoriting a song never removes shared audio.
-- Admin-only settings include shared provider credentials, music storage, users/permissions, request decisions and service configuration. Members manage their profile, own sessions/API keys and personal Navidrome connection mapping. Credentials and hashes are never returned in normal configuration responses or logs.
-- Authenticate every request and authorize the resource/action on the server. A route, hidden button, user ID, profile header, SSE topic, URL or client-side role is never an authorization boundary.
+## Roles, permissions and quality settings
+
+Two roles: **Admin** and **Member**. Members browse the common library, manage their migrations and quality preferences, and request music. **Add music without approval** is an independent grant, off by default; only admins grant/revoke it.
+
+Shared credentials, server/storage configuration, account/grant administration, request decisions and file deletion are admin-only. Members manage their profile, own sessions/API keys, personal Navidrome link and ordered quality profile. Credentials/hashes are never returned in normal responses, logs or configuration exports.
+
+Quality profiles order supported allowed qualities. Default: lossless first, followed by lower qualities in descending preference. Per-user preferences do not isolate or duplicate shared files. Ordinary requests reuse a playable matching recording already present; explicit **Upgrade** is required to seek better quality. Requests store a quality-profile snapshot so later preference changes do not silently modify approved work.
+
+Members, including those with direct-acquisition permission, cannot delete shared files. An upgrade that replaces a shared asset requires explicit admin approval. Keep the old file until the new asset and affected Navidrome references are verified; failed verification must not destroy the old asset. Removing an entry, withdrawing a request, deleting an import or changing a favorite never deletes shared audio.
+
+A route, hidden button, user ID, profile header, SSE topic or client-side role is never an authorization boundary. Do not accept owner IDs or permission changes from ordinary member payloads.
 
 ## Shared versus personal data
 
-Shared: canonical music metadata, downloaded files, safe public provider caches, storage usage and library availability. A newly approved/imported recording becomes available to everyone who can access the common library.
+Shared: canonical/provider music metadata that is safe to publish, downloaded assets, common-library availability and safe provider caches. Acquired music becomes available to all users with access to the common Navidrome library.
 
-Personal: playlists and their ordered entries/placeholders; favorites; XML source libraries and imports; followed artists; acquisition intents; deferred/review decisions; API keys and credentials; personal history/preferences. Scope these by owner user ID. The same source persistent ID in two users' XML files does not make them the same source record.
+Personal in ZenSync: XML source records/snapshots, migrations and ordered entries, review/defer decisions, imported favorite intent/outcomes, acquisition requests, quality preferences, credentials/API keys, personal history and settings. Phase 2 artist follows/notifications are also personal. Source persistent IDs are scoped by owner and source snapshot; never merge users' source records because identifiers match.
 
-A shared recording may satisfy several personal acquisition intents. Preserve separate requester, playlist positions and deferred policies even when sharing one download job/file. Explicit playlist sharing may grant view or edit access; private is the default. Shared edit access does not grant file deletion, user administration or acquisition bypass. Record administrative inspection/actions in audit history rather than implying personal data is inaccessible to administrators.
+Personal in Navidrome: playlists, favorites and listening state under each linked account. ZenSync stores migration correspondence and verified remote baselines, not a continuously synchronized personal collection. No separate collaborative playlist ACL/editor system is required in ZenSync phase 1; ongoing sharing/editing is handled by Navidrome/clients.
 
-Favorites are per user, never global. Use that account's Navidrome stars and playlist identity when available. The app uses a common music library, but server IDs and visible inventories must be interpreted through the linked identity; never grant a member access to a private remote playlist simply because the app has an admin connection. Keep application login and Navidrome account linking separate. Do not distribute the shared administrative Navidrome credential to member clients; link them to individual server accounts with appropriate rights, including no file-deletion rights. Source import and private playlist names must not leak into another member's Activity or search responses.
+A shared job/file can satisfy multiple personal requests. Keep requester, linked entries, decision actor, quality requirements and deferral independently. Do not expose other subscribers' private playlist names or import metadata. An admin's broad remote visibility does not authorize returning private remote collections to members. Record administrative inspection/actions in audit history rather than claiming personal data is inaccessible to administrators.
+
+## Migration write authority and handover
+
+Personal linking is required for remote writes, not for parsing or previewing XML. Create migration playlists and import explicit favorite intent as the linked user. A migration's target identity must not be silently changed while work is running; changing a link requires pausing and reviewing affected writes.
+
+While open, migration may fill missing positions and apply pending favorite imports. External playlist edits pause writes to that playlist; preserve the remote version. The owner can explicitly resume after reviewing differences or hand that playlist over to Navidrome. Never infer an external deletion is permission to recreate a playlist.
+
+Finishing the migration hands over all remaining collections, including favorite import. Fence queued/in-flight writes before acknowledging handover. Late acquisitions may update the migration report but cannot insert playlist entries or star songs after handover. Imported favorites must not repeatedly override a user's later Navidrome changes.
+
+Outstanding acquisition requests continue under their existing approval and defer rules after handover. Finishing is not cancellation, approval or a request to acquire every unresolved song. Do not cancel a shared job that another user still needs.
+
+Approved asset replacement may require a narrow reference-preservation operation after handover. It must preserve the same recording, playlist membership/order and favorite intent; it is not ongoing collection synchronization. If the implementation cannot preserve references safely across affected users, keep the old asset and require review rather than assuming the admin connection can edit every private playlist.
 
 ## Requests and approval
 
-A music request is durable acquisition intent owned by its requester. It can target a recording, album or a selected set of missing playlist songs. It stores source/provider identifiers and matching evidence, target quality, requester, submitted time, linked personal entries, decision actor/time/reason and processing outcomes.
+A request is durable acquisition intent owned by its requester, distinct from execution jobs/attempts. Targets may be a recording, album or explicit selection of missing migration songs. Bulk requests retain item-level targets, approval and outcomes. Store source/provider IDs, matching evidence, quality snapshot, requester/time, linked migration entries, decision actor/time/reason and fulfillment outcome.
 
-1. Re-check library availability before submission. Existing music needs no approval/download; attach the existing recording to the requesting user's collection.
-2. For a member without bypass permission, create **Awaiting approval**. Do not enqueue a download or run acquisition merely because the request came through a different endpoint/client. Catalog lookup and importing personal XML metadata can occur without acquisition approval.
-3. Admin sees a Requests inbox, requested recording/release, requester, quality, existing coverage and all unresolved items. Approve, decline with a reason, or return a request for more detail. Review decisions use a dedicated page. Bulk approval does not silently approve unmatched/substituted recordings.
-4. Admin approval records an audit event and creates or joins a deduplicated acquisition job. Concurrent approvals and retries must not start duplicate downloads. Direct-acquisition users enter this stage immediately, while retaining the same request/audit trail with the reason “Allowed without approval.”
-5. Track Queued → Downloading → Importing → Waiting for library scan → Available, with Failed and Deferred outcomes as appropriate. “Approved” does not mean playable. Each personal playlist retains placeholders until the recording is available and its playlist projection is verified.
-6. Declined, unavailable or unmatched requests retain their source/playlist slot. The owner may Skip for now, update and resubmit, or explicitly remove their entry. Declining is not file deletion or removal from every playlist.
-7. Requesters can inspect/withdraw their own pending requests. A withdrawal does not cancel a shared job still needed by someone else. Disallow arbitrary edits of already approved targets; a changed target requires a new approval where applicable.
+1. Re-check common-library availability. An existing playable file of the correct recording/version satisfies an ordinary request without acquisition approval or an automatic upgrade. Linking that file into a migration still obeys its write gate.
+2. For members without the grant, create **Awaiting approval**; do not enqueue acquisition. Metadata search, XML staging and identity resolution do not themselves need acquisition approval.
+3. Admin reviews the concrete target/version, quality preference, coverage and unresolved children. Approve, decline with a reason, or return for clarification. Bulk approval does not approve unknown substitutions.
+4. Approval records an audit event and transactionally creates/joins compatible deduplicated work. Direct-acquisition users follow the same request/audit trail with the reason “Allowed without approval.” Upgrade replacement always requires explicit admin approval, regardless of that grant.
+5. Execution reports Queued → Downloading → Validating/Importing → Waiting for scan → Available, with stage failures and retry history. Approval is not playable availability; availability is not proof of a successful migration playlist write.
+6. Decline/failure retains the request and source position. Owners may defer, correct and resubmit, or remove their migration entry without deleting shared files. Alternative versions require explicit review; a changed approved target needs fresh approval where applicable.
+7. Requesters can withdraw pending requests. Withdrawal/defer removes only that subscriber's need for work. It must not cancel another user's acquisition or become false download success in Wavio.
 
-Permissions are evaluated at submission and immediately before acquisition starts. Revoking bypass permission moves not-yet-started bypass-only work back to approval; do not revoke an administrator's explicit approval implicitly. Define active-transfer handling clearly: stop new downstream acquisition where safe, retain completed valid files and report any already committed work. Approval, cancellation and grants/revocations must be transactional and audited.
+Permissions are checked at submission and immediately before acquisition begins. Revoking the direct grant returns not-yet-started bypass-only work to approval, while preserving explicit admin approvals. Active workers stop further unauthorized work at a safe boundary; retain/report valid committed files and never release a claim while the same worker can still commit. Approval, cancellation and permission changes are transactional and audited.
 
-Apply the approval gate to UI actions, playlist downloads, XML missing-library acquisition, schedules, followed-artist release downloads, Wavio wishlist processing, request endpoints and future providers. There must be no “process wishlist” or album/playlist bulk bypass.
+Skip for now stops new acquisition/retry work for the affected intent. A confidently matched existing song may satisfy it later without Resume, including when another user acquires the song. No new acquisition is triggered by this reuse. Insertion/star application still obeys migration handover and external-edit gates.
 
-## Wavio and API keys
+All entry points use the same approval service: native UI/API, XML acquisition selections, album bulk requests and Wavio wishlist/process. Phase 2 notifications only suggest requests, never auto-download. Future acquisition integrations must use this gate too.
 
-Each API key belongs to an account, has bounded scopes and can be revoked. It cannot exceed the owner's current permissions. Preserve the legacy `/api/v1` contract through the adapter, but resolve ownership from the authenticated key. Treat `X-Profile-Id` as a compatible selector only among profiles that key can access; it must not permit impersonation or default unknown users to the admin profile.
+## Wavio and native APIs
 
-Wavio requests from a member without bypass permission create approval requests, not download jobs. Keep pending intent visible in the wishlist and return compatible nonterminal status plus an actionable reason such as “Awaiting administrator approval.” Never let removing a wishlist row or dropping a task make Wavio infer a false download success. Wavio may not expose an approval screen; the dedicated web Requests page is the source of decision details. Pin and test the actual client behavior. Its existing interfaces must remain usable even if an admin now needs to approve acquisition.
+Every ZenSync API key belongs to an account, has bounded scopes and can be revoked. Its authority cannot exceed current owner permissions. Preserve the supported `/api/v1` acquisition contract through an adapter; `X-Profile-Id` selects only authorized profiles and cannot impersonate another user or default to admin.
 
-The native API adds authenticated Requests, users/permissions and sharing resources. Do not accept owner IDs or arbitrary permission changes from ordinary member payloads. Redact requests/jobs outside the caller's scope in paginated lists, counts, search, exports, task errors, events and SSE reconnect/backlog data.
+Wavio requests from members without bypass create approval requests, not download jobs. The user accepts **Queued** in unchanged Wavio; ZenSync's Requests page provides approval details and rejection reasons. Do not promise a distinct approval screen/status in Wavio. Keep unsuccessful intent or compatible terminal information visible so wishlist removal/task expiry cannot imply false success. Test withdrawal, decline, deferred fulfillment, duplicate titles and terminal retention with the pinned client.
 
-## Navigation and compact interaction rules
+Watchlist/release notifications are phase 2. Phase 1 must explicitly document unsupported watchlist operations and test that they do not break supported connection/search/acquisition flows. Do not fabricate scan success to claim full compatibility.
 
-- Requests is a dedicated sidebar destination. Members see My requests. Admins get an approval inbox plus filtering by requester/state. Activity links to request decisions but does not replace the approval workflow.
-- People & permissions is a dedicated admin Settings page. Show role, linked Navidrome identity and the independent Add music without approval permission. State explicitly that members never delete shared files.
-- Use compact song lists: reduce vertical padding, align status/actions, use about 42–46px ordinary desktop rows and allow additional height only for important unresolved reasons/actions. Keep text legible and retain larger touch targets on phones/coarse pointers. Compactness must not rely only on reducing font size.
-- All ordinary workflows remain dedicated routed pages. Keep the chosen collapsible sidebar and Mixtape-inspired playlist view. User/account state is visible in the header.
+Native `/api/v2` includes owned migrations, review, requests/item decisions, quality profiles, user/grant/key management, tasks and connections. Scope every list, count, search result, error, export and SSE snapshot/replay. Global catalog/search must not expose private imported metadata just because a source record may later match common music.
 
-## Activity, jobs and fairness
+## Activity, fairness and account lifecycle
 
-Members see their own work and authorized shared work; admins can switch between their own view and a server overview. Expose shared job progress without other users' private playlist/source details. Requests Awaiting approval are waiting decisions, never Running downloads. Review and defer decisions do not hold worker slots.
+Members see their own work and safe shared progress. Admins can inspect a server overview. Approval waits, external-edit pauses and deferred reviews do not occupy transfer slots. Keep shared subscriber relations separate from parent/child task structure. Apply global/per-user concurrency, request and staging limits; changing API keys must not bypass limits.
 
-Persist requester/subscriber relationships and parent/child jobs separately. Use fair scheduling, global/per-user concurrency and request limits. A member cannot starve others or bypass limits with different API keys. Cancelling one user's intent does not cancel another subscriber's work; admin forced cancellation is explicit and audited.
+Disabling an account revokes sessions/API keys and prevents new work. Pause its migration writes and remove its authorization for unstarted personal work without deleting shared assets or cancelling another subscriber's job. Deletion requires an explicit disposition for personal migration/request records and any remote collections; no automatic cascade into Navidrome playlists, favorites or audio. Retain necessary audit records and preserve the last admin's recoverability.
 
-Disabling an account revokes sessions/API keys, prevents new work and handles that user's unstarted intents without removing shared files. Deleting an account requires an explicit disposition for personal data and shared playlists; never cascade into audio-file deletion.
+Requests and People & permissions remain dedicated pages. Show current role, personal Navidrome link and direct-acquisition grant. Keep compact rows, accessible mobile controls and dedicated routes consistent with the implementation plan. Mockup role simulation is not production authorization.
 
-## Schema and implementation changes
+## Schema and implementation gates
 
-Add users, roles/grants, sessions, user-owned API keys, per-user Navidrome links, playlist ACLs, personal favorites, owned source libraries/import snapshots, music requests and decision events. Add owner/requester/actor relationships to intents, jobs, events and audit records. Keep shared recording/file tables separate from personal records and avoid cascading deletes across that boundary.
+Model users, roles/grants, sessions, owned keys, one shared server configuration, per-user Navidrome links, ordered quality profiles/snapshots, owned migrations/source records/entries, imported favorite outcomes, requests/item decisions and audit events. Shared recording/release/file/server-mapping tables are separate from personal data. Persist jobs, attempts, dependencies and subscriptions. Avoid cascading deletes across the personal/shared boundary.
 
-Build authorization/query scoping and approval service before connecting external acquisition workers. Acquisition providers receive already-authorized job inputs; they do not decide authorization themselves. Add account bootstrap/invites and native Requests pages before declaring multi-user v1 usable.
+Implement scoped queries and approval before connecting external acquisition workers. Workers receive authorized inputs but must recheck current permission and migration write gates at side-effect boundaries. User provisioning, Requests and People pages are required before declaring multi-user phase 1 usable.
 
-Required tests:
+Required acceptance tests:
 
-- Two users import the same XML/source IDs and favorite different songs without data collision or cross-user leakage.
-- A member can request music and edit personal playlists but cannot start acquisition before approval, delete files, alter grants or act as another profile via URL/body/header/API key.
-- A member with Add music without approval can download, yet all file-deletion paths remain denied.
-- Wavio wishlist/process, album bulk requests, source refresh, follow schedules and direct API calls pass through the same approval gate.
-- Two requests for one recording share one acquisition while maintaining separate approval, ownership and playlist entries.
-- Approve twice, approve concurrently, retry and reconnect do not duplicate downloads. Decline/withdraw do not report false success or destroy placeholders.
-- Revoking bypass permission rechecks pending work. A request carrying previous admin approval is distinguished from a bypass-only job.
-- A user withdrawing/defering their entry does not cancel another user's request or erase shared files.
-- List counts, task details, errors and SSE replay do not reveal another member's private sources, playlists or credentials.
-- Account disable revokes access; account/playlist deletion cannot cascade into shared audio. The last admin remains recoverable.
+- Two users import identical source IDs and identically named playlists; their playlists and imported favorites land under different linked Navidrome accounts while the shared audio is stored once.
+- A user without a personal link can search/request music, but cannot publish migration collections. An expired/broken link never falls back to the shared account.
+- Members cannot acquire before approval, delete files, replace shared assets without admin approval, alter grants or impersonate through body/URL/header/key.
+- A direct-acquisition member can acquire new music but still cannot approve replacement or deletion.
+- Per-user ordered profiles remain separate; fallback is reported and bounded by allowed qualities. Existing audio is reused without an explicit upgrade. Profile edits cannot silently alter pending approved targets.
+- All acquisition entry points enforce approval. Concurrent approval/retry creates one compatible job, not duplicate downloads; incompatible target/quality requirements are not silently combined.
+- Grant revocation rechecks unstarted work and distinguishes explicit admin approval from bypass-only authorization.
+- Defer/withdraw affects only its subscriber. A confident existing-file match can fulfill a deferred entry without a new download, while paused/handed-over remote collections stay unchanged.
+- External edits pause affected migration writes; handover prevents queued, late and replayed playlist/favorite writes while pending acquisitions continue under their normal rules.
+- Wavio queued approval, decline, withdrawal and terminal history do not imply false success. Unsupported phase 1 watchlist actions are explicit.
+- Private imports, source names, favorite intent, keys and credentials never leak through lists, aggregate counts, errors or SSE reconnect/replay.
+- Account disable revokes access; account/import deletion cannot cascade into shared files or remote personal collections. Last-admin recovery and backup/restore are tested.
 
-The previous single-user time estimate is superseded. Multi-user identity, approval, authorization and isolation are foundational work and must be estimated explicitly before implementation scheduling.
+Estimate foundational identity, approval, migration write gating and isolation explicitly. The original single-user estimate is historical and is not the phase 1 schedule.

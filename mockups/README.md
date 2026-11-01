@@ -1,5 +1,7 @@
 # ZenSync: five UI mockups
 
+Historical design prototypes. The [2 November implementation plan](../docs/implementation-plan.md) supersedes their behavior and scope. These mockups have not been updated for migration handover, acquisition-only ongoing use or phase 2 artist notifications.
+
 Open `index.html` to compare all five directions. ZenSync is the chosen project name.
 
 - `collection.html`: persistent navigation and album artwork.

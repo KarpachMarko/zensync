@@ -1,5 +1,7 @@
 # Revised ZenSync mockups
 
+Historical design prototypes. The [2 November implementation plan](../../docs/implementation-plan.md) supersedes their behavior and scope. Ongoing playlist/favorites editing, source refresh and additional import formats shown here are not phase 1 requirements; migration handover and per-user quality profiles are not yet reflected in these mockups.
+
 Open `index.html`. This is one connected interface built from the chosen preferences, with dedicated pages rather than workflow dialogs. The original five concepts in the parent directory are unchanged.
 
 Direct entry files:

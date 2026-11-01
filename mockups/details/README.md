@@ -1,5 +1,7 @@
 # Five compact detail mockups
 
+Historical design prototypes. The [2 November implementation plan](../../docs/implementation-plan.md) and [multi-user design](../../docs/multi-user-design.md) supersede their behavior. The sample persistent favorite/playlist controls and strict deferred-placeholder behavior predate the migration handover and automatic existing-song reuse decisions. Quality profiles and upgrade approval also require a later mockup revision.
+
 Open `index.html`. This set preserves the chosen sidebar and playlist design, adds compact layouts and illustrates the confirmed multi-user policy. The original and revised sets remain unchanged.
 
 Five focused screens, also available as standalone entry files:
