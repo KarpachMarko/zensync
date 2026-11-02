@@ -25,7 +25,7 @@ export async function upload(file: File): Promise<{ id: string }> {
   const res = await fetch("/api/v2/imports", {
     method: "POST",
     headers: {
-      "Content-Type": "application/xml",
+      "Content-Type": "application/octet-stream",
       "X-CSRF-Token": csrf,
       "X-Import-Name": encodeURIComponent(file.name),
     },

@@ -100,7 +100,7 @@ export function Imports() {
           </div>
           <h2>Your collection has a new home.</h2>
           <p>
-            Export your library from Apple Music as XML. ZenSync keeps every
+            Export your library as XML or a single playlist as XML or text. ZenSync keeps every
             song and playlist position while you resolve and acquire missing
             music.
           </p>
@@ -156,15 +156,15 @@ export function NewImport() {
       <h1 tabIndex={-1}>Start a migration</h1>
       <p>
         In Apple Music, choose File → Library → Export Library. For one
-        playlist, choose File → Library → Export Playlist and select XML.
+        playlist, select it, choose File → Library → Export Playlist and select XML or Text. Text exports use the filename as the playlist name.
       </p>
       <form onSubmit={submit}>
         <label>
-          Apple Music or iTunes XML export
+          Apple Music or iTunes export (XML or TXT)
           <input
             name="xml"
             type="file"
-            accept=".xml,application/xml,text/xml"
+            accept=".xml,.txt,application/xml,text/xml,text/plain"
             required
           />
         </label>
@@ -175,7 +175,7 @@ export function NewImport() {
         </p>
         {error && <p role="alert">{error}</p>}
         <button disabled={busy}>
-          {busy ? "Reading your library…" : "Upload and preview"}
+          {busy ? "Reading your export…" : "Upload and preview"}
         </button>
       </form>
     </>

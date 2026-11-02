@@ -581,3 +581,65 @@ func TestRealNavidromeAssetVerification(t *testing.T) {
 		t.Fatalf("real virtual-path verification failed: %v", e)
 	}
 }
+
+func TestTextPlaylistUpload(t *testing.T) {
+	a, err := Open(filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.DB.Close()
+	c := client{a: a}
+	expect(t, c.call("POST", "/api/v2/setup", `{"username":"admin","password":"test-password-long"}`, ""), 201)
+	c = login(t, a, "admin")
+	data, err := os.ReadFile("../apple/testdata/playlist.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", c.baseURL()+"/api/v2/imports", strings.NewReader(string(data)))
+		r.Header.Set("Origin", c.baseURL())
+		r.Header.Set("X-CSRF-Token", c.csrf)
+		r.Header.Set("X-Import-Name", "test%20import.txt")
+		r.Header.Set("Content-Type", "application/octet-stream")
+		r.AddCookie(c.cookie)
+		w := httptest.NewRecorder()
+		a.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := upload()
+	expect(t, w, 201)
+	var result map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	mid := result["id"]
+	again := upload()
+	expect(t, again, 200)
+	if again.Body.String() != w.Body.String() {
+		t.Fatal("duplicate import was not reused")
+	}
+	playlists, err := a.playlists(mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(playlists) != 1 || playlists[0].Name != "test import" || !playlists[0].Selected || len(playlists[0].Entries) != 13 {
+		t.Fatalf("bad playlist: %+v", playlists)
+	}
+	sources, err := a.sources(mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 13 {
+		t.Fatalf("bad song count: %d", len(sources))
+	}
+	byID := map[string]Source{}
+	for _, source := range sources {
+		byID[source.ID] = source
+	}
+	if byID[playlists[0].Entries[0]].Metadata.Title != "Каждый день" || byID[playlists[0].Entries[12]].Metadata.Title != "Другой стиль" {
+		t.Fatal("playlist order was lost")
+	}
+	prefix := "/api/v2/imports/" + mid
+	expect(t, c.call("POST", prefix+"/commit", mustJSON(map[string]any{"playlists": []string{playlists[0].ID}, "favorites": false}), ""), 200)
+	expect(t, c.call("GET", prefix, "", ""), 200)
+}

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 
 test("first-access setup, real XML preview, review and reload-safe migration", async ({
   page,
@@ -51,7 +52,23 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .click();
   await page.getByRole("link", { name: "New migration" }).click();
   await page
-    .getByLabel("Apple Music or iTunes XML export")
+    .getByLabel("Apple Music or iTunes export (XML or TXT)")
+    .setInputFiles({
+      name: "test import.txt",
+      mimeType: "text/plain",
+      buffer: await readFile(path.resolve("../internal/apple/testdata/playlist.txt")),
+    });
+  await page.getByRole("button", { name: "Upload and preview" }).click();
+  await expect(page.getByRole("checkbox", { name: /test import/ })).toBeChecked();
+  await page.getByRole("button", { name: "Commit migration" }).click();
+  await page.getByRole("link", { name: /test import.*13 ordered entries/ }).click();
+  await expect(page.getByRole("button", { name: /Каждый день/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Другой стиль/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Ordered songs" })).toBeVisible();
+  await page.goto("/imports/new");
+  await page
+    .getByLabel("Apple Music or iTunes export (XML or TXT)")
     .setInputFiles(path.resolve("../internal/apple/testdata/library.xml"));
   await page.getByRole("button", { name: "Upload and preview" }).click();
   await expect(page.getByText("1 unplaylisted songs")).toBeVisible();

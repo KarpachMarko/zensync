@@ -96,7 +96,7 @@ func (a *App) listMigrations(w http.ResponseWriter, u User) {
 }
 func (a *App) upload(w http.ResponseWriter, r *http.Request, u User) {
 	if !a.importMu.TryLock() {
-		fail(w, 429, "Another XML export is being parsed; retry shortly")
+		fail(w, 429, "Another export is being parsed; retry shortly")
 		return
 	}
 	defer a.importMu.Unlock()
@@ -107,14 +107,14 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 413, "Export exceeds 32 MiB or could not be read")
 		return
 	}
-	snapshot, e := apple.Parse(data)
-	if e != nil {
-		fail(w, 400, e.Error())
-		return
-	}
 	name := strings.TrimSpace(r.Header.Get("X-Import-Name"))
 	if decoded, err := url.QueryUnescape(name); err == nil {
 		name = decoded
+	}
+	snapshot, e := apple.ParseFile(data, name)
+	if e != nil {
+		fail(w, 400, e.Error())
+		return
 	}
 	if name == "" {
 		name = "Apple Music migration"

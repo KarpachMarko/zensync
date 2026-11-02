@@ -4,7 +4,7 @@ A self-hosted Navidrome companion for initial music migration and ongoing music 
 
 ## Current status
 
-The first migration workflow is implemented: first-access administrator setup, Apple Music XML preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes. Legacy ID/hash downloads are automatically reorganized into readable paths with verified Navidrome identity preservation and recovery backups.
+The first migration workflow is implemented: first-access administrator setup, Apple Music XML/text preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes. Legacy ID/hash downloads are automatically reorganized into readable paths with verified Navidrome identity preservation and recovery backups.
 
 Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
 
@@ -13,7 +13,7 @@ See [deployment and first-migration instructions](docs/deployment.md). Wavio com
 ## Phase 1
 
 - Go + SQLite backend, compact React/TypeScript UI, Apple/iTunes and Deezer metadata, and acquisition through the existing d-fi Go binary.
-- Apple Music XML migration of the complete music catalog, selected playlists and favorites. No ongoing Apple synchronization or updated-export merging.
+- Apple Music XML migration of the complete music catalog, selected playlists and favorites, plus single-playlist imports from Apple Music tab-separated `.txt` exports (UTF-16 or UTF-8). Text imports preserve order and use the filename as the playlist name. No ongoing Apple synchronization or updated-export merging.
 - One admin-configured Navidrome instance and shared music library, with separate personal Navidrome accounts. Personal linking is needed for migration publication, not search or acquisition requests.
 - Migration stays open to fill missing entries until explicit handover. External edits pause the affected playlist. After handover, Navidrome owns playlists/favorites; outstanding acquisitions continue without changing those collections.
 - Persistent unresolved entries with Skip for now. Confidently matched existing music can fill skipped entries without a new download; alternative versions require review.
