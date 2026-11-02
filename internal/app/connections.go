@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (a *App) initRuntime(dbPath string) error {
@@ -159,8 +160,7 @@ type NavResponse struct {
 	} `json:"scanStatus"`
 }
 
-func (a *App) nav(ctx context.Context, c Credentials, endpoint string, params url.Values) (NavResponse, error) {
-	var out NavResponse
+func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params url.Values) (*http.Response, error) {
 	if params == nil {
 		params = url.Values{}
 	}
@@ -174,12 +174,26 @@ func (a *App) nav(ctx context.Context, c Credentials, endpoint string, params ur
 	params.Set("f", "json")
 	req, e := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(c.URL, "/")+"/rest/"+endpoint+".view", strings.NewReader(params.Encode()))
 	if e != nil {
-		return out, errors.New("invalid Navidrome URL")
+		return nil, errors.New("invalid Navidrome URL")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, e := a.HTTP.Do(req)
+	client := a.HTTP
+	if endpoint == "download" {
+		copy := *a.HTTP
+		copy.Timeout = 3 * time.Minute
+		client = &copy
+	}
+	resp, e := client.Do(req)
 	if e != nil {
-		return out, errors.New("Navidrome connection failed; check URL and connectivity")
+		return nil, errors.New("Navidrome connection failed; check URL and connectivity")
+	}
+	return resp, nil
+}
+func (a *App) nav(ctx context.Context, c Credentials, endpoint string, params url.Values) (NavResponse, error) {
+	var out NavResponse
+	resp, e := a.navRaw(ctx, c, endpoint, params)
+	if e != nil {
+		return out, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {

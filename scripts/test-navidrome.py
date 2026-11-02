@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable Docker integration test. Requires ffmpeg and zensync:migration-test.
+"""Disposable Docker integration test. Requires Go, ffmpeg and zensync:migration-test.
 Creates synthetic audio; never accesses a user's Navidrome server or Deezer account.
 """
 import hashlib
@@ -67,6 +67,8 @@ def main():
                 return data
             nav('startScan')
             tracks=wait(lambda: (lambda x:x if len(x)==2 else None)(nav('search3',query='',songCount=100)['searchResult3'].get('song',[])))
+            testenv=dict(os.environ,ZENSYNC_TEST_NAV_URL=navurl,ZENSYNC_TEST_NAV_PASSWORD=password,ZENSYNC_TEST_MUSIC=str(music))
+            subprocess.check_call([os.environ.get('ZENSYNC_GO','go'),'test','./internal/app','-run','TestRealNavidromeAssetVerification','-count=1'],cwd=root,env=testenv)
             run('docker','run','-d','--name',appname,'--network',network,'-p','127.0.0.1::8080','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp','-v','/data','-v',str(music)+':/music','zensync:migration-test')
             names.append(appname)
             appport=json.loads(run('docker','inspect',appname))[0]['NetworkSettings']['Ports']['8080/tcp'][0]['HostPort']

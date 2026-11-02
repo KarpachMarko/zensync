@@ -132,6 +132,20 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(q, "http://") || strings.HasPrefix(q, "https://") || strings.HasPrefix(q, "deezer:") {
+		resource, err := a.resolveDeezerResource(r.Context(), q)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		if strings.HasPrefix(resource, "album:") {
+			tracks, e := a.albumTracks(r.Context(), strings.TrimPrefix(resource, "album:"))
+			if e != nil {
+				fail(w, 502, e.Error())
+				return
+			}
+			send(w, 200, tracks)
+			return
+		}
 		t, e := a.track(r.Context(), q)
 		if e != nil {
 			fail(w, 400, e.Error())
@@ -175,8 +189,8 @@ func artistMatches(t Track, artist string) bool {
 
 // Resolve only Deezer-owned HTTPS share redirects. Never fetch arbitrary URLs
 // supplied in a redirect or a fallback query parameter.
-func (a *App) resolveDeezerID(ctx context.Context, input string) (string, error) {
-	if id, e := deezerID(input); e == nil {
+func (a *App) resolveDeezerResource(ctx context.Context, input string) (string, error) {
+	if id, e := deezerResourceID(input); e == nil {
 		return id, nil
 	}
 	current, e := url.Parse(strings.TrimSpace(input))
@@ -189,12 +203,12 @@ func (a *App) resolveDeezerID(ctx context.Context, input string) (string, error)
 		if current.Scheme != "https" || current.User != nil || (current.Host != "link.deezer.com" && current.Host != "www.deezer.com" && current.Host != "deezer.com") {
 			return "", errors.New("Deezer share link redirected outside supported Deezer hosts")
 		}
-		if id, e := deezerID(current.String()); e == nil {
+		if id, e := deezerResourceID(current.String()); e == nil {
 			return id, nil
 		}
 		for _, key := range []string{"dest", "awf", "gwf", "iwf"} {
 			if target := current.Query().Get(key); target != "" {
-				if id, e := deezerID(target); e == nil {
+				if id, e := deezerResourceID(target); e == nil {
 					return id, nil
 				}
 			}
@@ -218,4 +232,55 @@ func (a *App) resolveDeezerID(ctx context.Context, input string) (string, error)
 		current = next
 	}
 	return "", errors.New("Too many Deezer share-link redirects")
+}
+
+func deezerResourceID(input string) (string, error) {
+	if id, e := deezerID(input); e == nil {
+		return id, nil
+	}
+	u, e := url.Parse(strings.TrimSpace(input))
+	if e == nil && u.User == nil && (u.Scheme == "https" || u.Scheme == "http") && (u.Host == "www.deezer.com" || u.Host == "deezer.com") {
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) >= 2 && parts[len(parts)-2] == "album" && digits.MatchString(parts[len(parts)-1]) {
+			return "album:" + parts[len(parts)-1], nil
+		}
+	}
+	return "", errors.New("Use a Deezer song or album URL")
+}
+func (a *App) resolveDeezerID(ctx context.Context, input string) (string, error) {
+	id, e := a.resolveDeezerResource(ctx, input)
+	if e == nil && strings.HasPrefix(id, "album:") {
+		return "", errors.New("Choose an individual song from the album results")
+	}
+	return id, e
+}
+func (a *App) albumTracks(ctx context.Context, id string) ([]Track, error) {
+	var album struct {
+		ID    int64  `json:"id"`
+		Title string `json:"title"`
+	}
+	if e := a.deezer(ctx, "/album/"+id, &album); e != nil {
+		return nil, e
+	}
+	if album.ID == 0 {
+		return nil, errors.New("Album not found")
+	}
+	all := []Track{}
+	for offset := 0; offset < 5000; offset += 100 {
+		var page struct {
+			Data  []Track `json:"data"`
+			Total int     `json:"total"`
+		}
+		if e := a.deezer(ctx, "/album/"+id+"/tracks?limit=100&index="+strconv.Itoa(offset), &page); e != nil {
+			return nil, e
+		}
+		for _, t := range page.Data {
+			t.Album.Title = album.Title
+			all = append(all, t)
+		}
+		if len(page.Data) < 100 || (page.Total > 0 && len(all) >= page.Total) {
+			return all, nil
+		}
+	}
+	return nil, errors.New("Album exceeds 5,000 tracks")
 }

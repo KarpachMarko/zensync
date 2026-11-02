@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -7,8 +7,10 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import "./style.css";
+import { Icon } from "./icons";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
 import { Imports, NewImport, MigrationPage } from "./imports";
@@ -39,6 +41,9 @@ function App() {
     localStorage.getItem("sidebar") === "collapsed",
   );
   const location = useLocation();
+  const navigate = useNavigate();
+  const [sidebarQuery, setSidebarQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   async function load() {
     try {
       const first = await api<{ required: boolean }>("/setup");
@@ -127,26 +132,79 @@ function App() {
   return (
     <div className={"shell " + (collapsed ? "collapsed" : "")}>
       <aside>
-        <div className="brand">◉ {!collapsed && "ZenSync"}</div>
-        <button
-          className="quiet collapse"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() => {
-            setCollapsed(!collapsed);
-            localStorage.setItem(
-              "sidebar",
-              collapsed ? "expanded" : "collapsed",
-            );
-          }}
-        >
-          {collapsed ? "»" : "«"}
-          <span className="navtext"> Collapse</span>
-        </button>
+        <div className="sidebar-top">
+          <div className="brand">
+            <span aria-hidden="true">◉</span>
+            <span className="navtext">ZenSync</span>
+          </div>
+          <button
+            className="quiet collapse"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            onClick={() => {
+              setCollapsed(!collapsed);
+              localStorage.setItem(
+                "sidebar",
+                collapsed ? "expanded" : "collapsed",
+              );
+            }}
+          >
+            <Icon name={collapsed ? "expand" : "collapse"} />
+          </button>
+        </div>
+        {collapsed ? (
+          <button
+            className="sidebar-search-toggle quiet"
+            aria-label="Open sidebar search"
+            title="Search music"
+            onClick={() => {
+              setCollapsed(false);
+              localStorage.setItem("sidebar", "expanded");
+              requestAnimationFrame(() => searchInput.current?.focus());
+            }}
+          >
+            <Icon name="search" />
+          </button>
+        ) : (
+          <form
+            className="sidebar-search"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (sidebarQuery.trim())
+                navigate(
+                  "/search?q=" + encodeURIComponent(sidebarQuery.trim()),
+                );
+            }}
+          >
+            <Icon name="search" />
+            <input
+              ref={searchInput}
+              aria-label="Search music"
+              placeholder="Search music…"
+              value={sidebarQuery}
+              onChange={(e) => setSidebarQuery(e.target.value)}
+              maxLength={500}
+            />
+          </form>
+        )}
         <nav aria-label="Main navigation">
           {nav.map(([to, label], i) => (
-            <NavLink to={to} key={to} title={label}>
+            <NavLink to={to} key={to} title={label} aria-label={label}>
               <span className="symbol">
-                {["▤", "⌕", "⇣", "☷", "◷", "⚙"][i]}
+                <Icon
+                  name={
+                    [
+                      "library",
+                      "search",
+                      "imports",
+                      "requests",
+                      "activity",
+                      "settings",
+                    ][i]
+                  }
+                />
               </span>
               <span className="navtext">{label}</span>
             </NavLink>
@@ -156,7 +214,9 @@ function App() {
           <strong>{user.username}</strong>
           <small>{user.role}</small>
           <button
-            className="quiet"
+            className="quiet signout"
+            aria-label="Sign out"
+            title="Sign out"
             onClick={async () => {
               try {
                 await api("/session", "DELETE");
@@ -166,7 +226,8 @@ function App() {
               }
             }}
           >
-            Sign out
+            <Icon name="logout" />
+            <span className="navtext">Sign out</span>
           </button>
         </div>
       </aside>

@@ -285,7 +285,7 @@ func (a *App) runAcquisition(ctx context.Context) {
 		}
 		slog.Warn("Placed file not found in Navidrome", "job_id", jid, "file_path", file, "wait_seconds", elapsed, "scanning", scan.Scan.Scanning)
 		if elapsed >= 300 {
-			a.jobState(jid, "failed", "Navidrome has not indexed the downloaded file after 5 minutes. Check scan progress and that ZenSync /music and Navidrome's music library use the same shared storage, and that Navidrome can read ZenSync/ files. The validated file is retained; retry after fixing the mount.")
+			a.jobState(jid, "failed", "Could not verify the downloaded file in Navidrome after 5 minutes. Check scan progress, shared music storage and the service account's library/download permissions. The validated file is retained; retry after correcting the connection or storage.")
 		}
 		return
 	}

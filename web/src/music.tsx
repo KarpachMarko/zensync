@@ -3,6 +3,7 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { api, Track, LibrarySong, label, time, requestKey } from "./api";
 export function Search() {
   const keys = useRef<Record<number, string>>({});
+  const searchSequence = useRef(0);
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState(params.get("q") || ""),
     [results, setResults] = useState<Track[]>([]),
@@ -12,19 +13,25 @@ export function Search() {
     [requested, setRequested] = useState<Set<number>>(new Set());
   async function search(q: string) {
     if (!q.trim()) return;
+    const sequence = ++searchSequence.current;
     setBusy(true);
     setError("");
     try {
-      setResults(await api<Track[]>("/search?q=" + encodeURIComponent(q)));
-      setSearched(true);
+      const tracks = await api<Track[]>("/search?q=" + encodeURIComponent(q));
+      if (sequence === searchSequence.current) {
+        setResults(tracks);
+        setSearched(true);
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (sequence === searchSequence.current) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sequence === searchSequence.current) setBusy(false);
     }
   }
   useEffect(() => {
-    if (params.get("q")) void search(params.get("q")!);
+    const q = params.get("q") || "";
+    setQuery(q);
+    if (q) void search(q);
   }, [params.get("q")]);
   async function request(t: Track) {
     setBusy(true);
@@ -47,8 +54,8 @@ export function Search() {
     <>
       <h1 tabIndex={-1}>Find your next record</h1>
       <p>
-        Search Deezer, or paste a song or share link when you know exactly what
-        you want.
+        Search Deezer, or paste a song, album or share link when you know
+        exactly what you want.
       </p>
       <form
         className="searchbar"
@@ -70,6 +77,9 @@ export function Search() {
         </label>
         <button disabled={busy}>Search</button>
       </form>
+      <p className="muted">
+        Album links show all tracks so you can request individual songs.
+      </p>
       {error && <p role="alert">{error}</p>}
       {searched && results.length === 0 && (
         <p>

@@ -18,6 +18,37 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("heading", { name: "Imports", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Collapse sidebar" }),
+  ).toHaveText("");
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  const icons = await page.locator("aside nav .symbol").evaluateAll((nodes) =>
+    nodes.map((n) => {
+      const r = n.getBoundingClientRect();
+      return r.x + r.width / 2;
+    }),
+  );
+  expect(Math.max(...icons) - Math.min(...icons)).toBeLessThan(1);
+  await page.getByRole("button", { name: "Open sidebar search" }).click();
+  await page.route("**/api/v2/search?q=album%20query", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page
+    .getByRole("search")
+    .getByRole("textbox", { name: "Search music" })
+    .fill("album query");
+  await page
+    .getByRole("search")
+    .getByRole("textbox", { name: "Search music" })
+    .press("Enter");
+  await expect(page).toHaveURL(/search\?q=album%20query/);
+  await expect(page.getByLabel("Song, artist or Deezer song URL")).toHaveValue(
+    "album query",
+  );
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Imports" })
+    .click();
   await page.getByRole("link", { name: "New migration" }).click();
   await page
     .getByLabel("Apple Music or iTunes XML export")

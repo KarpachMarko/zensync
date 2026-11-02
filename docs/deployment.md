@@ -10,7 +10,7 @@ ZenSync now imports an Apple Music/iTunes XML snapshot, matches existing Navidro
    ZENSYNC_MUSIC_PATH=/path/to/your/music
    ```
 
-   The container sees this directory as `/music`. Navidrome can mount it at a different container path; both services must see the same directory contents. Do not use a separate empty music volume for ZenSync. Ensure UID/GID `10001:10001` can create the managed `ZenSync` subdirectory, and Navidrome can read it. The default `./music` path is useful only if Navidrome is also pointed at that directory.
+   The container sees this directory as `/music`. Navidrome can mount it at a different container path; both services must see the same directory contents. Do not use a separate empty music volume for ZenSync. Ensure UID/GID `10001:10001` can create artist and album directories, and Navidrome can read it. The default `./music` path is useful only if Navidrome is also pointed at that directory.
 
 2. Build and start:
 
@@ -50,7 +50,11 @@ No public URL environment variable is needed. A reverse proxy must preserve the 
 8. Track downloads and publication in **Activity**. Audio is staged under `/data/staging`, checked with ffprobe and a full ffmpeg audio decode, placed without overwriting existing files, then scanned and verified in Navidrome. A successful downloader process alone never means availability. Quality follows the request's saved order: lossless (`flac`), 320, 128; excluded qualities and alternate-track fallback are disabled.
 9. When ready, choose **Finish migration**. Handover is final and waits for any running collection writer. Outstanding acquisitions continue, but later arrivals no longer change playlists or favorites. The migration report retains unresolved entries.
 
-**Search** also accepts a title/artist query or a direct Deezer song URL. Select **Request** on a result; track ID, title and artist are fetched automatically. Deezer share links (`https://link.deezer.com/s/...`) are also resolved automatically. Album and playlist links are not accepted in the song field.
+**Search** also accepts a title/artist query or a direct Deezer song URL. Select **Request** on a result; track ID, title and artist are fetched automatically. Deezer share links (`https://link.deezer.com/s/...`) are also resolved automatically. Album links in Search show the album’s ordered tracks for individual requests; playlist links are not supported. Migration recording review still requires an individual song.
+
+New library files use `Album artist/Album/03 - Song.flac` (track number when available). Album artist and numbering come from validated audio tags; Unicode names are preserved and unsafe path characters are replaced. Disc folders are used when multiple discs are identified. Filename collisions receive a Deezer ID suffix, and a short checksum suffix if still necessary. Ordinary filenames contain no hashes. Internal staging names remain opaque. Existing assets, including the earlier `ZenSync/<id>/<hash>.flac` layout, keep their recorded paths and can be retried without moving or downloading again.
+
+The sidebar includes a compact search field. Enter navigates to `/search?q=...`; collapsed navigation uses aligned icons and an icon-only expand control.
 
 ## Conflicts, skip and recovery
 
@@ -60,7 +64,7 @@ No public URL environment variable is needed. A reverse proxy must preserve the 
 - Published names include a short `· ZenSync <id>` suffix. This gives uncertain playlist creation a unique recovery marker. Do not rename an actively managed playlist unless you want to pause migration updates.
 - Favorites are positive-only and applied once. Absent flags never unstar a song, and later publication does not undo a user's unfavorite. An uncertain favorite attempt enters review; the owner can keep its current remote state or explicitly retry once.
 - Failed acquisition tasks offer **Retry**. An interrupted transfer is retained as failed for explicit reconciliation. Valid staged audio is reused; invalid staged audio is discarded before retry. Atomic publication uses a temporary destination file and a no-overwrite hard link. Music filesystems must support hard links. Existing shared files are never replaced.
-- A missing/unwritable music mount is an error. Audio is not marked available until Navidrome returns the expected path and recording. Scan checks are spaced by at least 30 seconds and avoid starting another scan while one is active. After five minutes without a verified match, the task fails with mount/read-permission guidance and keeps the validated audio for retry. Docker logs include the job ID, scan status, expected relative file path and lookup candidate count.
+- A missing/unwritable music mount is an error. Audio is not marked available until ZenSync verifies the indexed original file. Navidrome normally returns a virtual path, so ZenSync checks the original download’s SHA-256 against the validated local file rather than requiring the reported path to equal its disk location. The service account needs download permission; verification streams the original without saving another copy. Scan checks are spaced by at least 30 seconds and avoid starting another scan while one is active. After five minutes without a verified match, the task fails with mount/read-permission guidance and keeps the validated audio for retry. Docker logs include the job ID, scan status, expected relative file path and lookup candidate count.
 - One worker processes durable migration/acquisition tasks. Work survives browser closure and restarts. On Linux, child downloaders receive a death signal if the service is killed. A normal shutdown cancels the child, closes HTTP and retains recoverable state.
 - Compare-before-write and read-back verification cannot eliminate a race with an external client editing during a remote write; Navidrome does not supply conditional revisions for this contract. Detected divergence is preserved for review.
 

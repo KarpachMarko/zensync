@@ -66,6 +66,16 @@ func (n *navFixture) handler(w http.ResponseWriter, r *http.Request) {
 	endpoint := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/rest/"), ".view")
 	out := map[string]any{"status": "ok", "version": "1.16.1", "serverVersion": "fixture"}
 	switch endpoint {
+	case "download":
+		song := n.songs[r.Form.Get("id")]
+		path := filepath.Join(n.music, filepath.FromSlash(song.Path))
+		data, e := os.ReadFile(path)
+		if e != nil {
+			http.Error(w, "missing", 404)
+			return
+		}
+		w.Write(data)
+		return
 	case "getUser":
 		out["user"] = map[string]any{"username": user, "adminRole": true}
 	case "search3":
@@ -73,7 +83,9 @@ func (n *navFixture) handler(w http.ResponseWriter, r *http.Request) {
 		q := strings.ToLower(r.Form.Get("query"))
 		for _, s := range n.songs {
 			if q == "" || strings.Contains(strings.ToLower(s.Title), q) {
-				songs = append(songs, s)
+				copy := s
+				copy.Path = "Virtual Artist/Album/01 - Song.flac"
+				songs = append(songs, copy)
 			}
 		}
 		out["searchResult3"] = map[string]any{"song": songs}
@@ -166,7 +178,7 @@ func TestMigrationAcquisitionAndPublication(t *testing.T) {
 	a.musicDir = filepath.Join(dir, "music")
 	os.Mkdir(a.musicDir, 0755)
 	audio := filepath.Join(dir, "fixture.flac")
-	cmd := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-metadata", "title=Second song", "-metadata", "artist=Test artist", "-metadata", "album=Test album", "-metadata", "SOURCEID=2", audio)
+	cmd := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-metadata", "title=Second song", "-metadata", "artist=Test artist", "-metadata", "album=Test album", "-metadata", "SOURCEID=2", "-metadata", "track=3", "-metadata", "album_artist=Album artist", audio)
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("fixture: %s %v", out, e)
 	}
@@ -308,6 +320,12 @@ func TestMigrationAcquisitionAndPublication(t *testing.T) {
 	if state != "available" {
 		t.Fatalf("acquisition: %s %s", state, stage)
 	}
+	var placed string
+	a.DB.QueryRow("SELECT file_path FROM assets LIMIT 1").Scan(&placed)
+	if placed != "Album artist/Test album/03 - Second song.flac" {
+		t.Fatalf("unreadable placement: %s", placed)
+	}
+
 	a.runMigrationTask(context.Background())
 	remote := nav.playlists[p.RemoteID]
 	if len(remote.Entries) != 3 || remote.Entries[0].ID != "A" || remote.Entries[1].ID != "B" || remote.Entries[2].ID != "A" {
@@ -497,5 +515,67 @@ func TestDeezerShareLinks(t *testing.T) {
 		if _, e = a.resolveDeezerID(context.Background(), "https://link.deezer.com/s/test"); e == nil {
 			t.Fatal("accepted unsafe or non-track redirect", dest)
 		}
+	}
+}
+
+func TestAlbumLinkSearch(t *testing.T) {
+	a, e := Open(filepath.Join(t.TempDir(), "db"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer a.DB.Close()
+	a.createAdmin("admin", "test-password-long")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/album/42":
+			send(w, 200, map[string]any{"id": 42, "title": "The album"})
+		case "/album/42/tracks":
+			send(w, 200, map[string]any{"data": []Track{makeTrack(1, "One"), makeTrack(2, "Two")}, "total": 2})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	a.deezerURL = server.URL
+	c := login(t, a, "admin")
+	w := c.call("GET", "/api/v2/search?q=https%3A%2F%2Fwww.deezer.com%2Falbum%2F42", "", "")
+	expect(t, w, 200)
+	var songs []Track
+	json.Unmarshal(w.Body.Bytes(), &songs)
+	if len(songs) != 2 || songs[0].Album.Title != "The album" {
+		t.Fatalf("bad album tracks %s", w.Body)
+	}
+}
+
+func TestReadablePathParts(t *testing.T) {
+	for _, s := range []string{"../escape", "AC/DC", "Artist: Name", "..", ""} {
+		part := pathPart(s, "Unknown")
+		if !safeRelativePath(part) {
+			t.Fatalf("unsafe part %q", part)
+		}
+	}
+	for _, s := range []string{"../bad", "/root/file", "Artist/../file", `Artist\file`} {
+		if safeRelativePath(s) {
+			t.Fatal("accepted", s)
+		}
+	}
+}
+
+func TestRealNavidromeAssetVerification(t *testing.T) {
+	base := os.Getenv("ZENSYNC_TEST_NAV_URL")
+	if base == "" {
+		t.Skip("run scripts/test-navidrome.py")
+	}
+	a, e := Open(filepath.Join(t.TempDir(), "db"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer a.DB.Close()
+	a.musicDir = os.Getenv("ZENSYNC_TEST_MUSIC")
+	c := Credentials{URL: base, Username: "navadmin", Password: os.Getenv("ZENSYNC_TEST_NAV_PASSWORD")}
+	track := makeTrack(1, "First song")
+	id, e := a.findPlaced(context.Background(), c, "first.flac", mustJSON(track))
+	if e != nil || id == "" {
+		t.Fatalf("real virtual-path verification failed: %v", e)
 	}
 }

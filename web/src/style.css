@@ -51,68 +51,157 @@ summary:focus-visible {
 }
 .shell {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 208px minmax(0, 1fr);
   min-height: 100vh;
 }
 .shell.collapsed {
-  grid-template-columns: 76px 1fr;
+  grid-template-columns: 60px minmax(0, 1fr);
 }
 aside {
   background: #1c2940;
   border-right: 1px solid #344157;
-  padding: 26px 18px;
+  padding: 12px 10px;
   display: flex;
   flex-direction: column;
   position: sticky;
   top: 0;
   height: 100vh;
+  gap: 12px;
+  min-width: 0;
 }
 .brand {
-  font-size: 23px;
+  font-size: 19px;
   font-weight: 700;
-  white-space: nowrap;
   color: #ecc7d9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
 }
 .collapse {
-  margin: 20px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  flex-shrink: 0;
 }
 nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 nav a {
-  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 8px;
   text-decoration: none;
   color: #adb8cb;
-  border-radius: 6px;
+  border-radius: 5px;
+  font-size: 14px;
 }
 nav a.active {
   background: #344157;
   color: #f3f2f8;
 }
 .symbol {
-  display: inline-block;
-  width: 27px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
-.collapsed .navtext,
-.collapsed .account strong,
-.collapsed .account small {
-  display: none;
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid #41516c;
+  border-radius: 5px;
+  height: 34px;
+  color: #adb8cb;
+  min-width: 0;
 }
-.collapsed aside {
-  padding: 26px 10px;
+.sidebar-search svg {
+  flex-shrink: 0;
 }
-.collapsed nav a {
-  padding: 10px 0;
+.sidebar-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  min-height: 0;
+  height: 28px;
+}
+.sidebar-search:focus-within {
+  outline: 2px solid #ecc7d9;
+}
+.sidebar-search input:focus-visible {
+  outline: none;
+}
+.sidebar-search-toggle {
+  width: 38px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
 }
 .account {
   margin-top: auto;
-  padding-top: 30px;
+  padding: 12px 0 0;
+  border-top: 1px solid #344157;
+}
+.account strong,
+.account small {
+  padding: 0 8px;
 }
 .account small {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+}
+.signout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  width: 100%;
+  min-height: 36px;
+  font-size: 13px;
+}
+.collapsed .navtext,
+.collapsed .account strong,
+.collapsed .account small,
+.collapsed .brand {
+  display: none;
+}
+.collapsed .sidebar-top {
+  justify-content: center;
+}
+.collapsed aside {
+  padding: 12px 10px;
+}
+.collapsed nav a {
+  justify-content: center;
+  padding: 8px 0;
+}
+.collapsed .signout {
+  justify-content: center;
+  padding: 6px 0;
 }
 main {
   padding: 28px 44px 70px;
@@ -310,49 +399,61 @@ form select {
 @media (max-width: 700px) {
   .shell,
   .shell.collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   aside,
   .collapsed aside {
     position: static;
     height: auto;
-    padding: 14px;
+    padding: 10px 14px;
+    gap: 8px;
   }
-  aside .brand {
-    font-size: 20px;
+  .sidebar-top .brand,
+  .collapsed .brand {
+    display: flex;
+  }
+  .collapsed .brand .navtext {
+    display: inline;
   }
   .collapse {
     display: none;
   }
-  aside nav {
-    display: flex;
-    flex-direction: row;
-    overflow: auto;
-    margin-top: 12px;
-  }
-  aside nav a {
-    font-size: 13px;
-    padding: 10px !important;
-    white-space: nowrap;
-  }
-  .collapsed .navtext {
-    display: inline;
-  }
-  .symbol {
+  .sidebar-search-toggle {
     display: none;
   }
+  aside nav {
+    flex-direction: row;
+    overflow: auto;
+    gap: 4px;
+  }
+  aside nav a,
+  .collapsed nav a {
+    padding: 8px;
+    min-height: 44px;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .collapsed nav .navtext {
+    display: inline;
+  }
   .account {
-    margin: 10px 0 0;
-    padding: 0;
+    padding-top: 6px;
     display: flex;
     align-items: center;
-    gap: 12px;
+  }
+  .account strong {
+    display: block;
   }
   .account small {
     display: none;
   }
-  .account .quiet {
+  .account .signout {
+    width: auto;
     margin-left: auto;
+  }
+  .collapsed .account strong,
+  .collapsed .signout .navtext {
+    display: inline;
   }
   main {
     padding: 24px 18px;

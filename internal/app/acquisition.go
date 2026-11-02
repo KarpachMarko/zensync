@@ -237,21 +237,14 @@ func (a *App) placeAudio(jid, target, source string, t Track, quality string) (s
 	if e != nil {
 		return "", e
 	}
-	rel := filepath.Join("ZenSync", fmt.Sprint(t.ID), checksum+filepath.Ext(source))
+	rel, e := a.libraryPath(source, t, checksum)
+	if e != nil {
+		return "", e
+	}
 	destination := filepath.Join(a.musicDir, rel)
 	dir := filepath.Dir(destination)
-	// Check every existing component to reject symlink escapes from the managed subtree.
-	for _, path := range []string{filepath.Join(a.musicDir, "ZenSync"), dir} {
-		info, err := os.Lstat(path)
-		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return "", errors.New("Managed music destination is unsafe")
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return "", err
-		}
-		if err = os.MkdirAll(path, 0755); err != nil {
-			return "", errors.New("Music mount is not writable by ZenSync")
-		}
+	if e = a.ensureMusicDirs(filepath.Dir(rel)); e != nil {
+		return "", e
 	}
 	a.jobState(jid, "importing", "Copying validated audio into the shared music library")
 	if info, statErr := os.Lstat(destination); statErr == nil {
@@ -311,7 +304,7 @@ func (a *App) placeAudio(jid, target, source string, t Track, quality string) (s
 	return filepath.ToSlash(rel), nil
 }
 func (a *App) verifyPlaced(rel, metadata, quality string) error {
-	if filepath.IsAbs(rel) || strings.Contains(rel, "..") || !strings.HasPrefix(rel, "ZenSync/") {
+	if !safeRelativePath(rel) {
 		return errors.New("Invalid placed asset path")
 	}
 	var t Track
@@ -343,9 +336,21 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 		if pathMatches && !trackMatches(t, s) {
 			slog.Warn("Navidrome file metadata differs from approved recording", "song_id", s.ID, "file_path", path)
 		}
-		if pathMatches && trackMatches(t, s) {
+		// Navidrome normally reports virtual paths. Verify original bytes rather
+		// than trusting a virtual filename or metadata-only coincidence.
+		matched, err := a.sameRemoteAudio(ctx, c, s, rel)
+		if err != nil {
+			return "", err
+		}
+		if matched {
+			if !trackMatches(t, s) {
+				slog.Warn("Navidrome metadata differs but original audio bytes match", "song_id", s.ID)
+			}
+			slog.Info("Navidrome asset verified", "song_id", s.ID, "file_path", rel, "reported_path", path)
 			return s.ID, nil
 		}
+		slog.Warn("Navidrome candidate has different file content", "song_id", s.ID, "reported_path", path)
+
 	}
 	return "", nil
 }
@@ -392,4 +397,37 @@ func diskHeadroom(path string, minimum uint64) error {
 		return errors.New("Insufficient free disk space; free storage before retrying")
 	}
 	return nil
+}
+
+func (a *App) sameRemoteAudio(ctx context.Context, c Credentials, s Song, rel string) (bool, error) {
+	local := filepath.Join(a.musicDir, filepath.FromSlash(rel))
+	info, e := os.Stat(local)
+	if e != nil {
+		return false, errors.New("Validated local file is missing")
+	}
+	if s.Size > 0 && s.Size != info.Size() {
+		return false, nil
+	}
+	checksum, e := hashFile(local)
+	if e != nil {
+		return false, e
+	}
+	resp, e := a.navRaw(ctx, c, "download", mapValues("id", s.ID))
+	if e != nil {
+		return false, e
+	}
+	defer resp.Body.Close()
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "json") || strings.Contains(contentType, "xml") {
+		return false, errors.New("Navidrome returned an API error instead of original audio; check the service account's download permission")
+	}
+	if resp.StatusCode != 200 {
+		return false, errors.New("Navidrome original-file verification failed; allow downloads for the service account")
+	}
+	h := sha256.New()
+	n, e := io.Copy(h, io.LimitReader(resp.Body, info.Size()+1))
+	if e != nil {
+		return false, errors.New("Could not verify original audio from Navidrome; check download permission and connectivity")
+	}
+	return n == info.Size() && hex.EncodeToString(h.Sum(nil)) == checksum, nil
 }
