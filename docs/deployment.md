@@ -112,18 +112,18 @@ Restore the contents into an empty data volume using the same image version and 
 ## Development and verification
 
 ```sh
-npm --prefix web ci
-npm --prefix web run build
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web run build
 go test -race ./...
 go vet ./...
 go run ./cmd/zensync
 ```
 
-Go serves the built UI. For Vite development, `npm --prefix web run dev` proxies `/api` to Go. Local acquisition additionally needs d-fi 2.3.5, ffprobe and writable music storage; Docker bundles the tooling.
+Go serves the built UI. For Vite development, `pnpm --dir web run dev` proxies `/api` to Go. Local acquisition additionally needs d-fi 2.3.5, ffprobe and writable music storage; Docker bundles the tooling.
 
 ```sh
-npm --prefix web exec -- playwright install chromium
-npm --prefix web run test:e2e
+pnpm --dir web exec playwright install chromium
+pnpm --dir web run test:e2e
 docker build -t zensync:migration-test .
 docker pull deluan/navidrome:0.64.2
 python3 scripts/test-navidrome.py

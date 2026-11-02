@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 FROM node:24.13.0-alpine AS web
 WORKDIR /src/web
-COPY web/package*.json ./
-RUN npm ci
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 FROM golang:1.26.0-alpine AS downloader
 RUN apk add --no-cache git

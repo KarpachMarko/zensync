@@ -24,14 +24,13 @@ See [deployment and first-migration instructions](docs/deployment.md) and the [s
 
 Phase 2 adds followed-artist new-release notifications, without automatic downloads. Public playlist links and extra import formats are outside phase 1. ZenSync is not a playback engine, client gateway or ongoing playlist/favorites editor.
 
+## Development
+
+Use **pnpm** for frontend dependencies and scripts. See [frontend structure and component conventions](web/README.md).
+
 ## Start here
 
 - [Authoritative implementation plan](docs/implementation-plan.md)
 - [Multi-user permissions and request workflow](docs/multi-user-design.md)
 - [Historical source investigation and preliminary assessment](docs/assessment.md)
-- [Earlier compact detail mockups](mockups/details/index.html)
-- [Mockup instructions and validation](mockups/details/README.md)
-
-Open mockup HTML directly; no server or build step is required. Use Preview as to compare sample admin/member behavior. Mockups have not yet been adapted to the revised migration/acquisition boundary, quality profiles or handover rules. The earlier sets under `mockups/revised/` and `mockups/` remain design history.
-
 The original single-user effort estimate is superseded. Establish the supported integration contract and recovery behavior in the first executable slice, then estimate the remaining phase 1 milestones.
