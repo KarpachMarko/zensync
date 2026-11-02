@@ -388,6 +388,9 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	a.fulfill(jid, rid, target, songID)
 }
 func (a *App) jobState(jid, state, message string) {
+	if state != "downloading" {
+		a.clearTransfer(jid)
+	}
 	var previous, previousMessage string
 	if e := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE id=?", jid).Scan(&previous, &previousMessage); e != nil {
 		slog.Error("job state lookup failed", "job_id", jid)

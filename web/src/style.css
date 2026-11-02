@@ -727,33 +727,47 @@ h3 {
   margin: 0 0 18px;
   font-size: 14px;
 }
+.transfer-progress {
+  margin: 6px 0 14px;
+}
 .active-progress {
   display: block;
+  position: relative;
   width: 100%;
   height: 6px;
-  margin: 6px 0 14px;
-  border: 0;
   border-radius: 3px;
   overflow: hidden;
-  accent-color: #b5c9e3;
   background: #29384f;
 }
-.active-progress::-webkit-progress-bar {
-  background: #29384f;
+.active-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #b5c9e3;
+  transition: width 250ms ease;
 }
-.active-progress:indeterminate::-webkit-progress-inner-element {
-  background: linear-gradient(90deg, #29384f 0%, #859cbd 50%, #29384f 100%);
-  background-size: 200% 100%;
-  animation: active-progress 2s linear infinite;
+.active-progress.indeterminate .active-progress-fill {
+  width: 38%;
+  animation: active-progress 1.4s ease-in-out infinite;
+}
+.transfer-stats {
+  display: block;
+  margin-top: 5px;
+  color: #adb8cb;
+  font-variant-numeric: tabular-nums;
 }
 @keyframes active-progress {
+  from {
+    transform: translateX(-110%);
+  }
   to {
-    background-position: -200% 0;
+    transform: translateX(370%);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .active-progress:indeterminate::-webkit-progress-inner-element {
+  .active-progress.indeterminate .active-progress-fill {
     animation: none;
+    transform: translateX(80%);
   }
 }
 .activity-item .row {

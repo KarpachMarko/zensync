@@ -24,6 +24,9 @@ import (
 var schema string
 
 type App struct {
+	transferMu sync.Mutex
+	transfers  map[string]TransferProgress
+
 	albumMu          sync.Mutex
 	activeOwners     map[string]int
 	scanRequestedAt  time.Time
@@ -57,21 +60,22 @@ type User struct {
 	Quality      json.RawMessage `json:"quality"`
 }
 type Request struct {
-	State      string          `json:"state"`
-	Detail     string          `json:"detail,omitempty"`
-	Kind       string          `json:"kind"`
-	TrackCount int             `json:"trackCount,omitempty"`
-	Items      []AlbumItem     `json:"items,omitempty"`
-	ID         string          `json:"id"`
-	Owner      string          `json:"owner"`
-	Target     string          `json:"target"`
-	Title      string          `json:"title"`
-	Artist     string          `json:"artist"`
-	Upgrade    bool            `json:"upgrade"`
-	Quality    json.RawMessage `json:"quality"`
-	Decision   string          `json:"decision"`
-	Reason     string          `json:"reason"`
-	Created    string          `json:"created"`
+	Transfer   *TransferProgress `json:"transfer,omitempty"`
+	State      string            `json:"state"`
+	Detail     string            `json:"detail,omitempty"`
+	Kind       string            `json:"kind"`
+	TrackCount int               `json:"trackCount,omitempty"`
+	Items      []AlbumItem       `json:"items,omitempty"`
+	ID         string            `json:"id"`
+	Owner      string            `json:"owner"`
+	Target     string            `json:"target"`
+	Title      string            `json:"title"`
+	Artist     string            `json:"artist"`
+	Upgrade    bool              `json:"upgrade"`
+	Quality    json.RawMessage   `json:"quality"`
+	Decision   string            `json:"decision"`
+	Reason     string            `json:"reason"`
+	Created    string            `json:"created"`
 }
 
 func Open(path string) (*App, error) {

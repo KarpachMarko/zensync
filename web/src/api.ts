@@ -68,3 +68,11 @@ export function requestKey() {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+export type TransferProgress = {
+  percent?: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  bytesPerSecond?: number;
+  updatedAt: string;
+};

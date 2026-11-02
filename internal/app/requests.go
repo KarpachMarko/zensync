@@ -86,6 +86,14 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 			}
 		} else {
 			out[index].Kind = "track"
+			if out[index].State == "downloading" {
+				var job string
+				if err := a.DB.QueryRow("SELECT id FROM jobs WHERE request_id=?", out[index].ID).Scan(&job); err != nil && err != sql.ErrNoRows {
+					a.internal(w, err)
+					return
+				}
+				out[index].Transfer = a.transfer(job, out[index].State)
+			}
 		}
 	}
 	send(w, 200, out)
@@ -299,14 +307,18 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		return
 	}
 	defer rows.Close()
-	out := []map[string]string{}
+	out := []map[string]any{}
 	for rows.Next() {
 		var id, title, state, stage, created string
 		if e = rows.Scan(&id, &title, &state, &stage, &created); e != nil {
 			a.internal(w, e)
 			return
 		}
-		out = append(out, map[string]string{"id": id, "title": title, "state": state, "stage": stage, "created": created})
+		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
+		if transfer := a.transfer(id, state); transfer != nil {
+			item["transfer"] = transfer
+		}
+		out = append(out, item)
 	}
 	if e = rows.Err(); e != nil {
 		a.internal(w, e)

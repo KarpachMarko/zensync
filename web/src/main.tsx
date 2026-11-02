@@ -20,6 +20,7 @@ import {
 } from "./status";
 import { DeletionKeys } from "./deletions";
 import { DownloadSettings } from "./downloads";
+import type { TransferProgress } from "./api";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
 import { Imports, NewImport, MigrationPage } from "./imports";
@@ -32,11 +33,18 @@ type User = {
   quality: string[];
 };
 type Request = {
+  transfer?: TransferProgress;
   state: string;
   kind: string;
   detail?: string;
   trackCount?: number;
-  items?: { title: string; artist: string; state: string; detail: string }[];
+  items?: {
+    title: string;
+    artist: string;
+    state: string;
+    detail: string;
+    transfer?: TransferProgress;
+  }[];
   id: string;
   owner: string;
   title: string;
@@ -374,7 +382,11 @@ function Requests({ user }: { user: User }) {
                     </div>
                     <StatusBadge state={r.state || r.decision} />
                   </div>
-                  <ActiveProgress state={r.state} title={r.title} />
+                  <ActiveProgress
+                    state={r.state}
+                    title={r.title}
+                    transfer={r.transfer}
+                  />
                   {r.kind === "album" && (
                     <details>
                       <summary>
@@ -388,17 +400,24 @@ function Requests({ user }: { user: User }) {
                         quality preference.
                       </p>
                       {r.items?.map((i, index) => (
-                        <div className="row" key={index}>
-                          <div>
-                            <strong>
-                              {index + 1}. {i.title}
-                            </strong>
-                            <small>
-                              {i.artist}
-                              {i.detail ? " / " + i.detail : ""}
-                            </small>
+                        <div key={index}>
+                          <div className="row">
+                            <div>
+                              <strong>
+                                {index + 1}. {i.title}
+                              </strong>
+                              <small>
+                                {i.artist}
+                                {i.detail ? " / " + i.detail : ""}
+                              </small>
+                            </div>
+                            <StatusBadge state={i.state} />
                           </div>
-                          <StatusBadge state={i.state} />
+                          <ActiveProgress
+                            state={i.state}
+                            title={i.title}
+                            transfer={i.transfer}
+                          />
                         </div>
                       ))}
                     </details>
@@ -477,7 +496,13 @@ function Requests({ user }: { user: User }) {
 }
 function Activity({ admin }: { admin: boolean }) {
   const [rows, setRows] = useState<
-      { id: string; title: string; state: string; stage: string }[]
+      {
+        id: string;
+        title: string;
+        state: string;
+        stage: string;
+        transfer?: TransferProgress;
+      }[]
     >([]),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
@@ -549,7 +574,11 @@ function Activity({ admin }: { admin: boolean }) {
                       )}
                     </div>
                   </div>
-                  <ActiveProgress state={r.state} title={r.title} />
+                  <ActiveProgress
+                    state={r.state}
+                    title={r.title}
+                    transfer={r.transfer}
+                  />
                 </div>
               ))}
             </StatusSection>

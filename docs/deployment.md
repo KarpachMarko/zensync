@@ -20,7 +20,7 @@ ZenSync now imports an Apple Music/iTunes XML snapshot, matches existing Navidro
 
 3. Open `http://<server-ip>:8080`. On an empty database, the first page asks you to create the administrator account. There is no bootstrap password/hash environment variable. Setup closes atomically after the first administrator is created. Existing databases keep their accounts and passwords; upgrading never resets them.
 
-The image includes the API, compiled UI, **d-fi 2.3.5**, ffmpeg/ffprobe, CA certificates and time zone data. d-fi is built from release commit `fa5612209bccf3ec64aae518c76bf86dcc63c7b8`; its MIT license is included in the image. See the [pinned d-fi source](https://github.com/d-fi/GoFi/tree/fa5612209bccf3ec64aae518c76bf86dcc63c7b8).
+The image includes the API, compiled UI, **d-fi 2.3.5**, ffmpeg/ffprobe, CA certificates and time zone data. d-fi is built from release commit `fa5612209bccf3ec64aae518c76bf86dcc63c7b8`; its MIT license is included in the image. A small source adapter exposes its existing byte-progress callbacks to ZenSync; the downloader still runs in an isolated process. See the [pinned d-fi source](https://github.com/d-fi/GoFi/tree/fa5612209bccf3ec64aae518c76bf86dcc63c7b8).
 
 Compose runs as UID/GID 10001 with a read-only application filesystem, dropped capabilities, a persistent named `/data` volume, a shared `/music` bind mount and temporary `/tmp`. Keep your existing `/data` mount when upgrading. You may replace the named volume with your established local-disk bind mount, provided it is writable by UID 10001. Do not place the SQLite database on NFS/SMB or run multiple replicas against it; a service lock prevents concurrent owners.
 
@@ -32,7 +32,7 @@ Open **Settings → Connections**:
 
 1. **Shared Navidrome server:** enter its base URL and a service account with shared-library access and scan permission. Use a hostname reachable from the container, such as `http://navidrome:4533` on a shared Docker network, or your server's LAN address. `localhost` inside ZenSync refers to the ZenSync container. Saving verifies the account through OpenSubsonic.
 2. **Your personal Navidrome account:** link the existing Navidrome account that should own imported playlists/favorites. ZenSync never falls back to the service account for those writes. It is fine to use the same account for both roles in a single-user installation, but enter both links explicitly.
-3. **Deezer acquisition:** save the ARL cookie from the Deezer account you use with d-fi. The cookie is verified by d-fi during acquisition. ZenSync uses encrypted storage and creates a mode-0600 per-job config while the downloader runs. It never puts the ARL in command-line arguments or returns it to the browser. Raw downloader output is discarded to avoid leaking credentials.
+3. **Deezer acquisition:** save the ARL cookie from the Deezer account you use with d-fi. The cookie is verified by d-fi during acquisition. ZenSync uses encrypted storage and creates a mode-0600 per-job config while the downloader runs. It never puts the ARL in command-line arguments or returns it to the browser. Raw downloader output is discarded to avoid leaking credentials; only bounded, validated numeric transfer records and fixed phase names from the adapter are accepted.
 
 After migrations exist, changing the shared server URL is rejected. After a migration has bound its personal account, that account identity cannot be changed underneath it. Passwords can be refreshed for the same account.
 
@@ -134,3 +134,11 @@ Go tests cover legacy relocation, restart recovery, collision protection, admin-
 ## Removing shared music
 
 Use Library → Request deletion, or Delete song when you have the separate deletion permission. Administrators review pending deletions in Requests and manage the grant in Settings → Users. Settings → API keys creates scoped keys for external deletion clients. See the [deletion API and recovery guide](deletion-api.md) for endpoints, storage requirements and recovery instructions. Navidrome keeps its read-only music mount.
+
+## Download progress
+
+Activity and individual song requests show byte-based download percentage, transferred/total bytes, and transfer speed when the bundled downloader reports them. Album requests show these metrics on their individual tracks. Transfer percentage describes the network download only; decryption, tagging, validation, placement, and Navidrome indexing continue afterward with an animated running bar. All work with an unknown percentage uses the same animated bar, with a visible static fill when reduced motion is enabled.
+
+A custom stock d-fi executable remains supported, with indeterminate progress. Use the updated Docker image to enable the source adapter. Live transfer samples are in memory, reset per attempt/quality and cleared on phase changes; a resumed file's existing bytes do not inflate speed. Four seconds without samples reports zero speed. The UI polls updates every few seconds. Completion still requires validation and verified Navidrome availability.
+
+Native `/api/v2/activity` items, song `/api/v2/requests` items and album request tracks may include a `transfer` object while downloading: `percent` (omitted when total is unknown), `downloadedBytes`, `totalBytes` (0 if unknown), `bytesPerSecond` (omitted until two samples), and `updatedAt` (RFC 3339). Metrics follow the existing per-user authorization. No estimated percentages are invented for migration, scanning or processing.

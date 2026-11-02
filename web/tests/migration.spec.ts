@@ -401,6 +401,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     candidates.getByText("Import recording", { exact: true }),
   ).toBeVisible();
 
+  let showTransfer = false;
   await page.route("**/api/v2/activity", (route) =>
     route.fulfill({
       json: [
@@ -409,6 +410,15 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
           title: "Downloading song",
           state: "downloading",
           stage: "Downloading audio",
+          transfer: showTransfer
+            ? {
+                percent: 37.5,
+                downloadedBytes: 3145728,
+                totalBytes: 8388608,
+                bytesPerSecond: 2097152,
+                updatedAt: new Date().toISOString(),
+              }
+            : undefined,
         },
         {
           id: "queue",
@@ -433,6 +443,38 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   );
   await page.goto("/activity");
   await expect(page.getByRole("progressbar")).toHaveCount(1);
+  const running = page.getByRole("progressbar", {
+    name: "Downloading song: downloading",
+  });
+  await expect(running).not.toHaveAttribute("aria-valuenow");
+  const fill = running.locator(".active-progress-fill");
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("active-progress");
+  expect(
+    await fill.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeGreaterThan(0);
+  showTransfer = true;
+  await page.reload();
+  await expect(running).toHaveAttribute("aria-valuenow", "37.5");
+  await expect(
+    page.getByText("37% · 3.0 MiB / 8.0 MiB · 2.0 MiB/s"),
+  ).toBeVisible();
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("none");
+  showTransfer = false;
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(running).not.toHaveAttribute("aria-valuenow");
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("none");
+  expect(
+    await fill.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
   await expect(page.getByText("Queued song", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Finished song", { exact: true }),

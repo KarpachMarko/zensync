@@ -1,0 +1,63 @@
+package dfi
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/d-fi/GoFi/download"
+	"github.com/d-fi/GoFi/types"
+)
+
+func TestZenSyncProgressProtocol(t *testing.T) {
+	t.Setenv("ZENSYNC_PROGRESS", "1")
+	original := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = original; r.Close(); w.Close() }()
+	hooks := zenSyncDownloadHooks("")
+	hooks.Progress(types.TrackType{}, 50, 100)
+	hooks.Status("Tagging private title that must not enter telemetry")
+	w.Close()
+	os.Stdout = original
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []string{}
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "ZENSYNC_TRANSFER ") {
+			records = append(records, line)
+		}
+	}
+	if len(records) != 2 || records[0] != `ZENSYNC_TRANSFER {"phase":"download","downloaded":50,"total":100}` || records[1] != `ZENSYNC_TRANSFER {"phase":"tagging","downloaded":0,"total":0}` {
+		t.Fatalf("Unexpected telemetry: %v", records)
+	}
+}
+
+func TestZenSyncProgressCountsHTTPBytes(t *testing.T) {
+	payload := strings.Repeat("audio", 30000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, payload) }))
+	defer server.Close()
+	var read, total int64
+	path := filepath.Join(t.TempDir(), "audio")
+	err := downloadToTemp(context.Background(), &download.TrackDownloadUrl{TrackUrl: server.URL, FileSize: int64(len(payload))}, path, func(r, t int64) { read, total = r, t })
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != payload || read != int64(len(payload)) || total != int64(len(payload)) {
+		t.Fatalf("Incorrect transfer bytes: %d/%d", read, total)
+	}
+}
