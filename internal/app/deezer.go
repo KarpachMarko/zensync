@@ -138,6 +138,15 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.HasPrefix(resource, "album:") {
+			if r.URL.Query().Get("details") == "1" {
+				album, e := a.albumSnapshot(r.Context(), strings.TrimPrefix(resource, "album:"))
+				if e != nil {
+					fail(w, 502, e.Error())
+					return
+				}
+				send(w, 200, map[string]any{"tracks": album.Tracks, "album": map[string]any{"id": album.ID, "title": album.Title, "artist": album.Artist, "trackCount": len(album.Tracks)}})
+				return
+			}
 			tracks, e := a.albumTracks(r.Context(), strings.TrimPrefix(resource, "album:"))
 			if e != nil {
 				fail(w, 502, e.Error())
@@ -235,6 +244,9 @@ func (a *App) resolveDeezerResource(ctx context.Context, input string) (string, 
 }
 
 func deezerResourceID(input string) (string, error) {
+	if strings.HasPrefix(input, "deezer:album:") && digits.MatchString(strings.TrimPrefix(input, "deezer:album:")) {
+		return "album:" + strings.TrimPrefix(input, "deezer:album:"), nil
+	}
 	if id, e := deezerID(input); e == nil {
 		return id, nil
 	}

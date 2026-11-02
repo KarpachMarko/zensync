@@ -48,16 +48,19 @@ type User struct {
 	Quality  json.RawMessage `json:"quality"`
 }
 type Request struct {
-	ID       string          `json:"id"`
-	Owner    string          `json:"owner"`
-	Target   string          `json:"target"`
-	Title    string          `json:"title"`
-	Artist   string          `json:"artist"`
-	Upgrade  bool            `json:"upgrade"`
-	Quality  json.RawMessage `json:"quality"`
-	Decision string          `json:"decision"`
-	Reason   string          `json:"reason"`
-	Created  string          `json:"created"`
+	Kind       string          `json:"kind"`
+	TrackCount int             `json:"trackCount,omitempty"`
+	Items      []AlbumItem     `json:"items,omitempty"`
+	ID         string          `json:"id"`
+	Owner      string          `json:"owner"`
+	Target     string          `json:"target"`
+	Title      string          `json:"title"`
+	Artist     string          `json:"artist"`
+	Upgrade    bool            `json:"upgrade"`
+	Quality    json.RawMessage `json:"quality"`
+	Decision   string          `json:"decision"`
+	Reason     string          `json:"reason"`
+	Created    string          `json:"created"`
 }
 
 func Open(path string) (*App, error) {

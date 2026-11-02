@@ -30,7 +30,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   );
   expect(Math.max(...icons) - Math.min(...icons)).toBeLessThan(1);
   await page.getByRole("button", { name: "Open sidebar search" }).click();
-  await page.route("**/api/v2/search?q=album%20query", (route) =>
+  await page.route("**/api/v2/search?q=album%20query*", (route) =>
     route.fulfill({ json: [] }),
   );
   await page
@@ -42,7 +42,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByRole("textbox", { name: "Search music" })
     .press("Enter");
   await expect(page).toHaveURL(/search\?q=album%20query/);
-  await expect(page.getByLabel("Song, artist or Deezer song URL")).toHaveValue(
+  await expect(page.getByLabel("Song, artist or Deezer URL")).toHaveValue(
     "album query",
   );
   await page
@@ -87,11 +87,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.goto("/requests");
   await expect(page.getByLabel("Deezer track ID")).toHaveCount(0);
   await page
-    .getByRole("link", { name: "Search or paste a Deezer song URL" })
+    .getByRole("link", { name: "Search or paste a Deezer link" })
     .click();
-  await expect(
-    page.getByLabel("Song, artist or Deezer song URL"),
-  ).toBeVisible();
+  await expect(page.getByLabel("Song, artist or Deezer URL")).toBeVisible();
   // Controlled metadata response verifies direct-link selection without a Deezer account.
   await page.route("**/api/v2/search?**", (route) =>
     route.fulfill({
@@ -108,7 +106,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     }),
   );
   await page
-    .getByLabel("Song, artist or Deezer song URL")
+    .getByLabel("Song, artist or Deezer URL")
     .fill("https://www.deezer.com/track/2");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(
@@ -126,6 +124,103 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("button", { name: "Requested", exact: true }),
   ).toBeDisabled();
+  let albumDecision = "awaiting_approval";
+  let approvals = 0;
+  const albumTracks = [
+    {
+      id: 11,
+      title: "Album song one",
+      duration: 120,
+      title_version: "",
+      artist: { name: "Artist" },
+      album: { title: "The album" },
+    },
+    {
+      id: 12,
+      title: "Album song two",
+      duration: 140,
+      title_version: "",
+      artist: { name: "Artist" },
+      album: { title: "The album" },
+    },
+  ];
+  await page.route("**/api/v2/search?**", async (route) => {
+    if (
+      new URL(route.request().url()).searchParams
+        .get("q")
+        ?.includes("/album/42")
+    )
+      await route.fulfill({
+        json: {
+          tracks: albumTracks,
+          album: {
+            id: 42,
+            title: "The album",
+            artist: { name: "Artist" },
+            trackCount: 2,
+          },
+        },
+      });
+    else await route.fallback();
+  });
+  await page.route("**/api/v2/requests", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        target: "deezer:album:42",
+      });
+      await route.fulfill({ status: 201, json: { id: "fixture-album" } });
+    } else
+      await route.fulfill({
+        json: [
+          {
+            id: "fixture-album",
+            owner: "admin",
+            title: "The album",
+            artist: "Artist",
+            target: "deezer:album:42",
+            kind: "album",
+            trackCount: 2,
+            decision: albumDecision,
+            quality: ["lossless", "320", "128"],
+            items: albumTracks.map((t) => ({
+              title: t.title,
+              artist: "Artist",
+              state:
+                albumDecision === "approved" ? "blocked" : "awaiting_approval",
+              detail: "",
+            })),
+          },
+        ],
+      });
+  });
+  await page
+    .getByLabel("Song, artist or Deezer URL")
+    .fill("https://www.deezer.com/album/42");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "The album", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Request album", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Album requested", exact: true }),
+  ).toBeDisabled();
+  await page.route("**/api/v2/requests/fixture-album", async (route) => {
+    approvals++;
+    expect(route.request().postDataJSON().decision).toBe("approved");
+    albumDecision = "approved";
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/requests");
+  await expect(page.locator("article.request")).toHaveCount(1);
+  await page.getByText("2 tracks · 0 available").click();
+  await expect(page.getByText("1. Album song one")).toBeVisible();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Approve", exact: true }),
+  ).toHaveCount(0);
+  expect(approvals).toBe(1);
   await page.goto("/settings/connections");
   await expect(
     page.getByRole("heading", { name: "Your personal Navidrome account" }),

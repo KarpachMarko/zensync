@@ -135,6 +135,7 @@ type RemotePlaylist struct {
 	Entries []Song `json:"entry"`
 }
 type NavResponse struct {
+	Type          string `json:"type"`
 	Status        string `json:"status"`
 	Version       string `json:"version"`
 	ServerVersion string `json:"serverVersion"`

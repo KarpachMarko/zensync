@@ -643,3 +643,29 @@ h3 {
     gap: 8px;
   }
 }
+
+.album-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid #41516c;
+  border-bottom: 1px solid #41516c;
+  margin: 20px 0;
+}
+.album-result h2 {
+  margin: 0;
+}
+.album-result p {
+  margin: 6px 0;
+}
+.album-result button {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .album-result {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

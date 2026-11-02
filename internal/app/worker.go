@@ -34,11 +34,18 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 				return
 			case <-ticker.C:
 			}
+			if e := a.scheduleRelocations(); e != nil {
+				slog.Error("legacy relocation scheduling failed")
+			}
+			if a.runRelocation(ctx) {
+				continue
+			}
 			a.runMigrationTask(ctx)
 			if ctx.Err() != nil {
 				return
 			}
 			a.runAcquisition(ctx)
+			a.refreshAlbums()
 		}
 	}()
 	return done
@@ -88,6 +95,28 @@ func (a *App) runMigrationTask(ctx context.Context) {
 }
 func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 	tid := strings.TrimPrefix(r.URL.Path, "/api/v2/tasks/")
+	var relocationState string
+	if e := a.DB.QueryRow("SELECT state FROM asset_relocations WHERE id=?", tid).Scan(&relocationState); e == nil {
+		if u.Role != "admin" {
+			fail(w, 404, "Task not found")
+			return
+		}
+		a.opMu.Lock()
+		defer a.opMu.Unlock()
+		result, e := a.DB.Exec("UPDATE asset_relocations SET state=resume_state,checked_at=0,started_at=unixepoch(),message='Relocation retry requested' WHERE id=? AND state='failed'", tid)
+		if e != nil {
+			a.internal(w, e)
+			return
+		}
+		n, _ := result.RowsAffected()
+		if n != 1 {
+			fail(w, 409, "Only failed relocations can be retried")
+			return
+		}
+		send(w, 200, map[string]bool{"ok": true})
+		return
+	}
+
 	tx, e := a.DB.Begin()
 	if e != nil {
 		a.internal(w, e)
@@ -116,6 +145,23 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 409, "Only blocked or failed tasks can be retried")
 			return
 		}
+		var parent string
+		if err := tx.QueryRow("SELECT a.request_id FROM album_requests a JOIN jobs j ON j.request_id=a.request_id WHERE j.id=?", tid).Scan(&parent); err == nil {
+			var decision string
+			if e = tx.QueryRow("SELECT decision FROM requests WHERE id=?", parent).Scan(&decision); e != nil {
+				a.internal(w, e)
+				return
+			}
+			if decision != "approved" {
+				fail(w, 409, "The album must be approved before retrying")
+				return
+			}
+			e = a.retryAlbum(tx, parent)
+			if e != nil {
+				a.internal(w, e)
+				return
+			}
+		}
 		_, e = tx.Exec("DELETE FROM scan_waits WHERE job_id=?", tid)
 		if e == nil {
 			_, e = tx.Exec("DELETE FROM scan_schedule WHERE job_id=?", tid)
@@ -136,7 +182,7 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 func (a *App) runAcquisition(ctx context.Context) {
 	var jid, rid, owner, target, quality, reason, actor string
 	var upgrade bool
-	e := a.DB.QueryRow(`SELECT j.id,r.id,r.owner,r.target,r.quality,r.reason,r.upgrade,COALESCE(r.actor,'') FROM jobs j JOIN requests r ON r.id=j.request_id LEFT JOIN scan_schedule sc ON sc.job_id=j.id WHERE r.decision='approved' AND j.state IN ('queued','blocked','awaiting_scan','deferred') AND (j.state<>'awaiting_scan' OR COALESCE(sc.checked_at,0)<unixepoch()-30) ORDER BY j.rowid LIMIT 1`).Scan(&jid, &rid, &owner, &target, &quality, &reason, &upgrade, &actor)
+	e := a.DB.QueryRow(`SELECT j.id,r.id,r.owner,r.target,r.quality,r.reason,r.upgrade,COALESCE(r.actor,'') FROM jobs j JOIN requests r ON r.id=j.request_id LEFT JOIN scan_schedule sc ON sc.job_id=j.id WHERE r.decision='approved' AND r.target NOT LIKE 'deezer:album:%' AND NOT EXISTS(SELECT 1 FROM request_children cc JOIN requests pp ON pp.id=cc.parent_id WHERE cc.child_id=r.id AND pp.decision<>'approved') AND j.state IN ('queued','blocked','awaiting_scan','deferred') AND (j.state<>'awaiting_scan' OR COALESCE(sc.checked_at,0)<unixepoch()-30) ORDER BY j.rowid LIMIT 1`).Scan(&jid, &rid, &owner, &target, &quality, &reason, &upgrade, &actor)
 	if e != nil {
 		return
 	}
@@ -154,6 +200,24 @@ func (a *App) runAcquisition(ctx context.Context) {
 		return
 	}
 	if reason == "Allowed without approval" && actor == "" && role != "admin" && !direct {
+		var parent string
+		if a.DB.QueryRow("SELECT parent_id FROM request_children WHERE child_id=?", rid).Scan(&parent) == nil {
+			tx, e := a.DB.Begin()
+			if e != nil {
+				return
+			}
+			defer tx.Rollback()
+			if _, e = tx.Exec("UPDATE requests SET decision='awaiting_approval',reason='Permission changed; album approval required' WHERE id=? OR id IN (SELECT child_id FROM request_children WHERE parent_id=?)", parent, parent); e != nil {
+				return
+			}
+			if _, e = tx.Exec("UPDATE jobs SET state='blocked',stage='Album requires administrator approval after permission change' WHERE request_id=?", parent); e != nil {
+				return
+			}
+			if e = tx.Commit(); e != nil {
+				return
+			}
+			return
+		}
 		_, _ = a.DB.Exec("UPDATE requests SET decision='awaiting_approval',reason='Permission changed; administrator approval required' WHERE id=?", rid)
 		a.jobState(jid, "blocked", "Awaiting approval after permission change")
 		return
