@@ -1,7 +1,18 @@
 import React, { useEffect, useState, useRef } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { api, Track, LibrarySong, label, time, requestKey } from "./api";
+type FoundAlbum = {
+  id: number;
+  title: string;
+  artist: { name: string };
+  trackCount?: number;
+};
 export function Search() {
+  const [album, setAlbum] = useState<FoundAlbum>();
+  const [albums, setAlbums] = useState<FoundAlbum[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [albumRequested, setAlbumRequested] = useState<Set<number>>(new Set());
+  const albumKeys = useRef<Record<number, string>>({});
   const keys = useRef<Record<number, string>>({});
   const searchSequence = useRef(0);
   const [params, setParams] = useSearchParams();
@@ -14,12 +25,29 @@ export function Search() {
   async function search(q: string) {
     if (!q.trim()) return;
     const sequence = ++searchSequence.current;
+    setAlbum(undefined);
+    setAlbums([]);
+    setWarnings([]);
+    setResults([]);
     setBusy(true);
     setError("");
     try {
-      const tracks = await api<Track[]>("/search?q=" + encodeURIComponent(q));
+      const response = await api<
+        | Track[]
+        | {
+            tracks: Track[];
+            album?: FoundAlbum;
+            albums?: FoundAlbum[];
+            warnings?: string[];
+          }
+      >("/search?q=" + encodeURIComponent(q) + "&details=1");
+      const tracks = Array.isArray(response) ? response : response.tracks;
+      if (sequence === searchSequence.current)
+        setAlbum(Array.isArray(response) ? undefined : response.album);
       if (sequence === searchSequence.current) {
         setResults(tracks);
+        setAlbums(Array.isArray(response) ? [] : response.albums || []);
+        setWarnings(Array.isArray(response) ? [] : response.warnings || []);
         setSearched(true);
       }
     } catch (e) {
@@ -50,6 +78,23 @@ export function Search() {
       setBusy(false);
     }
   }
+  async function requestAlbum(chosen: FoundAlbum) {
+    setBusy(true);
+    setError("");
+    try {
+      await api(
+        "/requests",
+        "POST",
+        { target: "deezer:album:" + chosen.id },
+        (albumKeys.current[chosen.id] ||= requestKey()),
+      );
+      setAlbumRequested(new Set([...albumRequested, chosen.id]));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <h1 tabIndex={-1}>Find your next record</h1>
@@ -66,26 +111,102 @@ export function Search() {
         }}
       >
         <label className="grow">
-          Song, artist or Deezer song URL
+          Song, artist, album or Deezer URL
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Artist, song, or https://link.deezer.com/s/…"
+            placeholder="Song, artist, album name or Deezer link"
             maxLength={500}
             required
           />
         </label>
         <button disabled={busy}>Search</button>
       </form>
-      <p className="muted">
-        Album links show all tracks so you can request individual songs.
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {searched && results.length === 0 && (
-        <p>
-          No matches. Try a different title or paste a direct Deezer song URL.
+      {album && (
+        <section className="album-result">
+          <div>
+            <h2>{album.title}</h2>
+            <p>
+              {album.artist.name} / {album.trackCount} tracks
+            </p>
+            <p className="muted">
+              Request the whole album with one approval, or choose individual
+              songs below.
+            </p>
+          </div>
+          <button
+            disabled={busy || albumRequested.has(album.id)}
+            onClick={() => void requestAlbum(album)}
+          >
+            {albumRequested.has(album.id) ? "Album requested" : "Request album"}
+          </button>
+        </section>
+      )}
+      {album && albumRequested.has(album.id) && (
+        <p role="status">
+          Album request saved.{" "}
+          <NavLink to="/requests">View the single album request</NavLink>.
         </p>
       )}
+      {error && <p role="alert">{error}</p>}
+      {warnings.map((w) => (
+        <p className="notice" role="status" key={w}>
+          {w}
+        </p>
+      ))}
+      {albums.length > 0 && (
+        <section aria-label="Album results">
+          <h2>Albums</h2>
+          {albums.map((found) => (
+            <article className="row" key={found.id}>
+              <div>
+                <strong>{found.title}</strong>
+                <small>
+                  {found.artist.name}
+                  {found.trackCount ? " / " + found.trackCount + " tracks" : ""}
+                </small>
+              </div>
+              <div className="actions">
+                <NavLink
+                  to={
+                    "/search?q=" +
+                    encodeURIComponent(
+                      "https://www.deezer.com/album/" + found.id,
+                    )
+                  }
+                >
+                  View tracks
+                </NavLink>
+                <button
+                  disabled={busy || albumRequested.has(found.id)}
+                  onClick={() => void requestAlbum(found)}
+                >
+                  {albumRequested.has(found.id)
+                    ? "Album requested"
+                    : "Request album"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+      {albums.some((a) => albumRequested.has(a.id)) && (
+        <p role="status">
+          Album request saved. <NavLink to="/requests">View requests</NavLink>.
+        </p>
+      )}
+      {results.length > 0 && albums.length > 0 && <h2>Songs</h2>}
+      {searched &&
+        results.length === 0 &&
+        albums.length === 0 &&
+        !album &&
+        !busy &&
+        !error && (
+          <p>
+            No matches. Try another song, artist or album name, or paste a
+            Deezer link.
+          </p>
+        )}
       {results.map((t) => (
         <article className="row" key={t.id}>
           <div>
@@ -95,10 +216,18 @@ export function Search() {
             </small>
           </div>
           <button
-            disabled={busy || requested.has(t.id)}
+            disabled={
+              busy ||
+              requested.has(t.id) ||
+              !!(album && albumRequested.has(album.id))
+            }
             onClick={() => void request(t)}
           >
-            {requested.has(t.id) ? "Requested" : "Request"}
+            {album && albumRequested.has(album.id)
+              ? "Included in album"
+              : requested.has(t.id)
+                ? "Requested"
+                : "Request"}
           </button>
         </article>
       ))}

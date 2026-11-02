@@ -233,6 +233,8 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 func (a *App) placeAudio(jid, target, source string, t Track, quality string) (string, error) {
+	a.placementMu.Lock()
+	defer a.placementMu.Unlock()
 	checksum, e := hashFile(source)
 	if e != nil {
 		return "", e
@@ -313,7 +315,7 @@ func (a *App) verifyPlaced(rel, metadata, quality string) error {
 	}
 	return a.validateAudio(filepath.Join(a.musicDir, filepath.FromSlash(rel)), t, quality)
 }
-func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata string) (string, error) {
+func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata string, requireUnique ...bool) (string, error) {
 	var t Track
 	if json.Unmarshal([]byte(metadata), &t) != nil {
 		return "", errors.New("Invalid asset metadata")
@@ -329,6 +331,8 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 			break
 		}
 	}
+	unique := len(requireUnique) > 0 && requireUnique[0]
+	matchedIDs := []string{}
 	slog.Info("Navidrome song lookup", "expected_path", rel, "candidate_count", len(songs))
 	for _, s := range songs {
 		path := strings.ReplaceAll(s.Path, "\\", "/")
@@ -347,10 +351,20 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 				slog.Warn("Navidrome metadata differs but original audio bytes match", "song_id", s.ID)
 			}
 			slog.Info("Navidrome asset verified", "song_id", s.ID, "file_path", rel, "reported_path", path)
-			return s.ID, nil
+			if !unique {
+				return s.ID, nil
+			}
+			matchedIDs = append(matchedIDs, s.ID)
+			continue
 		}
 		slog.Warn("Navidrome candidate has different file content", "song_id", s.ID, "reported_path", path)
 
+	}
+	if len(matchedIDs) == 1 {
+		return matchedIDs[0], nil
+	}
+	if len(matchedIDs) > 1 {
+		return "", errors.New("Multiple Navidrome songs contain the same audio; relocation cannot safely identify the original file")
 	}
 	return "", nil
 }

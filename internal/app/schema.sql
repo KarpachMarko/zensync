@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS requests (
 );
 CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
- state TEXT NOT NULL DEFAULT 'blocked', stage TEXT NOT NULL DEFAULT 'Integration not configured',
+ state TEXT NOT NULL DEFAULT 'queued', stage TEXT NOT NULL DEFAULT 'Queued for acquisition',
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS attempts (
@@ -79,3 +79,22 @@ CREATE TABLE IF NOT EXISTS scan_schedule (job_id TEXT PRIMARY KEY REFERENCES job
 CREATE TABLE IF NOT EXISTS source_resolutions (source_id TEXT PRIMARY KEY REFERENCES source_songs(id), revision TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS scan_waits (job_id TEXT PRIMARY KEY REFERENCES jobs(id), started_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS asset_relocations (
+ id TEXT PRIMARY KEY, target TEXT NOT NULL UNIQUE REFERENCES assets(target),
+ owner TEXT NOT NULL REFERENCES users(id), old_path TEXT NOT NULL, new_path TEXT NOT NULL DEFAULT '',
+ checksum TEXT NOT NULL DEFAULT '', server_id TEXT NOT NULL DEFAULT '',
+ state TEXT NOT NULL DEFAULT 'queued', resume_state TEXT NOT NULL DEFAULT 'queued',
+ message TEXT NOT NULL DEFAULT 'Organizing legacy download', checked_at INTEGER NOT NULL DEFAULT 0,
+ started_at INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS album_requests (request_id TEXT PRIMARY KEY REFERENCES requests(id), snapshot TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS request_children (
+ parent_id TEXT NOT NULL REFERENCES requests(id), child_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
+ position INTEGER NOT NULL, PRIMARY KEY(parent_id,position)
+);
+
+CREATE TABLE IF NOT EXISTS acquisition_checks (job_id TEXT PRIMARY KEY REFERENCES jobs(id), checked_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS migration_task_wakeups (
+ migration_id TEXT NOT NULL REFERENCES migrations(id), action TEXT NOT NULL,
+ PRIMARY KEY(migration_id,action)
+);

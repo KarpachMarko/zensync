@@ -176,7 +176,7 @@ func TestFoundation(t *testing.T) {
 	}
 	alice.a = a
 	expect(t, alice.call("GET", "/api/v2/session", "", ""), 200)
-	a.DB.QueryRow("SELECT count(*) FROM jobs WHERE state='blocked'").Scan(&jobs)
+	a.DB.QueryRow("SELECT count(*) FROM jobs WHERE state='queued'").Scan(&jobs)
 	if jobs != 2 {
 		t.Fatalf("restart lost jobs: %d", jobs)
 	}

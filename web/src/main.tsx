@@ -11,6 +11,7 @@ import {
 } from "react-router-dom";
 import "./style.css";
 import { Icon } from "./icons";
+import { DownloadSettings } from "./downloads";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
 import { Imports, NewImport, MigrationPage } from "./imports";
@@ -22,6 +23,9 @@ type User = {
   quality: string[];
 };
 type Request = {
+  kind: string;
+  trackCount?: number;
+  items?: { title: string; artist: string; state: string; detail: string }[];
   id: string;
   owner: string;
   title: string;
@@ -305,7 +309,7 @@ function Requests({ user }: { user: User }) {
       </p>
       <div className="actions toolbar">
         <NavLink className="button" to="/search">
-          Search or paste a Deezer song URL
+          Search or paste a Deezer link
         </NavLink>
         <NavLink to="/imports">Request from a migration</NavLink>
       </div>
@@ -326,7 +330,10 @@ function Requests({ user }: { user: User }) {
           <article className="request" key={r.id}>
             <div className="row">
               <div>
-                <strong>{r.title}</strong>
+                <strong>
+                  {r.title}
+                  {r.kind === "album" ? " (Album)" : ""}
+                </strong>
                 <small>
                   {r.artist || "Artist not specified"} / {r.target}
                   {r.upgrade ? " / Upgrade" : ""}
@@ -336,6 +343,33 @@ function Requests({ user }: { user: User }) {
                 {r.decision.replaceAll("_", " ")}
               </span>
             </div>
+            {r.kind === "album" && (
+              <details>
+                <summary>
+                  {r.trackCount} tracks ·{" "}
+                  {r.items?.filter((i) => i.state === "available").length || 0}{" "}
+                  available
+                </summary>
+                <p className="muted">
+                  One approval covers this saved recording list and quality
+                  preference.
+                </p>
+                {r.items?.map((i, index) => (
+                  <div className="row" key={index}>
+                    <div>
+                      <strong>
+                        {index + 1}. {i.title}
+                      </strong>
+                      <small>
+                        {i.artist}
+                        {i.detail ? " / " + i.detail : ""}
+                      </small>
+                    </div>
+                    <span className="pill">{i.state.replaceAll("_", " ")}</span>
+                  </div>
+                ))}
+              </details>
+            )}
             {r.reason && <p className="muted">{r.reason}</p>}
             {r.decision === "awaiting_approval" && (
               <div className="actions">
@@ -492,6 +526,9 @@ function Settings({
         <NavLink to="/settings/connections">Connections</NavLink>
         <NavLink to="/settings/quality">Quality</NavLink>
         {user.role === "admin" && (
+          <NavLink to="/settings/downloads">Downloads</NavLink>
+        )}
+        {user.role === "admin" && (
           <NavLink to="/settings/people">People</NavLink>
         )}
       </nav>
@@ -549,6 +586,8 @@ function Settings({
             <button disabled={busy}>Create member</button>
           </form>
         </>
+      ) : location.pathname.endsWith("/downloads") && user.role === "admin" ? (
+        <DownloadSettings />
       ) : location.pathname.endsWith("/quality") ? (
         <>
           <h2>Your quality preference</h2>

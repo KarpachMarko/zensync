@@ -4,7 +4,7 @@ A self-hosted Navidrome companion for initial music migration and ongoing music 
 
 ## Current status
 
-The first migration workflow is implemented: first-access administrator setup, Apple Music XML preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes.
+The first migration workflow is implemented: first-access administrator setup, Apple Music XML preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes. Legacy ID/hash downloads are automatically reorganized into readable paths with verified Navidrome identity preservation and recovery backups.
 
 Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
 

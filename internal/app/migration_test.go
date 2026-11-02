@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestFirstAccessSetup(t *testing.T) {
@@ -314,6 +315,7 @@ func TestMigrationAcquisitionAndPublication(t *testing.T) {
 	}
 	expect(t, alice.call("POST", "/api/v2/tasks/"+jobID, "", ""), 200)
 	nav.music = a.musicDir
+	a.scanRequestedAt = time.Time{}
 	a.runAcquisition(context.Background())
 	var state, stage string
 	a.DB.QueryRow("SELECT state,stage FROM jobs WHERE request_id=?", rid).Scan(&state, &stage)

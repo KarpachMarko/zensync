@@ -52,7 +52,7 @@ def main():
             music = pathlib.Path(temp, 'music')
             music.mkdir()
             for title, filename in [('First song', 'first'), ('Second song', 'second')]:
-                run('ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-metadata', 'title='+title, '-metadata', 'artist=Test artist', '-metadata', 'album=Test album', str(music / (filename+'.flac')))
+                run('ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-metadata', 'title='+title, '-metadata', 'artist=Test artist', '-metadata', 'album=Test album', '-metadata', 'SOURCEID='+('1' if filename=='first' else '2'), str(music / (filename+'.flac')))
             run('docker', 'run', '-d', '--name', navname, '--network', network, '-p', '127.0.0.1::4533', '-v', str(music)+':/music:ro', '-e', 'ND_SCANSCHEDULE=0', 'deluan/navidrome:0.64.2')
             names.append(navname)
             navport = json.loads(run('docker', 'inspect', navname))[0]['NetworkSettings']['Ports']['4533/tcp'][0]['HostPort']
@@ -68,7 +68,7 @@ def main():
             nav('startScan')
             tracks=wait(lambda: (lambda x:x if len(x)==2 else None)(nav('search3',query='',songCount=100)['searchResult3'].get('song',[])))
             testenv=dict(os.environ,ZENSYNC_TEST_NAV_URL=navurl,ZENSYNC_TEST_NAV_PASSWORD=password,ZENSYNC_TEST_MUSIC=str(music))
-            subprocess.check_call([os.environ.get('ZENSYNC_GO','go'),'test','./internal/app','-run','TestRealNavidromeAssetVerification','-count=1'],cwd=root,env=testenv)
+            subprocess.check_call([os.environ.get('ZENSYNC_GO','go'),'test','./internal/app','-run','TestRealNavidromeAssetVerification|TestRealLegacyRelocation','-count=1'],cwd=root,env=testenv)
             run('docker','run','-d','--name',appname,'--network',network,'-p','127.0.0.1::8080','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp','-v','/data','-v',str(music)+':/music','zensync:migration-test')
             names.append(appname)
             appport=json.loads(run('docker','inspect',appname))[0]['NetworkSettings']['Ports']['8080/tcp'][0]['HostPort']
@@ -124,7 +124,7 @@ def main():
             assert api('/imports/'+mid)['migration']['state']=='handed_over'
             assert len(nav('getPlaylists')['playlists']['playlist'])==1
             run('docker','exec',appname,'/app/zensync','healthcheck')
-            print('PASS: non-root Docker, first-access setup, real Navidrome 0.64.2 connection, XML commit, ordered duplicate playlist entries, favorites, external-edit pause, handover and restart persistence.')
+            print('PASS: non-root Docker, first-access setup, real Navidrome 0.64.2 connection, XML commit, ordered duplicate playlist entries, favorites, legacy relocation with stable references, external-edit pause, handover and restart persistence.')
     finally:
         for name in reversed(names):
             subprocess.run(['docker','rm','-fv',name],stdout=subprocess.DEVNULL,check=False)
