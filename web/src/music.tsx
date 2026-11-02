@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
-import { NavLink, useSearchParams } from "react-router-dom";
+import { NavLink, useSearchParams, useNavigate } from "react-router-dom";
 import { api, Track, LibrarySong, label, time, requestKey } from "./api";
+import { StatusBadge } from "./status";
 type FoundAlbum = {
   id: number;
   title: string;
@@ -22,6 +23,13 @@ export function Search() {
     [busy, setBusy] = useState(false),
     [searched, setSearched] = useState(false),
     [requested, setRequested] = useState<Set<number>>(new Set());
+  const [library, setLibrary] = useState<LibrarySong[]>([]);
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [libraryOffset, setLibraryOffset] = useState(0);
+  const [moreLibrary, setMoreLibrary] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   async function search(q: string) {
     if (!q.trim()) return;
     const sequence = ++searchSequence.current;
@@ -29,10 +37,29 @@ export function Search() {
     setAlbums([]);
     setWarnings([]);
     setResults([]);
-    setBusy(true);
+    setLibrary([]);
+    setLibraryOffset(0);
+    setMoreLibrary(false);
+    setLoadingMore(false);
+    setLibraryError("");
+    setLibraryLoading(true);
+    setImportLoading(true);
+    setSearched(true);
     setError("");
-    try {
-      const response = await api<
+    await Promise.allSettled([
+      api<LibrarySong[]>("/library?q=" + encodeURIComponent(q) + "&offset=0")
+        .then((songs) => {
+          if (sequence !== searchSequence.current) return;
+          setLibrary(songs);
+          setMoreLibrary(songs.length === 100);
+        })
+        .catch((e) => {
+          if (sequence === searchSequence.current) setLibraryError(e.message);
+        })
+        .finally(() => {
+          if (sequence === searchSequence.current) setLibraryLoading(false);
+        }),
+      api<
         | Track[]
         | {
             tracks: Track[];
@@ -40,27 +67,63 @@ export function Search() {
             albums?: FoundAlbum[];
             warnings?: string[];
           }
-      >("/search?q=" + encodeURIComponent(q) + "&details=1");
-      const tracks = Array.isArray(response) ? response : response.tracks;
-      if (sequence === searchSequence.current)
-        setAlbum(Array.isArray(response) ? undefined : response.album);
-      if (sequence === searchSequence.current) {
-        setResults(tracks);
-        setAlbums(Array.isArray(response) ? [] : response.albums || []);
-        setWarnings(Array.isArray(response) ? [] : response.warnings || []);
-        setSearched(true);
-      }
-    } catch (e) {
-      if (sequence === searchSequence.current) setError((e as Error).message);
-    } finally {
-      if (sequence === searchSequence.current) setBusy(false);
-    }
+      >("/search?q=" + encodeURIComponent(q) + "&details=1")
+        .then((response) => {
+          if (sequence !== searchSequence.current) return;
+          const found = Array.isArray(response) ? undefined : response.album;
+          setAlbum(found?.trackCount === 1 ? undefined : found);
+          setResults(Array.isArray(response) ? response : response.tracks);
+          setAlbums(
+            Array.isArray(response)
+              ? []
+              : (response.albums || []).filter((a) => a.trackCount !== 1),
+          );
+          setWarnings(Array.isArray(response) ? [] : response.warnings || []);
+        })
+        .catch((e) => {
+          if (sequence === searchSequence.current) setError(e.message);
+        })
+        .finally(() => {
+          if (sequence === searchSequence.current) setImportLoading(false);
+        }),
+    ]);
   }
   useEffect(() => {
     const q = params.get("q") || "";
     setQuery(q);
-    if (q) void search(q);
+    if (q.trim()) void search(q.trim());
+    else {
+      setSearched(false);
+      setLibraryLoading(false);
+      setImportLoading(false);
+    }
+    return () => {
+      searchSequence.current++;
+    };
   }, [params.get("q")]);
+  async function loadMoreLibrary() {
+    const sequence = searchSequence.current;
+    const offset = libraryOffset + 100;
+    setLoadingMore(true);
+    setLibraryError("");
+    try {
+      const songs = await api<LibrarySong[]>(
+        "/library?q=" +
+          encodeURIComponent(params.get("q") || "") +
+          "&offset=" +
+          offset,
+      );
+      if (sequence !== searchSequence.current) return;
+      setLibrary((current) => [...current, ...songs]);
+      setLibraryOffset(offset);
+      setMoreLibrary(songs.length === 100);
+    } catch (e) {
+      if (sequence === searchSequence.current)
+        setLibraryError((e as Error).message);
+    } finally {
+      if (sequence === searchSequence.current) setLoadingMore(false);
+    }
+  }
   async function request(t: Track) {
     setBusy(true);
     setError("");
@@ -97,10 +160,9 @@ export function Search() {
   }
   return (
     <>
-      <h1 tabIndex={-1}>Find your next record</h1>
+      <h1 tabIndex={-1}>Search</h1>
       <p>
-        Search Deezer, or paste a song, album or share link when you know
-        exactly what you want.
+        Find music in your library and on Deezer, or paste a song or album link.
       </p>
       <form
         className="searchbar"
@@ -122,115 +184,170 @@ export function Search() {
         </label>
         <button disabled={busy}>Search</button>
       </form>
-      {album && (
-        <section className="album-result">
-          <div>
-            <h2>{album.title}</h2>
-            <p>
-              {album.artist.name} / {album.trackCount} tracks
-            </p>
-            <p className="muted">
-              Request the whole album with one approval, or choose individual
-              songs below.
-            </p>
-          </div>
-          <button
-            disabled={busy || albumRequested.has(album.id)}
-            onClick={() => void requestAlbum(album)}
-          >
-            {albumRequested.has(album.id) ? "Album requested" : "Request album"}
-          </button>
-        </section>
-      )}
-      {album && albumRequested.has(album.id) && (
-        <p role="status">
-          Album request saved.{" "}
-          <NavLink to="/requests">View the single album request</NavLink>.
-        </p>
-      )}
-      {error && <p role="alert">{error}</p>}
-      {warnings.map((w) => (
-        <p className="notice" role="status" key={w}>
-          {w}
-        </p>
-      ))}
-      {albums.length > 0 && (
-        <section aria-label="Album results">
-          <h2>Albums</h2>
-          {albums.map((found) => (
-            <article className="row" key={found.id}>
-              <div>
-                <strong>{found.title}</strong>
-                <small>
-                  {found.artist.name}
-                  {found.trackCount ? " / " + found.trackCount + " tracks" : ""}
-                </small>
-              </div>
-              <div className="actions">
-                <NavLink
-                  to={
-                    "/search?q=" +
-                    encodeURIComponent(
-                      "https://www.deezer.com/album/" + found.id,
-                    )
-                  }
-                >
-                  View tracks
+      {searched && (
+        <>
+          <SearchSection title="Existing library" count={library.length}>
+            {libraryLoading && <p role="status">Searching your library…</p>}
+            {libraryError && (
+              <p role="alert">
+                {libraryError}{" "}
+                <NavLink to="/settings/connections">
+                  Connection settings
                 </NavLink>
+              </p>
+            )}
+            {!libraryLoading && !libraryError && library.length === 0 && (
+              <p>
+                No matching music in your library. See candidates for import
+                below.
+              </p>
+            )}
+            {library.map((song) => (
+              <article className="row" key={song.id}>
+                <div>
+                  <strong>{song.title}</strong>
+                  <small>
+                    {song.artist} / {song.album} / {time(song.duration)}
+                  </small>
+                </div>
+                <StatusBadge state="available" />
+              </article>
+            ))}
+            {moreLibrary && (
+              <button
+                className="quiet toolbar"
+                disabled={loadingMore}
+                onClick={() => void loadMoreLibrary()}
+              >
+                {loadingMore ? "Loading…" : "Load more library results"}
+              </button>
+            )}
+          </SearchSection>
+          <SearchSection
+            title="Candidates for import"
+            count={results.length + albums.length}
+          >
+            {importLoading && <p role="status">Searching Deezer…</p>}
+            {album && (
+              <section className="album-result">
+                <div>
+                  <h2>{album.title}</h2>
+                  <p>
+                    {album.artist.name} / {album.trackCount}{" "}
+                    {album.trackCount === 1 ? "track" : "tracks"}
+                  </p>
+                  <p className="muted">
+                    Request the whole album with one approval, or choose
+                    individual songs below.
+                  </p>
+                </div>
                 <button
-                  disabled={busy || albumRequested.has(found.id)}
-                  onClick={() => void requestAlbum(found)}
+                  disabled={busy || albumRequested.has(album.id)}
+                  onClick={() => void requestAlbum(album)}
                 >
-                  {albumRequested.has(found.id)
+                  {albumRequested.has(album.id)
                     ? "Album requested"
                     : "Request album"}
                 </button>
-              </div>
-            </article>
-          ))}
-        </section>
+              </section>
+            )}
+            {album && albumRequested.has(album.id) && (
+              <p role="status">
+                Album request saved.{" "}
+                <NavLink to="/requests">View the single album request</NavLink>.
+              </p>
+            )}
+            {error && <p role="alert">{error}</p>}
+            {warnings.map((w) => (
+              <p className="notice" role="status" key={w}>
+                {w}
+              </p>
+            ))}
+            {albums.length > 0 && (
+              <section aria-label="Album results">
+                <h2>Albums</h2>
+                {albums.map((found) => (
+                  <article className="row" key={found.id}>
+                    <div>
+                      <strong>{found.title}</strong>
+                      <small>
+                        {found.artist.name}
+                        {found.trackCount
+                          ? " / " +
+                            found.trackCount +
+                            (found.trackCount === 1 ? " track" : " tracks")
+                          : ""}
+                      </small>
+                    </div>
+                    <div className="actions">
+                      <NavLink
+                        to={
+                          "/search?q=" +
+                          encodeURIComponent(
+                            "https://www.deezer.com/album/" + found.id,
+                          )
+                        }
+                      >
+                        View tracks
+                      </NavLink>
+                      <button
+                        disabled={busy || albumRequested.has(found.id)}
+                        onClick={() => void requestAlbum(found)}
+                      >
+                        {albumRequested.has(found.id)
+                          ? "Album requested"
+                          : "Request album"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            )}
+            {albums.some((a) => albumRequested.has(a.id)) && (
+              <p role="status">
+                Album request saved.{" "}
+                <NavLink to="/requests">View requests</NavLink>.
+              </p>
+            )}
+            {results.length > 0 && albums.length > 0 && <h2>Songs</h2>}
+            {searched &&
+              results.length === 0 &&
+              albums.length === 0 &&
+              !album &&
+              !importLoading &&
+              !error && (
+                <p>
+                  No matches. Try another song, artist or album name, or paste a
+                  Deezer link.
+                </p>
+              )}
+            {results.map((t) => (
+              <article className="row" key={t.id}>
+                <div>
+                  <strong>{label(t)}</strong>
+                  <small>
+                    {t.artist.name} / {t.album.title} / {time(t.duration)}
+                  </small>
+                </div>
+                <button
+                  disabled={
+                    busy ||
+                    requested.has(t.id) ||
+                    !!(album && albumRequested.has(album.id))
+                  }
+                  onClick={() => void request(t)}
+                >
+                  {album && albumRequested.has(album.id)
+                    ? "Included in album"
+                    : requested.has(t.id)
+                      ? "Requested"
+                      : "Request"}
+                </button>
+              </article>
+            ))}
+          </SearchSection>
+        </>
       )}
-      {albums.some((a) => albumRequested.has(a.id)) && (
-        <p role="status">
-          Album request saved. <NavLink to="/requests">View requests</NavLink>.
-        </p>
-      )}
-      {results.length > 0 && albums.length > 0 && <h2>Songs</h2>}
-      {searched &&
-        results.length === 0 &&
-        albums.length === 0 &&
-        !album &&
-        !busy &&
-        !error && (
-          <p>
-            No matches. Try another song, artist or album name, or paste a
-            Deezer link.
-          </p>
-        )}
-      {results.map((t) => (
-        <article className="row" key={t.id}>
-          <div>
-            <strong>{label(t)}</strong>
-            <small>
-              {t.artist.name} / {t.album.title} / {time(t.duration)}
-            </small>
-          </div>
-          <button
-            disabled={
-              busy ||
-              requested.has(t.id) ||
-              !!(album && albumRequested.has(album.id))
-            }
-            onClick={() => void request(t)}
-          >
-            {album && albumRequested.has(album.id)
-              ? "Included in album"
-              : requested.has(t.id)
-                ? "Requested"
-                : "Request"}
-          </button>
-        </article>
-      ))}
       {requested.size > 0 && (
         <p role="status">
           Requests saved. <NavLink to="/requests">View approval status</NavLink>{" "}
@@ -240,7 +357,35 @@ export function Search() {
     </>
   );
 }
+function SearchSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section aria-label={title}>
+      <details
+        className="status-section"
+        open={open}
+        onToggle={(e) => setOpen(e.currentTarget.open)}
+      >
+        <summary>
+          {title}
+          <span className="count">{count}</span>
+        </summary>
+        {children}
+      </details>
+    </section>
+  );
+}
+
 export function Library() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<LibrarySong[]>([]),
     [query, setQuery] = useState(""),
     [error, setError] = useState(""),
@@ -250,9 +395,7 @@ export function Library() {
     setBusy(true);
     setError("");
     try {
-      const songs = await api<LibrarySong[]>(
-        "/library?q=" + encodeURIComponent(query) + "&offset=" + start,
-      );
+      const songs = await api<LibrarySong[]>("/library?q=&offset=" + start);
       setRows(start ? [...rows, ...songs] : songs);
       setOffset(start);
     } catch (e) {
@@ -272,11 +415,12 @@ export function Library() {
         className="searchbar"
         onSubmit={(e) => {
           e.preventDefault();
-          void load();
+          if (query.trim())
+            navigate("/search?q=" + encodeURIComponent(query.trim()));
         }}
       >
         <label className="grow">
-          Search your library
+          Search music
           <input value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <button disabled={busy}>Search</button>
@@ -300,7 +444,8 @@ export function Library() {
       ))}
       {!busy && !error && rows.length === 0 && (
         <p>
-          No music found. <NavLink to="/imports">Start a migration</NavLink>.
+          No music found.{" "}
+          <NavLink to="/search">Search for music to import</NavLink>.
         </p>
       )}
       {rows.length - offset === 100 && (

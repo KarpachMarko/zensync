@@ -16,9 +16,9 @@ export function DownloadSettings() {
   }, []);
   return (
     <>
-      <h2>Download concurrency</h2>
+      <h2>Parallel downloads</h2>
       <p>
-        Choose how many music acquisitions can run at the same time across all
+        Choose how many downloads can run at the same time across all
         users.
       </p>
       {error && <p role="alert">{error}</p>}

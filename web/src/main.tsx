@@ -11,6 +11,13 @@ import {
 } from "react-router-dom";
 import "./style.css";
 import { Icon } from "./icons";
+import {
+  StatusBadge,
+  StatusSection,
+  ActiveProgress,
+  finished,
+  blocked,
+} from "./status";
 import { DownloadSettings } from "./downloads";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
@@ -23,6 +30,7 @@ type User = {
   quality: string[];
 };
 type Request = {
+  state: string;
   kind: string;
   trackCount?: number;
   items?: { title: string; artist: string; state: string; detail: string }[];
@@ -176,10 +184,12 @@ function App() {
             role="search"
             onSubmit={(e) => {
               e.preventDefault();
-              if (sidebarQuery.trim())
+              if (sidebarQuery.trim()) {
                 navigate(
                   "/search?q=" + encodeURIComponent(sidebarQuery.trim()),
                 );
+                setSidebarQuery("");
+              }
             }}
           >
             <Icon name="search" />
@@ -243,7 +253,10 @@ function App() {
         {error && <p role="alert">{error}</p>}
         <Routes>
           <Route path="/requests" element={<Requests user={user} />} />
-          <Route path="/activity" element={<Activity />} />
+          <Route
+            path="/activity"
+            element={<Activity admin={user.role === "admin"} />}
+          />
           <Route
             path="/settings/*"
             element={<Settings user={user} reload={load} />}
@@ -314,10 +327,6 @@ function Requests({ user }: { user: User }) {
         <NavLink to="/imports">Request from a migration</NavLink>
       </div>
       {error && <p role="alert">{error}</p>}
-      <div className="tablehead">
-        <span>Recording</span>
-        <span>Decision</span>
-      </div>
       {!loaded ? (
         <p>Loading requests…</p>
       ) : rows.length === 0 ? (
@@ -326,103 +335,120 @@ function Requests({ user }: { user: User }) {
           migration.
         </p>
       ) : (
-        rows.map((r) => (
-          <article className="request" key={r.id}>
-            <div className="row">
-              <div>
-                <strong>
-                  {r.title}
-                  {r.kind === "album" ? " (Album)" : ""}
-                </strong>
-                <small>
-                  {r.artist || "Artist not specified"} / {r.target}
-                  {r.upgrade ? " / Upgrade" : ""}
-                </small>
-              </div>
-              <span className={"pill " + r.decision}>
-                {r.decision.replaceAll("_", " ")}
-              </span>
-            </div>
-            {r.kind === "album" && (
-              <details>
-                <summary>
-                  {r.trackCount} tracks ·{" "}
-                  {r.items?.filter((i) => i.state === "available").length || 0}{" "}
-                  available
-                </summary>
-                <p className="muted">
-                  One approval covers this saved recording list and quality
-                  preference.
-                </p>
-                {r.items?.map((i, index) => (
-                  <div className="row" key={index}>
+        ["In progress", "Requested", "Completed"].map((title) => {
+          const group = rows.filter(
+            (r) =>
+              title ===
+              (r.decision === "awaiting_approval"
+                ? "Requested"
+                : finished(r.state || r.decision)
+                  ? "Completed"
+                  : "In progress"),
+          );
+          return (
+            <StatusSection key={title} title={title} count={group.length}>
+              {group.map((r) => (
+                <article className="request" key={r.id}>
+                  <div className="row">
                     <div>
                       <strong>
-                        {index + 1}. {i.title}
+                        {r.title}
+                        {r.kind === "album" ? " (Album)" : ""}
                       </strong>
                       <small>
-                        {i.artist}
-                        {i.detail ? " / " + i.detail : ""}
+                        {r.artist || "Artist not specified"} / {r.target}
+                        {r.upgrade ? " / Upgrade" : ""}
                       </small>
                     </div>
-                    <span className="pill">{i.state.replaceAll("_", " ")}</span>
+                    <StatusBadge state={r.state || r.decision} />
                   </div>
-                ))}
-              </details>
-            )}
-            {r.reason && <p className="muted">{r.reason}</p>}
-            {r.decision === "awaiting_approval" && (
-              <div className="actions">
-                {user.role === "admin" && (
-                  <>
-                    <button
-                      disabled={busy}
-                      onClick={() => void decide(r, "approved")}
-                    >
-                      Approve
-                    </button>
-                    <form
-                      className="decline"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void decide(
-                          r,
-                          "declined",
-                          String(new FormData(e.currentTarget).get("reason")),
-                        );
-                      }}
-                    >
-                      <input
-                        name="reason"
-                        aria-label={"Reason for declining " + r.title}
-                        placeholder="Reason for declining"
-                        maxLength={1000}
-                        required
-                      />
-                      <button className="quiet" disabled={busy}>
-                        Decline
-                      </button>
-                    </form>
-                  </>
-                )}
-                {r.owner === user.id && (
-                  <button
-                    className="quiet"
-                    disabled={busy}
-                    onClick={() => void decide(r, "withdrawn")}
-                  >
-                    Withdraw
-                  </button>
-                )}
-              </div>
-            )}
-          </article>
-        ))
+                  <ActiveProgress state={r.state} title={r.title} />
+                  {r.kind === "album" && (
+                    <details>
+                      <summary>
+                        {r.trackCount} tracks ·{" "}
+                        {r.items?.filter((i) => i.state === "available")
+                          .length || 0}{" "}
+                        available
+                      </summary>
+                      <p className="muted">
+                        One approval covers this saved recording list and
+                        quality preference.
+                      </p>
+                      {r.items?.map((i, index) => (
+                        <div className="row" key={index}>
+                          <div>
+                            <strong>
+                              {index + 1}. {i.title}
+                            </strong>
+                            <small>
+                              {i.artist}
+                              {i.detail ? " / " + i.detail : ""}
+                            </small>
+                          </div>
+                          <StatusBadge state={i.state} />
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                  {r.reason && <p className="muted">{r.reason}</p>}
+                  {r.decision === "awaiting_approval" && (
+                    <div className="actions">
+                      {user.role === "admin" && (
+                        <>
+                          <button
+                            disabled={busy}
+                            onClick={() => void decide(r, "approved")}
+                          >
+                            Approve
+                          </button>
+                          <form
+                            className="decline"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void decide(
+                                r,
+                                "declined",
+                                String(
+                                  new FormData(e.currentTarget).get("reason"),
+                                ),
+                              );
+                            }}
+                          >
+                            <input
+                              name="reason"
+                              aria-label={"Reason for declining " + r.title}
+                              placeholder="Reason for declining"
+                              maxLength={1000}
+                              required
+                            />
+                            <button className="quiet" disabled={busy}>
+                              Decline
+                            </button>
+                          </form>
+                        </>
+                      )}
+                      {r.owner === user.id && (
+                        <button
+                          className="quiet"
+                          disabled={busy}
+                          onClick={() => void decide(r, "withdrawn")}
+                        >
+                          Withdraw
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </StatusSection>
+          );
+        })
       )}
     </>
   );
 }
-function Activity() {
+function Activity({ admin }: { admin: boolean }) {
   const [rows, setRows] = useState<
       { id: string; title: string; state: string; stage: string }[]
     >([]),
@@ -452,7 +478,10 @@ function Activity() {
   return (
     <>
       <h1 tabIndex={-1}>Activity</h1>
-      <p>Execution is tracked separately from approval.</p>
+      <p>Follow downloads, library scans and migration tasks.</p>
+      {admin && (
+        <NavLink to="/settings/downloads">Manage parallel downloads</NavLink>
+      )}
       {error && <p role="alert">{error}</p>}
       {loading ? (
         <p>Loading activity…</p>
@@ -462,22 +491,43 @@ function Activity() {
           transfer slot.
         </p>
       ) : (
-        rows.map((r) => (
-          <div className="row" key={r.id}>
-            <div>
-              <strong>{r.title}</strong>
-              <small>{r.stage}</small>
-            </div>
-            <div className="actions">
-              <span className="pill">{r.state}</span>
-              {(r.state === "failed" || r.state === "blocked") && (
-                <button className="quiet" onClick={() => void retry(r.id)}>
-                  Retry
-                </button>
-              )}
-            </div>
-          </div>
-        ))
+        ["In progress", "Blocked", "Completed"].map((title) => {
+          const group = rows.filter(
+            (r) =>
+              title ===
+              (finished(r.state)
+                ? "Completed"
+                : blocked(r.state)
+                  ? "Blocked"
+                  : "In progress"),
+          );
+          return (
+            <StatusSection key={title} title={title} count={group.length}>
+              {group.map((r) => (
+                <div className="activity-item" key={r.id}>
+                  <div className="row">
+                    <div>
+                      <strong>{r.title}</strong>
+                      <small>{r.stage}</small>
+                    </div>
+                    <div className="actions">
+                      <StatusBadge state={r.state} />
+                      {(r.state === "failed" || r.state === "blocked") && (
+                        <button
+                          className="quiet"
+                          onClick={() => void retry(r.id)}
+                        >
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <ActiveProgress state={r.state} title={r.title} />
+                </div>
+              ))}
+            </StatusSection>
+          );
+        })
       )}
     </>
   );
@@ -512,7 +562,7 @@ function Settings({
       });
       form.reset();
       await loadUsers();
-      setMessage("Member created.");
+      setMessage("User created.");
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -528,30 +578,60 @@ function Settings({
         {user.role === "admin" && (
           <NavLink to="/settings/downloads">Downloads</NavLink>
         )}
-        {user.role === "admin" && (
-          <NavLink to="/settings/people">People</NavLink>
-        )}
+        {user.role === "admin" && <NavLink to="/settings/users">Users</NavLink>}
       </nav>
       {message && <p role="status">{message}</p>}
-      {location.pathname.endsWith("/people") && user.role === "admin" ? (
+      {(location.pathname.endsWith("/users") ||
+        location.pathname.endsWith("/people")) &&
+      user.role === "admin" ? (
         <>
-          <h2>People & permissions</h2>
+          <h2>Users & permissions</h2>
           {users.map((u) => (
             <div className="row" key={u.id}>
               <strong>
                 {u.username}
                 <small>{u.role}</small>
               </strong>
-              <span>
-                {u.direct
-                  ? "Can add without approval"
-                  : u.role === "admin"
-                    ? "Administrator"
-                    : "Approval required"}
-              </span>
+              {u.role === "admin" ? (
+                <span>Administrator</span>
+              ) : (
+                <label className="check permission-toggle">
+                  <input
+                    type="checkbox"
+                    checked={u.direct}
+                    disabled={busy}
+                    onChange={async (e) => {
+                      const direct = e.target.checked;
+                      setUsers((users) =>
+                        users.map((current) =>
+                          current.id === u.id
+                            ? { ...current, direct }
+                            : current,
+                        ),
+                      );
+                      setBusy(true);
+                      try {
+                        await api("/users/" + u.id, "PUT", { direct });
+                        await loadUsers();
+                        setMessage("Permissions saved for " + u.username + ".");
+                      } catch (e) {
+                        setUsers((users) =>
+                          users.map((current) =>
+                            current.id === u.id ? u : current,
+                          ),
+                        );
+                        setMessage((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
+                  Allow adding music without approval
+                </label>
+              )}
             </div>
           ))}
-          <h2>Add a member</h2>
+          <h2>Add a user</h2>
           <form onSubmit={add}>
             <div className="fields">
               <label>
@@ -583,7 +663,7 @@ function Settings({
               Upgrades still require admin approval. Members cannot delete
               shared audio.
             </p>
-            <button disabled={busy}>Create member</button>
+            <button disabled={busy}>Create user</button>
           </form>
         </>
       ) : location.pathname.endsWith("/downloads") && user.role === "admin" ? (

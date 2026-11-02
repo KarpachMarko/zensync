@@ -341,7 +341,7 @@ func (a *App) searchAlbums(ctx context.Context, q string) ([]AlbumSummary, error
 	}
 	seen := map[int64]bool{}
 	for _, a := range response.Data {
-		if a.ID > 0 && a.Title != "" && !seen[a.ID] {
+		if a.ID > 0 && a.Title != "" && a.Count != 1 && !seen[a.ID] {
 			seen[a.ID] = true
 			out = append(out, AlbumSummary{ID: a.ID, Title: a.Title, Artist: a.Artist, TrackCount: a.Count})
 		}

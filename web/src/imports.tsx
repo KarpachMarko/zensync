@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { api, upload, Track, LibrarySong, label, time } from "./api";
+import { StatusBadge, ActiveProgress } from "./status";
 type Migration = {
   id: string;
   name: string;
@@ -121,7 +122,7 @@ export function Imports() {
                 {m.report.songs} songs / {m.report.playlists} playlists
               </small>
             </div>
-            <span className="pill">{m.state.replaceAll("_", " ")}</span>
+            <StatusBadge state={m.state} />
           </NavLink>
         ))
       )}
@@ -275,7 +276,7 @@ export function MigrationPage() {
       </div>
       <div className="titlebar">
         <h1 tabIndex={-1}>{currentPlaylist?.name || m.name}</h1>
-        <span className="pill">{m.state.replaceAll("_", " ")}</span>
+        <StatusBadge state={m.state} />
       </div>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
@@ -402,7 +403,7 @@ export function MigrationPage() {
                         {p.remoteId ? " / Published" : " / Not published yet"}
                       </small>
                     </div>
-                    <span className="pill">{p.state.replaceAll("_", " ")}</span>
+                    <StatusBadge state={p.state} />
                   </NavLink>
                 ))}
             </section>
@@ -570,7 +571,7 @@ export function MigrationPage() {
                     : ""}
                 </small>
               </button>
-              <span className="pill">{status(s)}</span>
+              <StatusBadge state={status(s)} />
               <button
                 className="quiet"
                 disabled={busy}
@@ -671,7 +672,8 @@ function Review({
       <p>
         {s.metadata.artist} / {s.metadata.album} / {time(s.metadata.duration)}
       </p>
-      <span className="pill">{status(s)}</span>
+      <StatusBadge state={status(s)} />
+      <ActiveProgress state={s.jobState} title={s.metadata.title} />
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {s.candidate && (
