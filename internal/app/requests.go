@@ -42,6 +42,21 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 	}
 	rows.Close()
 	for index := range out {
+		// Include execution state so approved requests leave the active section once finished.
+		out[index].State = out[index].Decision
+		if out[index].Decision == "approved" {
+			e = a.DB.QueryRow(`SELECT CASE
+ WHEN count(*)=0 THEN 'queued'
+ WHEN sum(state IN ('available','completed','cancelled'))=count(*) THEN 'completed'
+ WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred'))>0 THEN
+   CASE WHEN count(DISTINCT state)=1 THEN min(state) ELSE 'running' END
+ WHEN sum(state='failed')>0 THEN 'failed'
+ ELSE 'blocked' END FROM jobs WHERE (request_id=? AND NOT EXISTS(SELECT 1 FROM request_children WHERE parent_id=?)) OR request_id IN (SELECT child_id FROM request_children WHERE parent_id=?)`, out[index].ID, out[index].ID, out[index].ID).Scan(&out[index].State)
+			if e != nil {
+				a.internal(w, e)
+				return
+			}
+		}
 		if strings.HasPrefix(out[index].Target, "deezer:album:") {
 			out[index].Kind = "album"
 			out[index].Items, e = a.albumItems(out[index].ID)

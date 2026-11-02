@@ -669,3 +669,109 @@ h3 {
     flex-direction: column;
   }
 }
+
+/* Quiet status colors extend the workspace's existing slate palette. */
+.pill.completed,
+.pill.available,
+.pill.connected,
+.pill.published {
+  background: #293f3b;
+  color: #b3d3c4;
+}
+.pill.downloading,
+.pill.running,
+.pill.importing,
+.pill.planned {
+  background: #2d3e57;
+  color: #bbcde8;
+}
+.pill.checking,
+.pill.validating,
+.pill.awaiting_scan,
+.pill.scanning {
+  background: #3b3650;
+  color: #d2c4e5;
+}
+.pill.queued,
+.pill.deferred,
+.pill.staged {
+  background: #3d3b32;
+  color: #d6cda9;
+}
+.pill.failed,
+.pill.blocked,
+.pill.declined {
+  background: #49353d;
+  color: #e1b7c0;
+}
+.pill.cancelled,
+.pill.withdrawn {
+  background: #343c49;
+  color: #b9c0cd;
+}
+.status-section {
+  margin-top: 24px;
+  border-top: 1px solid #41516c;
+}
+.status-section > summary {
+  padding: 16px 0;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 600;
+}
+.status-section > summary .count {
+  font-size: 14px;
+  font-weight: 400;
+}
+.section-empty {
+  margin: 0 0 18px;
+  font-size: 14px;
+}
+.active-progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 6px 0 14px;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  accent-color: #b5c9e3;
+  background: #29384f;
+}
+.active-progress::-webkit-progress-bar {
+  background: #29384f;
+}
+.active-progress:indeterminate::-webkit-progress-inner-element {
+  background: linear-gradient(90deg, #29384f 0%, #859cbd 50%, #29384f 100%);
+  background-size: 200% 100%;
+  animation: active-progress 2s linear infinite;
+}
+@keyframes active-progress {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .active-progress:indeterminate::-webkit-progress-inner-element {
+    animation: none;
+  }
+}
+.activity-item .row {
+  border-bottom: 0;
+}
+.activity-item {
+  border-bottom: 1px solid #344157;
+}
+.permission-toggle {
+  margin: 0;
+  font-size: 13px;
+}
+.tabs {
+  flex-wrap: wrap;
+}
+@media (max-width: 700px) {
+  .row:has(.permission-toggle) {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

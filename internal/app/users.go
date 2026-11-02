@@ -1,6 +1,7 @@
 package app
 
 import (
+	"database/sql"
 	"encoding/json"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
@@ -105,4 +106,51 @@ func (a *App) quality(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	send(w, 200, in)
+}
+
+// updateUser changes the acquisition permission used by both new requests and workers.
+func (a *App) updateUser(w http.ResponseWriter, r *http.Request, actor User) {
+	var in struct {
+		Direct *bool `json:"direct"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Direct == nil {
+		fail(w, 400, "Direct permission is required")
+		return
+	}
+	uid := strings.TrimPrefix(r.URL.Path, "/api/v2/users/")
+	tx, e := a.DB.Begin()
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	defer tx.Rollback()
+	var role string
+	e = tx.QueryRow("SELECT role FROM users WHERE id=?", uid).Scan(&role)
+	if e == sql.ErrNoRows {
+		fail(w, 404, "User not found")
+		return
+	}
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	if role == "admin" {
+		fail(w, 400, "Administrators already have full permissions")
+		return
+	}
+	_, e = tx.Exec("UPDATE users SET direct=? WHERE id=?", *in.Direct, uid)
+	if e == nil {
+		e = audit(tx, uid, actor.ID, "user.permissions_updated", uid)
+	}
+	if e == nil {
+		e = tx.Commit()
+	}
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
 }

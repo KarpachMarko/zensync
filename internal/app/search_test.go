@@ -79,3 +79,36 @@ func TestKeywordSearchPreservesPartialResults(t *testing.T) {
 	}
 	expect(t, member.call("GET", "/api/v2/search?q=both-down&details=1", "", ""), 502)
 }
+
+func TestKeywordSearchOmitsSingleTrackAlbums(t *testing.T) {
+	a, _, member := albumFixture(t)
+	single := makeTrack(1, "Single song")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search/track":
+			send(w, 200, map[string]any{"data": []Track{single}})
+		case "/search/album":
+			send(w, 200, map[string]any{"data": []map[string]any{
+				{"id": 42, "title": "Album", "nb_tracks": 12},
+				{"id": 43, "title": "Single release", "nb_tracks": 1},
+				{"id": 44, "title": "Unknown track count"},
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	a.deezerURL = server.URL
+	w := member.call("GET", "/api/v2/search?q=single&details=1", "", "")
+	expect(t, w, 200)
+	var result struct {
+		Albums []AlbumSummary `json:"albums"`
+		Tracks []Track        `json:"tracks"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Albums) != 2 || result.Albums[0].ID != 42 || result.Albums[1].ID != 44 || len(result.Tracks) != 1 || result.Tracks[0].ID != single.ID {
+		t.Fatalf("single album should be omitted while its song remains: %s", w.Body)
+	}
+}

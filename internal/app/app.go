@@ -56,6 +56,7 @@ type User struct {
 	Quality  json.RawMessage `json:"quality"`
 }
 type Request struct {
+	State      string          `json:"state"`
 	Kind       string          `json:"kind"`
 	TrackCount int             `json:"trackCount,omitempty"`
 	Items      []AlbumItem     `json:"items,omitempty"`
@@ -221,6 +222,8 @@ func (a *App) Handler() http.Handler {
 			a.users(w)
 		case r.URL.Path == "/api/v2/users" && u.Role == "admin" && r.Method == "POST":
 			a.createUser(w, r, u)
+		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && u.Role == "admin" && r.Method == "PUT":
+			a.updateUser(w, r, u)
 		case r.URL.Path == "/api/v2/quality" && r.Method == "PUT":
 			a.quality(w, r, u)
 		default:
