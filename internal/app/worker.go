@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,6 +70,7 @@ func (a *App) runMigrationTask(ctx context.Context) {
 	} else {
 		e = a.publishMigration(ctx, owner, mid)
 	}
+	slog.Info("migration task finished", "task_id", tid, "migration_id", mid, "action", action, "success", e == nil)
 	state, message := "completed", "Finished"
 	if e != nil {
 		state, message = "failed", e.Error()
@@ -114,7 +116,13 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 409, "Only blocked or failed tasks can be retried")
 			return
 		}
-		_, e = tx.Exec("UPDATE jobs SET state='queued',stage='Retry requested' WHERE id=?", tid)
+		_, e = tx.Exec("DELETE FROM scan_waits WHERE job_id=?", tid)
+		if e == nil {
+			_, e = tx.Exec("DELETE FROM scan_schedule WHERE job_id=?", tid)
+		}
+		if e == nil {
+			_, e = tx.Exec("UPDATE jobs SET state='queued',stage='Retry requested' WHERE id=?", tid)
+		}
 	}
 	if e == nil {
 		e = tx.Commit()
@@ -243,6 +251,10 @@ func (a *App) runAcquisition(ctx context.Context) {
 		a.jobState(jid, "failed", e.Error())
 		return
 	}
+	if _, e = a.DB.Exec("INSERT OR IGNORE INTO scan_waits(job_id,started_at) VALUES(?,unixepoch())", jid); e != nil {
+		a.jobState(jid, "failed", "Cannot persist indexing wait")
+		return
+	}
 	a.jobState(jid, "awaiting_scan", "File validated; waiting for Navidrome indexing ("+actual+")")
 	if _, e = a.DB.Exec("INSERT INTO scan_schedule(job_id,checked_at) VALUES(?,unixepoch()) ON CONFLICT(job_id) DO UPDATE SET checked_at=excluded.checked_at", jid); e != nil {
 		return
@@ -252,6 +264,7 @@ func (a *App) runAcquisition(ctx context.Context) {
 		a.jobState(jid, "failed", scanErr.Error())
 		return
 	}
+	slog.Info("Navidrome indexing check", "job_id", jid, "scanning", scan.Scan.Scanning, "scanned_count", scan.Scan.Count, "file_path", file)
 	if !scan.Scan.Scanning {
 		_, e = a.nav(ctx, c, "startScan", nil)
 	}
@@ -265,6 +278,15 @@ func (a *App) runAcquisition(ctx context.Context) {
 		return
 	}
 	if songID == "" {
+		var elapsed int64
+		if e = a.DB.QueryRow("SELECT unixepoch()-started_at FROM scan_waits WHERE job_id=?", jid).Scan(&elapsed); e != nil {
+			a.jobState(jid, "failed", "Cannot read indexing wait")
+			return
+		}
+		slog.Warn("Placed file not found in Navidrome", "job_id", jid, "file_path", file, "wait_seconds", elapsed, "scanning", scan.Scan.Scanning)
+		if elapsed >= 300 {
+			a.jobState(jid, "failed", "Navidrome has not indexed the downloaded file after 5 minutes. Check scan progress and that ZenSync /music and Navidrome's music library use the same shared storage, and that Navidrome can read ZenSync/ files. The validated file is retained; retry after fixing the mount.")
+		}
 		return
 	}
 	if _, e = a.DB.Exec("UPDATE assets SET server_id=? WHERE target=?", songID, target); e != nil {
@@ -273,7 +295,18 @@ func (a *App) runAcquisition(ctx context.Context) {
 	a.fulfill(jid, rid, target, songID)
 }
 func (a *App) jobState(jid, state, message string) {
-	_, _ = a.DB.Exec("UPDATE jobs SET state=?,stage=? WHERE id=?", state, message, jid)
+	var previous, previousMessage string
+	if e := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE id=?", jid).Scan(&previous, &previousMessage); e != nil {
+		slog.Error("job state lookup failed", "job_id", jid)
+		return
+	}
+	if _, e := a.DB.Exec("UPDATE jobs SET state=?,stage=? WHERE id=?", state, message, jid); e != nil {
+		slog.Error("job state persistence failed", "job_id", jid)
+		return
+	}
+	if previous != state || previousMessage != message {
+		slog.Info("acquisition state changed", "job_id", jid, "from", previous, "state", state, "detail", message)
+	}
 }
 func (a *App) fulfill(jid, rid, target, songID string) {
 	tx, e := a.DB.Begin()

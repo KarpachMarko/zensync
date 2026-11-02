@@ -102,7 +102,7 @@ func (a *App) deezer(ctx context.Context, path string, out any) error {
 }
 func (a *App) track(ctx context.Context, input string) (Track, error) {
 	var t Track
-	id, e := deezerID(input)
+	id, e := a.resolveDeezerID(ctx, input)
 	if e != nil {
 		return t, e
 	}
@@ -171,4 +171,51 @@ func artistMatches(t Track, artist string) bool {
 		}
 	}
 	return false
+}
+
+// Resolve only Deezer-owned HTTPS share redirects. Never fetch arbitrary URLs
+// supplied in a redirect or a fallback query parameter.
+func (a *App) resolveDeezerID(ctx context.Context, input string) (string, error) {
+	if id, e := deezerID(input); e == nil {
+		return id, nil
+	}
+	current, e := url.Parse(strings.TrimSpace(input))
+	if e != nil {
+		return "", errors.New("Invalid Deezer song URL")
+	}
+	client := *a.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	for hop := 0; hop < 6; hop++ {
+		if current.Scheme != "https" || current.User != nil || (current.Host != "link.deezer.com" && current.Host != "www.deezer.com" && current.Host != "deezer.com") {
+			return "", errors.New("Deezer share link redirected outside supported Deezer hosts")
+		}
+		if id, e := deezerID(current.String()); e == nil {
+			return id, nil
+		}
+		for _, key := range []string{"dest", "awf", "gwf", "iwf"} {
+			if target := current.Query().Get(key); target != "" {
+				if id, e := deezerID(target); e == nil {
+					return id, nil
+				}
+			}
+		}
+		req, e := http.NewRequestWithContext(ctx, "GET", current.String(), nil)
+		if e != nil {
+			return "", errors.New("Invalid Deezer share link")
+		}
+		resp, e := client.Do(req)
+		if e != nil {
+			return "", errors.New("Could not resolve Deezer share link; try again later")
+		}
+		resp.Body.Close()
+		if resp.StatusCode < 300 || resp.StatusCode > 399 {
+			return "", errors.New("Deezer share link did not resolve to a song")
+		}
+		next, e := resp.Location()
+		if e != nil {
+			return "", errors.New("Deezer share link has no valid redirect")
+		}
+		current = next
+	}
+	return "", errors.New("Too many Deezer share-link redirects")
 }

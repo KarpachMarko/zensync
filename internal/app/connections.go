@@ -154,7 +154,8 @@ type NavResponse struct {
 		Items []RemotePlaylist `json:"playlist"`
 	} `json:"playlists"`
 	Scan struct {
-		Scanning bool `json:"scanning"`
+		Scanning bool  `json:"scanning"`
+		Count    int64 `json:"count"`
 	} `json:"scanStatus"`
 }
 

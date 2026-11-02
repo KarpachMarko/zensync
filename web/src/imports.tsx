@@ -733,7 +733,7 @@ function Review({
       <h2>Find the intended recording</h2>
       <p>
         Compare album, version and duration. Resolving a match does not request
-        a new download. You can also paste a direct Deezer song URL.
+        a new download. You can also paste a Deezer song or share URL.
       </p>
       <form className="searchbar" onSubmit={find}>
         <label className="grow">

@@ -47,7 +47,7 @@ export function Search() {
     <>
       <h1 tabIndex={-1}>Find your next record</h1>
       <p>
-        Search Deezer, or paste a direct song link when you know exactly what
+        Search Deezer, or paste a song or share link when you know exactly what
         you want.
       </p>
       <form
@@ -63,7 +63,7 @@ export function Search() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Artist, song, or https://www.deezer.com/track/…"
+            placeholder="Artist, song, or https://link.deezer.com/s/…"
             maxLength={500}
             required
           />

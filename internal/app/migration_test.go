@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -283,6 +284,24 @@ func TestMigrationAcquisitionAndPublication(t *testing.T) {
 		t.Fatal("member acquired before approval")
 	}
 	expect(t, admin.call("POST", "/api/v2/requests/"+rid, `{"decision":"approved","reason":"Test approval"}`, ""), 200)
+	nav.music = "" // Navidrome cannot see the placed file: reproduce the reported wait.
+	a.runAcquisition(context.Background())
+	var jobID string
+	a.DB.QueryRow("SELECT id FROM jobs WHERE request_id=?", rid).Scan(&jobID)
+	var waiting string
+	a.DB.QueryRow("SELECT state FROM jobs WHERE id=?", jobID).Scan(&waiting)
+	if waiting != "awaiting_scan" {
+		t.Fatalf("expected indexing wait, got %s", waiting)
+	}
+	a.DB.Exec("UPDATE scan_waits SET started_at=unixepoch()-301 WHERE job_id=?", jobID)
+	a.DB.Exec("DELETE FROM scan_schedule WHERE job_id=?", jobID)
+	a.runAcquisition(context.Background())
+	a.DB.QueryRow("SELECT state FROM jobs WHERE id=?", jobID).Scan(&waiting)
+	if waiting != "failed" {
+		t.Fatal("indexing wait did not time out")
+	}
+	expect(t, alice.call("POST", "/api/v2/tasks/"+jobID, "", ""), 200)
+	nav.music = a.musicDir
 	a.runAcquisition(context.Background())
 	var state, stage string
 	a.DB.QueryRow("SELECT state,stage FROM jobs WHERE request_id=?", rid).Scan(&state, &stage)
@@ -457,5 +476,26 @@ func TestQualityFallbackAndStagedRecovery(t *testing.T) {
 	}
 	if _, e = os.Stat(filepath.Join(a.dataDir, "staging", jid, "320", "d-fi.config.json")); !os.IsNotExist(e) {
 		t.Fatal("credential file left after subprocess")
+	}
+}
+
+type redirectTransport func(*http.Request) (*http.Response, error)
+
+func (f redirectTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func TestDeezerShareLinks(t *testing.T) {
+	a := &App{HTTP: &http.Client{Transport: redirectTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 301, Header: http.Header{"Location": {"https://link.deezer.com/?dest=https%3A%2F%2Fwww.deezer.com%2Ftrack%2F4081655051"}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})}}
+	got, e := a.resolveDeezerID(context.Background(), "https://link.deezer.com/s/34QwcW1pZpQI0awlx3GK6")
+	if e != nil || got != "4081655051" {
+		t.Fatalf("share resolution %s %v", got, e)
+	}
+	for _, dest := range []string{"http://127.0.0.1/", "https://evil.example/track/1", "https://www.deezer.com/album/123"} {
+		a.HTTP.Transport = redirectTransport(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 302, Header: http.Header{"Location": {dest}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+		})
+		if _, e = a.resolveDeezerID(context.Background(), "https://link.deezer.com/s/test"); e == nil {
+			t.Fatal("accepted unsafe or non-track redirect", dest)
+		}
 	}
 }

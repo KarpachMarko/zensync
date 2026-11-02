@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -162,6 +163,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
 		cmd.WaitDelay = 5 * time.Second
+		started := time.Now()
 		e = cmd.Start()
 		if e == nil {
 			done := make(chan error, 1)
@@ -188,6 +190,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 			ticker.Stop()
 		}
 
+		slog.Info("d-fi attempt finished", "job_id", jid, "quality", quality, "success", e == nil, "duration_ms", time.Since(started).Milliseconds())
 		cancel()
 		_ = os.Remove(cfg)
 		if ctx.Err() != nil {
@@ -322,13 +325,25 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 	if json.Unmarshal([]byte(metadata), &t) != nil {
 		return "", errors.New("Invalid asset metadata")
 	}
-	songs, e := a.navSearch(ctx, c, t.Title, 0)
-	if e != nil {
-		return "", e
+	songs := []Song{}
+	for offset := 0; offset < 10000; offset += 100 {
+		page, err := a.navSearch(ctx, c, t.Title, offset)
+		if err != nil {
+			return "", err
+		}
+		songs = append(songs, page...)
+		if len(page) < 100 {
+			break
+		}
 	}
+	slog.Info("Navidrome song lookup", "expected_path", rel, "candidate_count", len(songs))
 	for _, s := range songs {
 		path := strings.ReplaceAll(s.Path, "\\", "/")
-		if (path == rel || strings.HasSuffix(path, "/"+rel)) && trackMatches(t, s) {
+		pathMatches := path == rel || strings.HasSuffix(path, "/"+rel)
+		if pathMatches && !trackMatches(t, s) {
+			slog.Warn("Navidrome file metadata differs from approved recording", "song_id", s.ID, "file_path", path)
+		}
+		if pathMatches && trackMatches(t, s) {
 			return s.ID, nil
 		}
 	}

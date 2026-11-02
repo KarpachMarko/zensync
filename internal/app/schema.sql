@@ -77,3 +77,5 @@ INSERT OR IGNORE INTO schema_version VALUES(2);
 CREATE TABLE IF NOT EXISTS request_metadata (request_id TEXT PRIMARY KEY REFERENCES requests(id), metadata TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS scan_schedule (job_id TEXT PRIMARY KEY REFERENCES jobs(id), checked_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS source_resolutions (source_id TEXT PRIMARY KEY REFERENCES source_songs(id), revision TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS scan_waits (job_id TEXT PRIMARY KEY REFERENCES jobs(id), started_at INTEGER NOT NULL);
