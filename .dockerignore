@@ -1,0 +1,17 @@
+.git
+.env*
+secrets
+data
+node_modules
+web/node_modules
+web/dist
+mockups
+coverage
+*.db*
+*.sqlite*
+
+music
+backups
+.idea
+web/test-results
+web/playwright-report

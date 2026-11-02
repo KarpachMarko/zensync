@@ -1,6 +1,6 @@
 # ZenSync implementation plan
 
-Status: planning; backend implementation has not started. Updated 2 November 2026 after the product-decision review. This document and [multi-user design](multi-user-design.md) are authoritative. The assessment and existing mockups are historical references where they describe broader or different behavior.
+Status: first XML-to-Navidrome migration workflow implemented, including explicit missing-song acquisition with d-fi 2.3.5. Real Navidrome integration and controlled acquisition tests pass; authenticated live Deezer verification and the remaining phase-1 scope are pending. See [deployment notes](deployment.md) for the exact implemented scope. Updated 2 November 2026 after the product-decision review. This document and [multi-user design](multi-user-design.md) are authoritative. The assessment and existing mockups are historical references where they describe broader or different behavior.
 
 ## Product purpose and ownership
 

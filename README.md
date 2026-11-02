@@ -4,7 +4,11 @@ A self-hosted Navidrome companion for initial music migration and ongoing music 
 
 ## Current status
 
-Planning and interactive UI prototypes. The Go backend and production authentication, acquisition and migration have not been implemented. The plan was revised on 2 November 2026; mockups use sample data and represent the earlier, broader scope.
+The first migration workflow is implemented: first-access administrator setup, Apple Music XML preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes.
+
+Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
+
+See [deployment and first-migration instructions](docs/deployment.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
 
 ## Phase 1
 

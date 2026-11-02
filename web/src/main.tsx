@@ -1,0 +1,543 @@
+import React, { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  BrowserRouter,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import "./style.css";
+import { api, setCSRF } from "./api";
+import { Search, Library, Connections } from "./music";
+import { Imports, NewImport, MigrationPage } from "./imports";
+type User = {
+  id: string;
+  username: string;
+  role: string;
+  direct: boolean;
+  quality: string[];
+};
+type Request = {
+  id: string;
+  owner: string;
+  title: string;
+  artist: string;
+  target: string;
+  decision: string;
+  reason: string;
+  upgrade: boolean;
+  quality: string[];
+};
+function App() {
+  const [setup, setSetup] = useState(false);
+  const [user, setUser] = useState<User | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  const [collapsed, setCollapsed] = useState(
+    localStorage.getItem("sidebar") === "collapsed",
+  );
+  const location = useLocation();
+  async function load() {
+    try {
+      const first = await api<{ required: boolean }>("/setup");
+      setSetup(first.required);
+      if (first.required) {
+        setUser(null);
+        return;
+      }
+      const s = await api<{ user: User; csrf: string }>("/session");
+      setCSRF(s.csrf);
+      setUser(s.user);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  useEffect(() => {
+    setError("");
+    document.querySelector<HTMLElement>("main h1")?.focus();
+  }, [location.pathname]);
+  async function login(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    try {
+      if (setup) await api("/setup", "POST", Object.fromEntries(f));
+      const s = await api<{ csrf: string }>(
+        "/session",
+        "POST",
+        Object.fromEntries(f),
+      );
+      setCSRF(s.csrf);
+      await load();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  }
+  if (loading)
+    return (
+      <div className="login">
+        <p>Opening your workspace…</p>
+      </div>
+    );
+  if (!user)
+    return (
+      <div className="login">
+        <div className="brand">◉ ZenSync</div>
+        <h1>{setup ? "Welcome to ZenSync" : "Your music, together."}</h1>
+        <p>
+          {setup
+            ? "Create the administrator account to start migrating your music."
+            : "Sign in to your shared music workspace."}
+        </p>
+        <form onSubmit={login}>
+          <label>
+            Username
+            <input name="username" autoComplete="username" required />
+          </label>
+          <label>
+            Password
+            <input
+              name="password"
+              type="password"
+              autoComplete={setup ? "new-password" : "current-password"}
+              minLength={setup ? 12 : undefined}
+              maxLength={72}
+              required
+            />
+          </label>
+          {error && <p role="alert">{error}</p>}
+          <button>{setup ? "Create administrator" : "Sign in"}</button>
+        </form>
+      </div>
+    );
+  const nav = [
+    ["/library/songs", "Library"],
+    ["/search", "Search"],
+    ["/imports", "Imports"],
+    ["/requests", "Requests"],
+    ["/activity", "Activity"],
+    ["/settings/connections", "Settings"],
+  ];
+  return (
+    <div className={"shell " + (collapsed ? "collapsed" : "")}>
+      <aside>
+        <div className="brand">◉ {!collapsed && "ZenSync"}</div>
+        <button
+          className="quiet collapse"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => {
+            setCollapsed(!collapsed);
+            localStorage.setItem(
+              "sidebar",
+              collapsed ? "expanded" : "collapsed",
+            );
+          }}
+        >
+          {collapsed ? "»" : "«"}
+          <span className="navtext"> Collapse</span>
+        </button>
+        <nav aria-label="Main navigation">
+          {nav.map(([to, label], i) => (
+            <NavLink to={to} key={to} title={label}>
+              <span className="symbol">
+                {["▤", "⌕", "⇣", "☷", "◷", "⚙"][i]}
+              </span>
+              <span className="navtext">{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="account">
+          <strong>{user.username}</strong>
+          <small>{user.role}</small>
+          <button
+            className="quiet"
+            onClick={async () => {
+              try {
+                await api("/session", "DELETE");
+                setUser(null);
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <span>Shared music workspace</span>
+          <span className="pill">Music migration</span>
+        </header>
+        {error && <p role="alert">{error}</p>}
+        <Routes>
+          <Route path="/requests" element={<Requests user={user} />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route
+            path="/settings/*"
+            element={<Settings user={user} reload={load} />}
+          />
+          <Route path="/library/:view" element={<Library />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/imports" element={<Imports />} />
+          <Route path="/imports/new" element={<NewImport />} />
+          <Route path="/imports/:id" element={<MigrationPage />} />
+          <Route
+            path="/imports/:id/songs/:sourceId"
+            element={<MigrationPage />}
+          />
+          <Route
+            path="/imports/:id/playlists/:playlistId"
+            element={<MigrationPage />}
+          />
+          <Route path="*" element={<Navigate to="/imports" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+function Requests({ user }: { user: User }) {
+  const [rows, setRows] = useState<Request[]>([]),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [loaded, setLoaded] = useState(false);
+  async function load() {
+    try {
+      setRows(await api<Request[]>("/requests"));
+      setLoaded(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 4000);
+    return () => clearInterval(timer);
+  }, []);
+  async function decide(r: Request, decision: string, reason = "") {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/requests/" + r.id, "POST", { decision, reason });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <h1 tabIndex={-1}>
+        Requests <span className="count">{rows.length}</span>
+      </h1>
+      <p>
+        {user.role === "admin"
+          ? "Review acquisition requests across the workspace."
+          : "Your music requests and approval decisions."}
+      </p>
+      <div className="actions toolbar">
+        <NavLink className="button" to="/search">
+          Search or paste a Deezer song URL
+        </NavLink>
+        <NavLink to="/imports">Request from a migration</NavLink>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <div className="tablehead">
+        <span>Recording</span>
+        <span>Decision</span>
+      </div>
+      {!loaded ? (
+        <p>Loading requests…</p>
+      ) : rows.length === 0 ? (
+        <p className="emptytext">
+          No requests yet. Find a song in Search or select missing songs from a
+          migration.
+        </p>
+      ) : (
+        rows.map((r) => (
+          <article className="request" key={r.id}>
+            <div className="row">
+              <div>
+                <strong>{r.title}</strong>
+                <small>
+                  {r.artist || "Artist not specified"} / {r.target}
+                  {r.upgrade ? " / Upgrade" : ""}
+                </small>
+              </div>
+              <span className={"pill " + r.decision}>
+                {r.decision.replaceAll("_", " ")}
+              </span>
+            </div>
+            {r.reason && <p className="muted">{r.reason}</p>}
+            {r.decision === "awaiting_approval" && (
+              <div className="actions">
+                {user.role === "admin" && (
+                  <>
+                    <button
+                      disabled={busy}
+                      onClick={() => void decide(r, "approved")}
+                    >
+                      Approve
+                    </button>
+                    <form
+                      className="decline"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void decide(
+                          r,
+                          "declined",
+                          String(new FormData(e.currentTarget).get("reason")),
+                        );
+                      }}
+                    >
+                      <input
+                        name="reason"
+                        aria-label={"Reason for declining " + r.title}
+                        placeholder="Reason for declining"
+                        maxLength={1000}
+                        required
+                      />
+                      <button className="quiet" disabled={busy}>
+                        Decline
+                      </button>
+                    </form>
+                  </>
+                )}
+                {r.owner === user.id && (
+                  <button
+                    className="quiet"
+                    disabled={busy}
+                    onClick={() => void decide(r, "withdrawn")}
+                  >
+                    Withdraw
+                  </button>
+                )}
+              </div>
+            )}
+          </article>
+        ))
+      )}
+    </>
+  );
+}
+function Activity() {
+  const [rows, setRows] = useState<
+      { id: string; title: string; state: string; stage: string }[]
+    >([]),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
+  async function load() {
+    try {
+      setRows(await api<typeof rows>("/activity"));
+      setLoading(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, []);
+  async function retry(id: string) {
+    try {
+      await api("/tasks/" + id, "POST");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  return (
+    <>
+      <h1 tabIndex={-1}>Activity</h1>
+      <p>Execution is tracked separately from approval.</p>
+      {error && <p role="alert">{error}</p>}
+      {loading ? (
+        <p>Loading activity…</p>
+      ) : rows.length === 0 ? (
+        <p className="emptytext">
+          No execution tasks. Requests awaiting approval do not occupy a
+          transfer slot.
+        </p>
+      ) : (
+        rows.map((r) => (
+          <div className="row" key={r.id}>
+            <div>
+              <strong>{r.title}</strong>
+              <small>{r.stage}</small>
+            </div>
+            <div className="actions">
+              <span className="pill">{r.state}</span>
+              {(r.state === "failed" || r.state === "blocked") && (
+                <button className="quiet" onClick={() => void retry(r.id)}>
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </>
+  );
+}
+function Settings({
+  user,
+  reload,
+}: {
+  user: User;
+  reload: () => Promise<void>;
+}) {
+  const [users, setUsers] = useState<User[]>([]),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const location = useLocation();
+  async function loadUsers() {
+    if (user.role === "admin") setUsers(await api<User[]>("/users"));
+  }
+  useEffect(() => {
+    loadUsers().catch((e) => setMessage(e.message));
+  }, []);
+  async function add(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget,
+      f = new FormData(form);
+    setBusy(true);
+    try {
+      await api("/users", "POST", {
+        username: f.get("username"),
+        password: f.get("password"),
+        direct: f.get("direct") === "on",
+      });
+      form.reset();
+      await loadUsers();
+      setMessage("Member created.");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <h1 tabIndex={-1}>Settings</h1>
+      <nav className="tabs" aria-label="Settings">
+        <NavLink to="/settings/connections">Connections</NavLink>
+        <NavLink to="/settings/quality">Quality</NavLink>
+        {user.role === "admin" && (
+          <NavLink to="/settings/people">People</NavLink>
+        )}
+      </nav>
+      {message && <p role="status">{message}</p>}
+      {location.pathname.endsWith("/people") && user.role === "admin" ? (
+        <>
+          <h2>People & permissions</h2>
+          {users.map((u) => (
+            <div className="row" key={u.id}>
+              <strong>
+                {u.username}
+                <small>{u.role}</small>
+              </strong>
+              <span>
+                {u.direct
+                  ? "Can add without approval"
+                  : u.role === "admin"
+                    ? "Administrator"
+                    : "Approval required"}
+              </span>
+            </div>
+          ))}
+          <h2>Add a member</h2>
+          <form onSubmit={add}>
+            <div className="fields">
+              <label>
+                Username
+                <input
+                  name="username"
+                  autoComplete="off"
+                  maxLength={80}
+                  required
+                />
+              </label>
+              <label>
+                Initial password
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={72}
+                  required
+                />
+              </label>
+            </div>
+            <label className="check">
+              <input name="direct" type="checkbox" /> Allow adding music without
+              approval
+            </label>
+            <p className="muted">
+              Upgrades still require admin approval. Members cannot delete
+              shared audio.
+            </p>
+            <button disabled={busy}>Create member</button>
+          </form>
+        </>
+      ) : location.pathname.endsWith("/quality") ? (
+        <>
+          <h2>Your quality preference</h2>
+          <p>Requests preserve a snapshot of this preference when submitted.</p>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              try {
+                await api("/quality", "PUT", {
+                  quality: String(
+                    new FormData(e.currentTarget).get("quality"),
+                  ).split(","),
+                });
+                await reload();
+                setMessage("Quality preference saved.");
+              } catch (e) {
+                setMessage((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label>
+              Allowed qualities, in order
+              <select name="quality" defaultValue={user.quality.join(",")}>
+                <option value="lossless,320,128">Lossless → 320 → 128</option>
+                <option value="lossless">Lossless only</option>
+                <option value="320,128">320 → 128</option>
+                <option value="320">320 only</option>
+                <option value="128">128 only</option>
+              </select>
+            </label>
+            <button disabled={busy}>Save preference</button>
+          </form>
+          <p className="muted">
+            d-fi tries only the allowed qualities in this order. Existing
+            playable music is reused; replacing shared audio is not enabled yet.
+          </p>
+        </>
+      ) : (
+        <Connections admin={user.role === "admin"} />
+      )}
+    </>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
+);

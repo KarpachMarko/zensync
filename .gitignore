@@ -17,3 +17,10 @@ coverage/
 /data/
 /secrets/
 /downloads/
+
+*.tsbuildinfo
+/backups/
+
+/music/
+/web/test-results/
+/web/playwright-report/

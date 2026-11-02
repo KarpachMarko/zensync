@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Library Persistent ID</key><string>LIBRARY-1</string>
+<key>Tracks</key><dict>
+<key>1</key><dict><key>Track ID</key><integer>1</integer><key>Persistent ID</key><string>SONG-A</string><key>Name</key><string>First song</string><key>Artist</key><string>Test artist</string><key>Album</key><string>Test album</string><key>Total Time</key><integer>2000</integer><key>Loved</key><true/><key>Location</key><string>file:///never/read/this</string></dict>
+<key>2</key><dict><key>Track ID</key><integer>2</integer><key>Name</key><string>Second song</string><key>Artist</key><string>Test artist</string><key>Album</key><string>Test album</string><key>Total Time</key><integer>2000</integer></dict>
+<key>3</key><dict><key>Track ID</key><integer>3</integer><key>Name</key><string>Outside playlists</string><key>Artist</key><string>Test artist</string><key>Album</key><string>Test album</string><key>Total Time</key><integer>2000</integer></dict>
+<key>4</key><dict><key>Name</key><string>Podcast</string><key>Podcast</key><true/></dict>
+</dict>
+<key>Playlists</key><array>
+<dict><key>Name</key><string>Music</string><key>Master</key><true/><key>Playlist Items</key><array><dict><key>Track ID</key><integer>1</integer></dict><dict><key>Track ID</key><integer>3</integer></dict></array></dict>
+<dict><key>Name</key><string>My folder</string><key>Folder</key><true/><key>Playlist Persistent ID</key><string>FOLDER</string></dict>
+<dict><key>Name</key><string>Roadtrip</string><key>Parent Persistent ID</key><string>FOLDER</string><key>Playlist Persistent ID</key><string>PLAYLIST</string><key>Playlist Items</key><array><dict><key>Track ID</key><integer>1</integer></dict><dict><key>Track ID</key><integer>2</integer></dict><dict><key>Track ID</key><integer>1</integer></dict><dict><key>Track ID</key><integer>99</integer></dict><dict><key>Track ID</key><integer>4</integer></dict></array></dict>
+</array></dict></plist>

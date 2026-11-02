@@ -1,0 +1,23 @@
+services:
+  zensync:
+    build: .
+    image: zensync:local
+    container_name: zensync-webui
+    ports:
+      - "8080:8080"
+    volumes:
+      - zensync_data:/data
+      # Mount the same music directory Navidrome scans.
+      - ${ZENSYNC_MUSIC_PATH:-./music}:/music
+    # Protect the application filesystem; /data and /tmp remain writable.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 15s
+volumes:
+  zensync_data:
