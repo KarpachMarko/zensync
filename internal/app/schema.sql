@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS requests (
 );
 CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
- state TEXT NOT NULL DEFAULT 'blocked', stage TEXT NOT NULL DEFAULT 'Integration not configured',
+ state TEXT NOT NULL DEFAULT 'queued', stage TEXT NOT NULL DEFAULT 'Queued for acquisition',
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS attempts (
@@ -91,4 +91,10 @@ CREATE TABLE IF NOT EXISTS album_requests (request_id TEXT PRIMARY KEY REFERENCE
 CREATE TABLE IF NOT EXISTS request_children (
  parent_id TEXT NOT NULL REFERENCES requests(id), child_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
  position INTEGER NOT NULL, PRIMARY KEY(parent_id,position)
+);
+
+CREATE TABLE IF NOT EXISTS acquisition_checks (job_id TEXT PRIMARY KEY REFERENCES jobs(id), checked_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS migration_task_wakeups (
+ migration_id TEXT NOT NULL REFERENCES migrations(id), action TEXT NOT NULL,
+ PRIMARY KEY(migration_id,action)
 );

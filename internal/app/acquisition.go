@@ -233,6 +233,8 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 func (a *App) placeAudio(jid, target, source string, t Track, quality string) (string, error) {
+	a.placementMu.Lock()
+	defer a.placementMu.Unlock()
 	checksum, e := hashFile(source)
 	if e != nil {
 		return "", e

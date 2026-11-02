@@ -11,6 +11,7 @@ import {
 } from "react-router-dom";
 import "./style.css";
 import { Icon } from "./icons";
+import { DownloadSettings } from "./downloads";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
 import { Imports, NewImport, MigrationPage } from "./imports";
@@ -525,6 +526,9 @@ function Settings({
         <NavLink to="/settings/connections">Connections</NavLink>
         <NavLink to="/settings/quality">Quality</NavLink>
         {user.role === "admin" && (
+          <NavLink to="/settings/downloads">Downloads</NavLink>
+        )}
+        {user.role === "admin" && (
           <NavLink to="/settings/people">People</NavLink>
         )}
       </nav>
@@ -582,6 +586,8 @@ function Settings({
             <button disabled={busy}>Create member</button>
           </form>
         </>
+      ) : location.pathname.endsWith("/downloads") && user.role === "admin" ? (
+        <DownloadSettings />
       ) : location.pathname.endsWith("/quality") ? (
         <>
           <h2>Your quality preference</h2>

@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case path == "/api/v2/settings/downloads":
+		a.downloadSettings(w, r, u)
 	case path == "/api/v2/connections":
 		a.connectionRoutes(w, r, u)
 	case path == "/api/v2/search" && r.Method == "GET":
@@ -407,13 +409,48 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 	}
 }
 func (a *App) queueMigration(owner, mid, action string) (string, error) {
-	tid := id()
-	_, e := a.DB.Exec("INSERT OR IGNORE INTO migration_tasks(id,owner,migration_id,action) VALUES(?,?,?,?)", tid, owner, mid, action)
+	tx, e := a.DB.Begin()
 	if e != nil {
 		return "", e
 	}
-	e = a.DB.QueryRow("SELECT id FROM migration_tasks WHERE migration_id=? AND action=? AND state IN ('queued','running')", mid, action).Scan(&tid)
-	return tid, e
+	defer tx.Rollback()
+	tid := id()
+	if _, e = tx.Exec("INSERT OR IGNORE INTO migration_tasks(id,owner,migration_id,action) VALUES(?,?,?,?)", tid, owner, mid, action); e != nil {
+		return "", e
+	}
+	var state string
+	if e = tx.QueryRow("SELECT id,state FROM migration_tasks WHERE migration_id=? AND action=? AND state IN ('queued','running')", mid, action).Scan(&tid, &state); e != nil {
+		return "", e
+	}
+	if state == "running" {
+		if _, e = tx.Exec("INSERT OR IGNORE INTO migration_task_wakeups VALUES(?,?)", mid, action); e != nil {
+			return "", e
+		}
+	}
+	return tid, tx.Commit()
+}
+func (a *App) finishMigrationTask(tid, owner, mid, action, state, message string) error {
+	tx, e := a.DB.Begin()
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	if _, e = tx.Exec("UPDATE migration_tasks SET state=?,message=? WHERE id=?", state, message, tid); e != nil {
+		return e
+	}
+	var pending int
+	if e = tx.QueryRow("SELECT count(*) FROM migration_task_wakeups WHERE migration_id=? AND action=?", mid, action).Scan(&pending); e != nil {
+		return e
+	}
+	if pending > 0 {
+		if _, e = tx.Exec("INSERT OR IGNORE INTO migration_tasks(id,owner,migration_id,action) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM migrations WHERE id=? AND state='open')", id(), owner, mid, action, mid); e != nil {
+			return e
+		}
+		if _, e = tx.Exec("DELETE FROM migration_task_wakeups WHERE migration_id=? AND action=?", mid, action); e != nil {
+			return e
+		}
+	}
+	return tx.Commit()
 }
 func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Migration, sid, action string) {
 	a.opMu.Lock()

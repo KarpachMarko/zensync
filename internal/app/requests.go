@@ -156,7 +156,7 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 		_, e = tx.Exec("INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", in.SourceID, rid)
 	}
 	if e == nil && decision == "approved" {
-		_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id) VALUES(?,?)", id(), rid)
+		_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
 	}
 	if e == nil {
 		e = audit(tx, u.ID, u.ID, "request.created", rid)
@@ -225,7 +225,7 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 		if parentAlbum > 0 {
 			e = a.expandAlbum(tx, rid)
 		} else {
-			_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id) VALUES(?,?)", id(), rid)
+			_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
 		}
 	}
 	if e == nil && parentAlbum > 0 && in.Decision != "approved" {

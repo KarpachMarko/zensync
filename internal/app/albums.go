@@ -173,7 +173,7 @@ func (a *App) expandAlbum(tx *sql.Tx, parent string) error {
 				return e
 			}
 		}
-		if _, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id) VALUES(?,?)", id(), child); e != nil {
+		if _, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), child); e != nil {
 			return e
 		}
 	}
@@ -196,6 +196,8 @@ func (a *App) albumItems(parent string) ([]AlbumItem, error) {
 	return out, rows.Err()
 }
 func (a *App) refreshAlbums() {
+	a.albumMu.Lock()
+	defer a.albumMu.Unlock()
 	rows, e := a.DB.Query("SELECT a.request_id,r.decision FROM album_requests a JOIN requests r ON r.id=a.request_id JOIN jobs j ON j.request_id=r.id WHERE r.decision='approved' AND j.state<>'available' ")
 	if e != nil {
 		return
@@ -232,7 +234,7 @@ func (a *App) refreshAlbums() {
 		} else if available+failed == len(items) {
 			state = "failed"
 		}
-		_, _ = a.DB.Exec("UPDATE jobs SET state=?,stage=? WHERE request_id=?", state, fmt.Sprintf("Album: %d/%d available, %d failed", available, len(items), failed), p.id)
+		_, _ = a.DB.Exec("UPDATE jobs SET state=?,stage=? WHERE request_id=? AND EXISTS(SELECT 1 FROM requests WHERE id=? AND decision='approved')", state, fmt.Sprintf("Album: %d/%d available, %d failed", available, len(items), failed), p.id, p.id)
 	}
 }
 func (a *App) retryAlbum(tx *sql.Tx, parent string) error {

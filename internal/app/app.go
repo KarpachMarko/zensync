@@ -24,6 +24,14 @@ import (
 var schema string
 
 type App struct {
+	albumMu          sync.Mutex
+	activeOwners     map[string]int
+	scanRequestedAt  time.Time
+	workMu           sync.Mutex
+	placementMu      sync.Mutex
+	scanMu           sync.Mutex
+	activeJobs       map[string]string
+	activeTargets    map[string]bool
 	importMu         sync.Mutex
 	providerMu       sync.Mutex
 	lastMetadata     time.Time

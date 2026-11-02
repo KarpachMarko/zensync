@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,26 +27,58 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 		// Remote journals are reconciled on retry; never blindly replay an uncertain favorite.
 		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='queued',message='Resuming after restart' WHERE state='running'")
 		_, _ = a.DB.Exec("UPDATE jobs SET state='failed',stage='Interrupted during acquisition. Retry to reconcile staged files and library placement.' WHERE state IN ('downloading','validating','importing')")
-		ticker := time.NewTicker(2 * time.Second)
+		_, _ = a.DB.Exec("UPDATE jobs SET state='queued',stage='Queued for acquisition' WHERE state='blocked' AND stage='Integration not configured'")
+		_, _ = a.DB.Exec("UPDATE jobs SET state='queued',stage='Queued after restart' WHERE state='checking'")
+		var work sync.WaitGroup
+		defer work.Wait()
+		maintenanceDone := make(chan struct{}, 1)
+		maintenanceRunning := false
+		lastMaintenance := time.Time{}
+		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-maintenanceDone:
+				maintenanceRunning = false
 			case <-ticker.C:
+				if ctx.Err() != nil {
+					return
+				}
+				if e := a.scheduleRelocations(); e != nil {
+					slog.Error("legacy relocation scheduling failed")
+				}
+				var pendingRelocation int
+				if e := a.DB.QueryRow("SELECT count(*) FROM asset_relocations WHERE state NOT IN ('completed','failed')").Scan(&pendingRelocation); e != nil {
+					continue
+				}
+				if pendingRelocation > 0 {
+					if a.activeAcquisitions() == 0 && !maintenanceRunning {
+						a.runRelocation(ctx)
+					}
+					continue
+				}
+				if !maintenanceRunning && time.Since(lastMaintenance) >= 2*time.Second {
+					maintenanceRunning = true
+					lastMaintenance = time.Now()
+					work.Add(1)
+					go func() { defer work.Done(); a.runMigrationTask(ctx); a.refreshAlbums(); maintenanceDone <- struct{}{} }()
+				}
+				for a.activeAcquisitions() < a.downloadLimit() {
+					claim := a.claimAcquisition()
+					if claim == nil {
+						break
+					}
+					work.Add(1)
+					go func(c *acquisitionClaim) {
+						defer work.Done()
+						defer a.releaseAcquisition(c)
+						a.executeAcquisition(ctx, c)
+						a.refreshAlbums()
+					}(claim)
+				}
 			}
-			if e := a.scheduleRelocations(); e != nil {
-				slog.Error("legacy relocation scheduling failed")
-			}
-			if a.runRelocation(ctx) {
-				continue
-			}
-			a.runMigrationTask(ctx)
-			if ctx.Err() != nil {
-				return
-			}
-			a.runAcquisition(ctx)
-			a.refreshAlbums()
 		}
 	}()
 	return done
@@ -82,7 +115,10 @@ func (a *App) runMigrationTask(ctx context.Context) {
 	if e != nil {
 		state, message = "failed", e.Error()
 	}
-	_, _ = a.DB.Exec("UPDATE migration_tasks SET state=?,message=? WHERE id=?", state, message, tid)
+	if err := a.finishMigrationTask(tid, owner, mid, action, state, message); err != nil {
+		slog.Error("migration task completion persistence failed", "task_id", tid)
+		return
+	}
 	_, _ = a.DB.Exec("UPDATE migrations SET error=? WHERE id=?", func() string {
 		if e != nil {
 			return message
@@ -162,6 +198,10 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 				return
 			}
 		}
+		if _, e = tx.Exec("DELETE FROM acquisition_checks WHERE job_id=?", tid); e != nil {
+			a.internal(w, e)
+			return
+		}
 		_, e = tx.Exec("DELETE FROM scan_waits WHERE job_id=?", tid)
 		if e == nil {
 			_, e = tx.Exec("DELETE FROM scan_schedule WHERE job_id=?", tid)
@@ -179,17 +219,9 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	send(w, 200, map[string]bool{"ok": true})
 }
-func (a *App) runAcquisition(ctx context.Context) {
-	var jid, rid, owner, target, quality, reason, actor string
-	var upgrade bool
-	e := a.DB.QueryRow(`SELECT j.id,r.id,r.owner,r.target,r.quality,r.reason,r.upgrade,COALESCE(r.actor,'') FROM jobs j JOIN requests r ON r.id=j.request_id LEFT JOIN scan_schedule sc ON sc.job_id=j.id WHERE r.decision='approved' AND r.target NOT LIKE 'deezer:album:%' AND NOT EXISTS(SELECT 1 FROM request_children cc JOIN requests pp ON pp.id=cc.parent_id WHERE cc.child_id=r.id AND pp.decision<>'approved') AND j.state IN ('queued','blocked','awaiting_scan','deferred') AND (j.state<>'awaiting_scan' OR COALESCE(sc.checked_at,0)<unixepoch()-30) ORDER BY j.rowid LIMIT 1`).Scan(&jid, &rid, &owner, &target, &quality, &reason, &upgrade, &actor)
-	if e != nil {
-		return
-	}
-	// Rotate waiting jobs so one unavailable account/song does not starve others.
-	defer func() {
-		_, _ = a.DB.Exec("UPDATE jobs SET rowid=(SELECT COALESCE(max(rowid),0)+1 FROM jobs) WHERE id=?", jid)
-	}()
+func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
+	jid, rid, owner, target, quality, reason, actor, upgrade := claim.jid, claim.rid, claim.owner, claim.target, claim.quality, claim.reason, claim.actor, claim.upgrade
+	var e error
 	if upgrade {
 		a.jobState(jid, "blocked", "Asset replacement is not enabled; existing audio is retained")
 		return
@@ -323,19 +355,12 @@ func (a *App) runAcquisition(ctx context.Context) {
 	if _, e = a.DB.Exec("INSERT INTO scan_schedule(job_id,checked_at) VALUES(?,unixepoch()) ON CONFLICT(job_id) DO UPDATE SET checked_at=excluded.checked_at", jid); e != nil {
 		return
 	}
-	scan, scanErr := a.nav(ctx, c, "getScanStatus", nil)
+	scan, scanErr := a.scanLibrary(ctx, c)
 	if scanErr != nil {
 		a.jobState(jid, "failed", scanErr.Error())
 		return
 	}
 	slog.Info("Navidrome indexing check", "job_id", jid, "scanning", scan.Scan.Scanning, "scanned_count", scan.Scan.Count, "file_path", file)
-	if !scan.Scan.Scanning {
-		_, e = a.nav(ctx, c, "startScan", nil)
-	}
-	if e != nil {
-		a.jobState(jid, "failed", e.Error())
-		return
-	}
 	songID, e := a.findPlaced(ctx, c, file, metadata)
 	if e != nil {
 		a.jobState(jid, "failed", e.Error())

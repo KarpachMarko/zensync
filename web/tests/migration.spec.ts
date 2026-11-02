@@ -260,6 +260,22 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
   expect(approvals).toBe(1);
+  await page.goto("/settings/downloads");
+  await expect(
+    page.getByRole("heading", { name: "Download concurrency" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Parallel downloads", { exact: true }),
+  ).toHaveValue("3");
+  await page.getByLabel("Parallel downloads", { exact: true }).fill("5");
+  await page
+    .getByRole("button", { name: "Save download limit", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("Download limit saved.");
+  await page.reload();
+  await expect(
+    page.getByLabel("Parallel downloads", { exact: true }),
+  ).toHaveValue("5");
   await page.goto("/settings/connections");
   await expect(
     page.getByRole("heading", { name: "Your personal Navidrome account" }),
