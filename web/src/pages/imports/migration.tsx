@@ -3,30 +3,27 @@ import { Snapshot } from "@/components/imports/snapshot";
 import { StatusBadge } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { status, type Detail, type Source } from "@/lib/migration";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 export function MigrationPage() {
+  const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
-  const [detail, setDetail] = useState<Detail>(),
-    [error, setError] = useState(""),
+  const [actionError, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [filter, setFilter] = useState(""),
     [limit, setLimit] = useState(100);
   const navigate = useNavigate();
-  async function load() {
-    const d = await api<Detail>("/imports/" + id);
-    setDetail(d);
-  }
-  useEffect(() => {
-    setDetail(undefined);
-    load().catch((e) => setError(e.message));
-    const timer = setInterval(() => load().catch(() => {}), 4000);
-    return () => clearInterval(timer);
-  }, [id]);
+  const result = useApiQuery<Detail>("/imports/" + id, {
+    enabled: !!id,
+    refetchInterval: 4000,
+  });
+  const detail = result.data;
+  const error = actionError || result.error?.message;
+  const load = result.reload;
   async function action(path: string, body?: unknown) {
     setBusy(true);
     setError("");
@@ -133,7 +130,7 @@ export function MigrationPage() {
           >
             {playlists.map((p) => (
               <label className="check" key={p.id}>
-                <Input
+                <input
                   type="checkbox"
                   name="playlist"
                   value={p.id}
@@ -156,7 +153,7 @@ export function MigrationPage() {
               </label>
             ))}
             <label className="check">
-              <Input name="favorites" type="checkbox" defaultChecked /> Import
+              <input name="favorites" type="checkbox" defaultChecked /> Import
               positive favorite/loved flags when songs become available
             </label>
             <Button disabled={busy}>Commit migration</Button>
@@ -325,7 +322,7 @@ export function MigrationPage() {
           </p>
           <div className="tablehead">
             <label className="check">
-              <Input
+              <input
                 type="checkbox"
                 checked={
                   shown.some(
@@ -366,7 +363,7 @@ export function MigrationPage() {
           </div>
           {shown.slice(0, limit).map((s, index) => (
             <div className="songrow" key={s.id + "-" + index}>
-              <Input
+              <input
                 type="checkbox"
                 aria-label={"Select " + s.metadata.title}
                 disabled={

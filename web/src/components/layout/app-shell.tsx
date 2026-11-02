@@ -1,8 +1,9 @@
 import { Icon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
+import { searchHref } from "@/lib/url-state";
 import React, { useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 export function AppShell({
@@ -16,6 +17,7 @@ export function AppShell({
   onError: (error: string) => void;
   children: React.ReactNode;
 }) {
+  const { api } = useApiMutation();
   const [collapsed, setCollapsed] = useState(
     localStorage.getItem("sidebar") === "collapsed",
   );
@@ -39,7 +41,7 @@ export function AppShell({
             <span className="navtext">ZenSync</span>
           </div>
           <Button
-            className="quiet collapse"
+            className="quiet sidebar-collapse"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!collapsed}
@@ -74,9 +76,7 @@ export function AppShell({
             onSubmit={(e) => {
               e.preventDefault();
               if (sidebarQuery.trim()) {
-                navigate(
-                  "/search?q=" + encodeURIComponent(sidebarQuery.trim()),
-                );
+                navigate(searchHref(sidebarQuery.trim()));
                 setSidebarQuery("");
               }
             }}

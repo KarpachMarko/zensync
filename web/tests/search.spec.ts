@@ -105,7 +105,7 @@ for (const directDelete of [true, false]) {
       .getByLabel("Search music", { exact: true })
       .fill("Owned recording");
     await page.getByRole("button", { name: "Search", exact: true }).click();
-    await expect(page).toHaveURL(/search\?q=Owned%20recording/);
+    await expect(page).toHaveURL(/search\?q=Owned(?:%20|\+)recording/);
     const existing = page.getByRole("region", {
       name: "Existing library",
       exact: true,
@@ -288,4 +288,77 @@ test("deletion dialog keeps failed requests open for retry and prevents duplicat
   );
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
+});
+
+test("search query and result type survive history navigation and reload", async ({
+  page,
+}) => {
+  await musicFixture(page, true);
+  await page.goto("/search?q=first");
+  const input = page.getByLabel("Song, artist, album or Deezer URL");
+  await expect(input).toHaveValue("first");
+  await input.fill("second & third");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("q") === "second & third",
+  );
+  await page.goBack();
+  await expect(input).toHaveValue("first");
+  await page.goForward();
+  await expect(input).toHaveValue("second & third");
+  await page
+    .getByRole("group", { name: "Result type" })
+    .getByRole("button", { name: "Album", exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("q") === "second & third" &&
+      url.searchParams.get("type") === "Album",
+  );
+  await page.reload();
+  await expect(input).toHaveValue("second & third");
+  await expect(
+    page.getByRole("button", { name: "Album", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("region", { name: "Existing library", exact: true }),
+  ).not.toBeVisible();
+});
+
+test("library pagination appends server pages through Query", async ({
+  page,
+}) => {
+  await musicFixture(page, true);
+  const offsets: number[] = [];
+  await page.route("**/api/v2/library?**", async (route) => {
+    const offset = Number(
+      new URL(route.request().url()).searchParams.get("offset"),
+    );
+    offsets.push(offset);
+    await route.fulfill({
+      json: {
+        songs: [
+          {
+            id: `song-${offset}`,
+            title: `Library page ${offset}`,
+            artist: "Artist",
+            album: "Album",
+            duration: 120,
+          },
+        ],
+        nextOffset: offset === 0 ? 100 : -1,
+      },
+    });
+  });
+  await page.goto("/library/songs");
+  await expect(page.getByText("Library page 0", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(
+    page.getByText("Library page 100", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Library page 0", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Load more", exact: true }),
+  ).not.toBeVisible();
+  expect(offsets).toEqual([0, 100]);
 });

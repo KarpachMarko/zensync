@@ -1,28 +1,27 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { useState } from "react";
 export function DownloadSettings() {
-  const [limit, setLimit] = useState(3),
-    [loaded, setLoaded] = useState(false),
+  const { api } = useApiMutation();
+  const [draftLimit, setLimit] = useState<number>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
-  useEffect(() => {
-    api<{ parallelDownloads: number }>("/settings/downloads")
-      .then((s) => {
-        setLimit(s.parallelDownloads);
-        setLoaded(true);
-      })
-      .catch((e) => setError(e.message));
-  }, []);
+  const result = useApiQuery<{ parallelDownloads: number }>(
+    "/settings/downloads",
+  );
+  const loaded = result.isSuccess;
+  const limit = draftLimit ?? result.data?.parallelDownloads ?? 3;
   return (
     <>
       <h2>Parallel downloads</h2>
       <p>
         Choose how many downloads can run at the same time across all users.
       </p>
-      {error && <p role="alert">{error}</p>}
+      {(error || result.error) && (
+        <p role="alert">{error || result.error?.message}</p>
+      )}
       {message && <p role="status">{message}</p>}
       <form
         onSubmit={async (e) => {

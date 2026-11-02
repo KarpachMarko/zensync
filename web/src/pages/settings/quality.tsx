@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
 import { useState } from "react";
 export function Quality({
@@ -9,6 +9,7 @@ export function Quality({
   user: User;
   reload: () => Promise<void>;
 }) {
+  const { api } = useApiMutation();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   return (

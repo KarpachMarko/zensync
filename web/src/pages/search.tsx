@@ -2,10 +2,14 @@ import { LibrarySongRow } from "@/components/music/library-song-row";
 import { SearchSection } from "@/components/music/search-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
 import { api, label, requestKey, time } from "@/lib/api";
+import { searchHref } from "@/lib/url-state";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useSearchParams } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 type FoundAlbum = {
   id: number;
   title: string;
@@ -13,61 +17,40 @@ type FoundAlbum = {
   trackCount?: number;
 };
 export function Search({ canDelete }: { canDelete: boolean }) {
-  const [resultType, setResultType] = useState<"Both" | "Album" | "Song">(
-    "Both",
+  const [urlQuery, setUrlQuery] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ history: "push" }),
+  );
+  const [resultType, setResultType] = useQueryState(
+    "type",
+    parseAsStringLiteral(["Both", "Album", "Song"]).withDefault("Both"),
   );
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
-  const [album, setAlbum] = useState<FoundAlbum>();
-  const [albums, setAlbums] = useState<FoundAlbum[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [query, setQuery] = useState(urlQuery);
+  useEffect(() => setQuery(urlQuery), [urlQuery]);
+  const searched = !!urlQuery.trim();
   const [albumRequested, setAlbumRequested] = useState<Set<number>>(new Set());
+  const [requested, setRequested] = useState<Set<number>>(new Set());
   const albumKeys = useRef<Record<number, string>>({});
   const keys = useRef<Record<number, string>>({});
-  const searchSequence = useRef(0);
-  const [params, setParams] = useSearchParams();
-  const [query, setQuery] = useState(params.get("q") || ""),
-    [results, setResults] = useState<Track[]>([]),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [searched, setSearched] = useState(false),
-    [requested, setRequested] = useState<Set<number>>(new Set());
-  const [library, setLibrary] = useState<LibrarySong[]>([]);
-  const [libraryError, setLibraryError] = useState("");
-  const [libraryLoading, setLibraryLoading] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
-  const [libraryOffset, setLibraryOffset] = useState(0);
-  const [moreLibrary, setMoreLibrary] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  async function search(q: string) {
-    if (!q.trim()) return;
-    const sequence = ++searchSequence.current;
-    setAlbum(undefined);
-    setAlbums([]);
-    setWarnings([]);
-    setResults([]);
-    setLibrary([]);
-    setLibraryOffset(0);
-    setMoreLibrary(false);
-    setLoadingMore(false);
-    setLibraryError("");
-    setLibraryLoading(true);
-    setImportLoading(true);
-    setSearched(true);
-    setError("");
-    await Promise.allSettled([
-      api<LibrarySong[]>("/library?q=" + encodeURIComponent(q) + "&offset=0")
-        .then((songs) => {
-          if (sequence !== searchSequence.current) return;
-          setLibrary(songs);
-          setMoreLibrary(songs.length === 100);
-        })
-        .catch((e) => {
-          if (sequence === searchSequence.current) setLibraryError(e.message);
-        })
-        .finally(() => {
-          if (sequence === searchSequence.current) setLibraryLoading(false);
-        }),
+  const [actionError, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { api: mutate } = useApiMutation();
+  const libraryQuery = useInfiniteQuery({
+    queryKey: ["api", "library-search", urlQuery],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      api<LibrarySong[]>(
+        "/library?q=" + encodeURIComponent(urlQuery) + "&offset=" + pageParam,
+      ),
+    getNextPageParam: (last, pages) =>
+      last.length === 100 ? pages.length * 100 : undefined,
+    enabled: searched,
+  });
+  const candidateQuery = useQuery({
+    queryKey: ["api", "search", urlQuery],
+    queryFn: () =>
       api<
         | Track[]
         | {
@@ -76,68 +59,39 @@ export function Search({ canDelete }: { canDelete: boolean }) {
             albums?: FoundAlbum[];
             warnings?: string[];
           }
-      >("/search?q=" + encodeURIComponent(q) + "&details=1")
-        .then((response) => {
-          if (sequence !== searchSequence.current) return;
-          const found = Array.isArray(response) ? undefined : response.album;
-          setAlbum(found?.trackCount === 1 ? undefined : found);
-          setResults(Array.isArray(response) ? response : response.tracks);
-          setAlbums(
-            Array.isArray(response)
-              ? []
-              : (response.albums || []).filter((a) => a.trackCount !== 1),
-          );
-          setWarnings(Array.isArray(response) ? [] : response.warnings || []);
-        })
-        .catch((e) => {
-          if (sequence === searchSequence.current) setError(e.message);
-        })
-        .finally(() => {
-          if (sequence === searchSequence.current) setImportLoading(false);
-        }),
-    ]);
-  }
-  useEffect(() => {
-    const q = params.get("q") || "";
-    setQuery(q);
-    if (q.trim()) void search(q.trim());
-    else {
-      setSearched(false);
-      setLibraryLoading(false);
-      setImportLoading(false);
-    }
-    return () => {
-      searchSequence.current++;
-    };
-  }, [params.get("q")]);
+      >("/search?q=" + encodeURIComponent(urlQuery) + "&details=1"),
+    enabled: searched,
+  });
+  const response = candidateQuery.data;
+  const found = Array.isArray(response) ? undefined : response?.album;
+  const album = found?.trackCount === 1 ? undefined : found;
+  const albums = Array.isArray(response)
+    ? []
+    : (response?.albums ?? []).filter((album) => album.trackCount !== 1);
+  const warnings = Array.isArray(response) ? [] : (response?.warnings ?? []);
+  const results = Array.isArray(response) ? response : (response?.tracks ?? []);
+  const library = libraryQuery.data?.pages.flat() ?? [];
+  const libraryError = libraryQuery.error?.message;
+  const error = actionError || candidateQuery.error?.message;
+  const libraryLoading =
+    libraryQuery.isFetching && !libraryQuery.isFetchingNextPage;
+  const importLoading = candidateQuery.isFetching;
+  const moreLibrary = libraryQuery.hasNextPage;
+  const loadingMore = libraryQuery.isFetchingNextPage;
   async function loadMoreLibrary() {
-    const sequence = searchSequence.current;
-    const offset = libraryOffset + 100;
-    setLoadingMore(true);
-    setLibraryError("");
-    try {
-      const songs = await api<LibrarySong[]>(
-        "/library?q=" +
-          encodeURIComponent(params.get("q") || "") +
-          "&offset=" +
-          offset,
-      );
-      if (sequence !== searchSequence.current) return;
-      setLibrary((current) => [...current, ...songs]);
-      setLibraryOffset(offset);
-      setMoreLibrary(songs.length === 100);
-    } catch (e) {
-      if (sequence === searchSequence.current)
-        setLibraryError((e as Error).message);
-    } finally {
-      if (sequence === searchSequence.current) setLoadingMore(false);
-    }
+    await libraryQuery.fetchNextPage();
+  }
+  async function search() {
+    setError("");
+    if (urlQuery === query.trim()) {
+      await Promise.all([libraryQuery.refetch(), candidateQuery.refetch()]);
+    } else await setUrlQuery(query.trim());
   }
   async function request(t: Track) {
     setBusy(true);
     setError("");
     try {
-      await api(
+      await mutate(
         "/requests",
         "POST",
         { target: `deezer:track:${t.id}` },
@@ -154,7 +108,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
     setBusy(true);
     setError("");
     try {
-      await api(
+      await mutate(
         "/requests",
         "POST",
         { target: "deezer:album:" + chosen.id },
@@ -177,8 +131,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
         className="searchbar"
         onSubmit={(e) => {
           e.preventDefault();
-          if (params.get("q") === query) void search(query);
-          else setParams({ q: query });
+          void search();
         }}
       >
         <label className="grow">
@@ -306,12 +259,9 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                     </div>
                     <div className="actions">
                       <NavLink
-                        to={
-                          "/search?q=" +
-                          encodeURIComponent(
-                            "https://www.deezer.com/album/" + found.id,
-                          )
-                        }
+                        to={searchHref(
+                          "https://www.deezer.com/album/" + found.id,
+                        )}
                       >
                         View tracks
                       </NavLink>

@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
-import React, { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import React, { useState } from "react";
 export function Users({
   user,
   reload,
@@ -10,15 +11,20 @@ export function Users({
   user: User;
   reload: () => Promise<void>;
 }) {
-  const [users, setUsers] = useState<User[]>([]),
-    [message, setMessage] = useState(""),
+  const { api } = useApiMutation();
+  const [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  async function loadUsers() {
-    if (user.role === "admin") setUsers(await api<User[]>("/users"));
+  const result = useApiQuery<User[]>("/users", {
+    enabled: user.role === "admin",
+  });
+  const users = result.data ?? [];
+  const loadUsers = result.reload;
+  const client = useQueryClient();
+  function setUsers(update: (users: User[]) => User[]) {
+    client.setQueryData<User[]>(["api", "/users"], (current) =>
+      update(current ?? []),
+    );
   }
-  useEffect(() => {
-    loadUsers().catch((e) => setMessage(e.message));
-  }, []);
   async function add(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget,
@@ -42,6 +48,7 @@ export function Users({
   }
   return (
     <>
+      {result.error && <p role="alert">{result.error.message}</p>}
       {message && <p role="status">{message}</p>}
       <h2>Users & permissions</h2>
       {users.map((u) => (
@@ -55,7 +62,7 @@ export function Users({
               <span>Administrator</span>
             ) : (
               <label className="check permission-toggle">
-                <Input
+                <input
                   type="checkbox"
                   checked={u.direct}
                   disabled={busy}
@@ -88,7 +95,7 @@ export function Users({
             )}
             {u.role !== "admin" && (
               <label className="check">
-                <Input
+                <input
                   type="checkbox"
                   checked={u.directDelete}
                   disabled={busy}
@@ -149,11 +156,11 @@ export function Users({
           </label>
         </div>
         <label className="check">
-          <Input name="direct" type="checkbox" /> Allow adding music without
+          <input name="direct" type="checkbox" /> Allow adding music without
           approval
         </label>
         <label className="check">
-          <Input name="directDelete" type="checkbox" /> Allow deleting music
+          <input name="directDelete" type="checkbox" /> Allow deleting music
           without approval
         </label>
         <p className="muted">

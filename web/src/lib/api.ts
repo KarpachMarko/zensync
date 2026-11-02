@@ -1,8 +1,17 @@
+function responseError(data: unknown, fallback: string): string {
+  return typeof data === "object" &&
+    data !== null &&
+    "error" in data &&
+    typeof data.error === "string"
+    ? data.error
+    : fallback;
+}
+
 let csrf = "";
 export function setCSRF(value: string) {
   csrf = value;
 }
-export async function api<T>(
+export async function api<T = unknown>(
   path: string,
   method = "GET",
   body?: unknown,
@@ -17,9 +26,9 @@ export async function api<T>(
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
+  const data: unknown = await res.json();
+  if (!res.ok) throw new Error(responseError(data, "Request failed"));
+  return data as T;
 }
 export async function upload(file: File): Promise<{ id: string }> {
   const res = await fetch("/api/v2/imports", {
@@ -31,9 +40,17 @@ export async function upload(file: File): Promise<{ id: string }> {
     },
     body: file,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Upload failed");
-  return data;
+  const data: unknown = await res.json();
+  if (!res.ok) throw new Error(responseError(data, "Upload failed"));
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("id" in data) ||
+    typeof data.id !== "string"
+  ) {
+    throw new Error("Invalid upload response");
+  }
+  return { id: data.id };
 }
 export type Track = {
   id: number;

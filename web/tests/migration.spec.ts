@@ -41,7 +41,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByRole("search")
     .getByRole("textbox", { name: "Search music" })
     .press("Enter");
-  await expect(page).toHaveURL(/search\?q=album%20query/);
+  await expect(page).toHaveURL(/search\?q=album(?:%20|\+)query/);
   await expect(page.getByRole("search").getByRole("textbox")).toHaveValue("");
   await expect(
     page.getByLabel("Song, artist, album or Deezer URL"),
@@ -352,7 +352,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByLabel("Search music", { exact: true })
     .fill("Shared artist");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page).toHaveURL(/search\?q=Shared%20artist/);
+  await expect(page).toHaveURL(/search\?q=Shared(?:%20|\+)artist/);
   const existing = page.getByRole("region", {
     name: "Existing library",
     exact: true,

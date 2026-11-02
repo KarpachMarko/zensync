@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
+import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong } from "@/lib/api";
-import { api, requestKey, time } from "@/lib/api";
+import { requestKey, time } from "@/lib/api";
 import { useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { DeletionDialog } from "./deletion-dialog";
@@ -11,6 +12,7 @@ export function LibrarySongRow({
   song: LibrarySong;
   canDelete: boolean;
 }) {
+  const { api } = useApiMutation();
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [confirming, setConfirming] = useState(false);

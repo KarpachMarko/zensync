@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
-import React, { useEffect, useState } from "react";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
+import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
 type ConnectionsData = {
   url: string;
@@ -13,16 +13,14 @@ type ConnectionsData = {
   downloaderVersion: string;
 };
 export function Connections({ admin }: { admin: boolean }) {
-  const [data, setData] = useState<ConnectionsData>(),
-    [error, setError] = useState(""),
+  const { api } = useApiMutation();
+  const [actionError, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
-  async function load() {
-    setData(await api<ConnectionsData>("/connections"));
-  }
-  useEffect(() => {
-    load().catch((e) => setError(e.message));
-  }, []);
+  const result = useApiQuery<ConnectionsData>("/connections");
+  const data = result.data;
+  const error = actionError || result.error?.message;
+  const load = result.reload;
   async function save(e: React.FormEvent<HTMLFormElement>, kind: string) {
     e.preventDefault();
     const form = e.currentTarget;

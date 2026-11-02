@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { ExpandableSection } from "./expandable-section";
 
 import type { TransferProgress } from "@/lib/api";
@@ -63,8 +63,12 @@ export function ActiveProgress({
         }
       >
         <span
-          className="active-progress-fill"
-          style={known ? { width: `${percent}%` } : undefined}
+          className="active-progress-fill w-[var(--transfer-percent)]"
+          style={
+            known
+              ? ({ "--transfer-percent": `${percent}%` } as CSSProperties)
+              : undefined
+          }
         />
       </div>
       {current && (

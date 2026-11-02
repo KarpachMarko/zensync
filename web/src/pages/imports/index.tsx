@@ -1,18 +1,12 @@
 import { StatusBadge } from "@/components/status";
-import { api } from "@/lib/api";
+import { useApiQuery } from "@/hooks/use-api";
 import { type Migration } from "@/lib/migration";
-import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 export function Imports() {
-  const [rows, setRows] = useState<Migration[]>([]),
-    [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
-  useEffect(() => {
-    api<Migration[]>("/imports")
-      .then(setRows)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const result = useApiQuery<Migration[]>("/imports");
+  const rows = result.data ?? [];
+  const error = result.error?.message;
+  const loading = result.isPending;
   return (
     <>
       <div className="titlebar">

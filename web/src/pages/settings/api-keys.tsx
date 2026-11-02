@@ -1,20 +1,18 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { useState } from "react";
 
 type Key = { id: string; created: string };
 export function DeletionKeys() {
-  const [keys, setKeys] = useState<Key[]>([]);
+  const { api } = useApiMutation();
+  const result = useApiQuery<Key[]>("/deletion-api-keys");
+  const keys = result.data ?? [];
   const [token, setToken] = useState("");
-  const [error, setError] = useState("");
+  const [actionError, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function load() {
-    setKeys(await api<Key[]>("/deletion-api-keys"));
-  }
-  useEffect(() => {
-    load().catch((e) => setError(e.message));
-  }, []);
+  const load = result.reload;
+  const error = actionError || result.error?.message;
   async function change(id?: string) {
     setBusy(true);
     setError("");

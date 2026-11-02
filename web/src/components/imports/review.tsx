@@ -1,8 +1,9 @@
 import { ActiveProgress, StatusBadge } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api, label, time } from "@/lib/api";
+import { label, time } from "@/lib/api";
 import { status, type Migration, type Source } from "@/lib/migration";
 import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
@@ -15,6 +16,7 @@ export function Review({
   migration: Migration;
   reload: () => Promise<void>;
 }) {
+  const { api } = useApiMutation();
   const [query, setQuery] = useState(
       s.metadata.artist + " " + s.metadata.title,
     ),

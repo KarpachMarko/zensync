@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { upload } from "@/lib/api";
+import { useMutation } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 export function NewImport() {
+  const { mutateAsync: uploadFile } = useMutation({ mutationFn: upload });
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -17,7 +19,7 @@ export function NewImport() {
     setBusy(true);
     setError("");
     try {
-      const m = await upload(file);
+      const m = await uploadFile(file);
       navigate("/imports/" + m.id);
     } catch (e) {
       setError((e as Error).message);

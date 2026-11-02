@@ -1,31 +1,22 @@
 import { DeletionDialog } from "@/components/music/deletion-dialog";
 import { RequestCard } from "@/components/requests/request-card";
 import { StatusSection, finished } from "@/components/status";
-import { api } from "@/lib/api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { MusicRequest as Request, User } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 export function Requests({ user }: { user: User }) {
+  const { api } = useApiMutation();
   const [deletionToApprove, setDeletionToApprove] = useState<Request | null>(
     null,
   );
-  const [rows, setRows] = useState<Request[]>([]),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [loaded, setLoaded] = useState(false);
-  async function load() {
-    try {
-      setRows(await api<Request[]>("/requests"));
-      setLoaded(true);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 4000);
-    return () => clearInterval(timer);
-  }, []);
+  const result = useApiQuery<Request[]>("/requests", { refetchInterval: 4000 });
+  const rows = result.data ?? [];
+  const [actionError, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const error = actionError || result.error?.message;
+  const loaded = !result.isPending;
+  const load = result.reload;
   async function decide(r: Request, decision: string, reason = "") {
     setBusy(true);
     setError("");

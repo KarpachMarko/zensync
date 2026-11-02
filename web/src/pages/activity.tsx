@@ -6,35 +6,26 @@ import {
   finished,
 } from "@/components/status";
 import { Button } from "@/components/ui/button";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { TransferProgress } from "@/lib/api";
-import { api } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 export function Activity({ admin }: { admin: boolean }) {
-  const [rows, setRows] = useState<
-      {
-        id: string;
-        title: string;
-        state: string;
-        stage: string;
-        transfer?: TransferProgress;
-      }[]
-    >([]),
-    [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
-  async function load() {
-    try {
-      setRows(await api<typeof rows>("/activity"));
-      setLoading(false);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 3000);
-    return () => clearInterval(timer);
-  }, []);
+  const { api } = useApiMutation();
+  const result = useApiQuery<
+    {
+      id: string;
+      title: string;
+      state: string;
+      stage: string;
+      transfer?: TransferProgress;
+    }[]
+  >("/activity", { refetchInterval: 3000 });
+  const rows = result.data ?? [];
+  const [actionError, setError] = useState("");
+  const error = actionError || result.error?.message;
+  const loading = result.isPending;
+  const load = result.reload;
   async function retry(id: string) {
     try {
       await api("/tasks/" + id, "POST");
