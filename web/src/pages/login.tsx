@@ -1,3 +1,6 @@
+import { FieldLabel } from "@/components/forms";
+import { AuthLayout, Brand } from "@/components/layout/content";
+import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import React from "react";
@@ -11,20 +14,22 @@ export function Login({
   onSubmit: React.FormEventHandler<HTMLFormElement>;
 }) {
   return (
-    <div className="login">
-      <div className="brand">◉ ZenSync</div>
-      <h1>{setup ? "Welcome to ZenSync" : "Your music, together."}</h1>
-      <p>
+    <AuthLayout>
+      <Brand>◉ ZenSync</Brand>
+      <PageHeading className="mt-10">
+        {setup ? "Welcome to ZenSync" : "Your music, together."}
+      </PageHeading>
+      <Text>
         {setup
           ? "Create the administrator account to start migrating your music."
           : "Sign in to your shared music workspace."}
-      </p>
-      <form onSubmit={onSubmit}>
-        <label>
+      </Text>
+      <form className="mt-[30px]" onSubmit={onSubmit}>
+        <FieldLabel>
           Username
           <Input name="username" autoComplete="username" required />
-        </label>
-        <label>
+        </FieldLabel>
+        <FieldLabel>
           Password
           <Input
             name="password"
@@ -34,10 +39,12 @@ export function Login({
             maxLength={72}
             required
           />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <Button>{setup ? "Create administrator" : "Sign in"}</Button>
+        </FieldLabel>
+        {error && <Text role="alert">{error}</Text>}
+        <Button className="w-full">
+          {setup ? "Create administrator" : "Sign in"}
+        </Button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

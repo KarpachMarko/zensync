@@ -1,10 +1,13 @@
+import { Button } from "@/components/ui/button";
+import { Actions } from "@/components/layout/content";
 import { DeletionDialog } from "@/components/music/deletion-dialog";
+import { AppLink } from "@/components/navigation";
 import { RequestCard } from "@/components/requests/request-card";
 import { StatusSection, finished } from "@/components/status";
+import { PageHeading, Text } from "@/components/typography";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { MusicRequest as Request, User } from "@/lib/types";
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
 export function Requests({ user }: { user: User }) {
   const { api } = useApiMutation();
   const [deletionToApprove, setDeletionToApprove] = useState<Request | null>(
@@ -31,28 +34,31 @@ export function Requests({ user }: { user: User }) {
   }
   return (
     <>
-      <h1 tabIndex={-1}>
-        Requests <span className="count">{rows.length}</span>
-      </h1>
-      <p>
+      <PageHeading tabIndex={-1}>
+        Requests{" "}
+        <span className="text-[18px] text-muted-foreground ml-2.5">
+          {rows.length}
+        </span>
+      </PageHeading>
+      <Text>
         {user.role === "admin"
           ? "Review acquisition and deletion requests across the workspace."
           : "Your music requests and approval decisions."}
-      </p>
-      <div className="actions toolbar">
-        <NavLink className="button" to="/search">
-          Search or paste a Deezer link
-        </NavLink>
-        <NavLink to="/imports">Request from a migration</NavLink>
-      </div>
-      {error && <p role="alert">{error}</p>}
+      </Text>
+      <Actions className="my-[22px] mx-0">
+        <Button asChild>
+          <AppLink to="/search">Search or paste a Deezer link</AppLink>
+        </Button>
+        <AppLink to="/imports">Request from a migration</AppLink>
+      </Actions>
+      {error && <Text role="alert">{error}</Text>}
       {!loaded ? (
-        <p>Loading requests…</p>
+        <Text>Loading requests…</Text>
       ) : rows.length === 0 ? (
-        <p className="emptytext">
+        <Text className="py-9 px-0">
           No requests yet. Find a song in Search or select missing songs from a
           migration.
-        </p>
+        </Text>
       ) : (
         ["In progress", "Requested", "Completed"].map((title) => {
           const group = rows.filter(

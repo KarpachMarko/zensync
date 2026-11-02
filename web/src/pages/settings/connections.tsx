@@ -1,8 +1,12 @@
+import { FieldLabel } from "@/components/forms";
+import { FieldGrid, SettingsSection } from "@/components/layout/content";
+import { AppLink } from "@/components/navigation";
+import { StatusPill } from "@/components/status";
+import { SectionHeading, Subheading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import React, { useState } from "react";
-import { NavLink } from "react-router-dom";
 type ConnectionsData = {
   url: string;
   configured: boolean;
@@ -45,33 +49,33 @@ export function Connections({ admin }: { admin: boolean }) {
   }
   return (
     <>
-      <h2>Connections</h2>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      <SectionHeading>Connections</SectionHeading>
+      {error && <Text role="alert">{error}</Text>}
+      {notice && <Text role="status">{notice}</Text>}
       {data && (
         <>
-          <div className="connection-status">
-            <span className="pill">
+          <div className="flex flex-wrap items-center gap-4">
+            <StatusPill>
               Navidrome: {data.configured ? "connected" : "not configured"}
-            </span>
-            <span className="pill">
+            </StatusPill>
+            <StatusPill>
               d-fi {data.downloaderVersion}:{" "}
               {data.downloaderReady ? "installed" : "not found"}
-            </span>
-            <span className="pill">
+            </StatusPill>
+            <StatusPill>
               Music mount: {data.musicMounted ? "present" : "missing"}
-            </span>
+            </StatusPill>
           </div>
           {admin && (
-            <section className="connection">
-              <h3>Shared Navidrome server</h3>
-              <p>
+            <SettingsSection>
+              <Subheading>Shared Navidrome server</Subheading>
+              <Text>
                 Use a service account with library access and scan permission.
                 In Docker, localhost is this container; use the server’s
                 reachable hostname.
-              </p>
+              </Text>
               <form onSubmit={(e) => void save(e, "shared")}>
-                <label>
+                <FieldLabel>
                   Navidrome URL
                   <Input
                     type="url"
@@ -80,13 +84,13 @@ export function Connections({ admin }: { admin: boolean }) {
                     placeholder="http://navidrome:4533"
                     required
                   />
-                </label>
-                <div className="fields">
-                  <label>
+                </FieldLabel>
+                <FieldGrid>
+                  <FieldLabel>
                     Service username
                     <Input name="username" autoComplete="off" required />
-                  </label>
-                  <label>
+                  </FieldLabel>
+                  <FieldLabel>
                     Service password
                     <Input
                       name="password"
@@ -94,15 +98,15 @@ export function Connections({ admin }: { admin: boolean }) {
                       autoComplete="new-password"
                       required
                     />
-                  </label>
-                </div>
+                  </FieldLabel>
+                </FieldGrid>
                 <Button disabled={busy}>Test and save server</Button>
               </form>
-            </section>
+            </SettingsSection>
           )}
-          <section className="connection">
-            <h3>Your personal Navidrome account</h3>
-            <p>
+          <SettingsSection>
+            <Subheading>Your personal Navidrome account</Subheading>
+            <Text>
               Playlists and favorites will be published to{" "}
               {data.personalUsername ? (
                 <strong>{data.personalUsername}</strong>
@@ -110,10 +114,10 @@ export function Connections({ admin }: { admin: boolean }) {
                 "this account"
               )}
               . This link is separate from ZenSync sign-in.
-            </p>
+            </Text>
             <form onSubmit={(e) => void save(e, "personal")}>
-              <div className="fields">
-                <label>
+              <FieldGrid>
+                <FieldLabel>
                   Personal username
                   <Input
                     name="username"
@@ -121,8 +125,8 @@ export function Connections({ admin }: { admin: boolean }) {
                     autoComplete="off"
                     required
                   />
-                </label>
-                <label>
+                </FieldLabel>
+                <FieldLabel>
                   Personal password
                   <Input
                     name="password"
@@ -130,25 +134,25 @@ export function Connections({ admin }: { admin: boolean }) {
                     autoComplete="new-password"
                     required
                   />
-                </label>
-              </div>
+                </FieldLabel>
+              </FieldGrid>
               <Button disabled={busy || !data.configured}>
                 Test and link account
               </Button>
             </form>
-          </section>
+          </SettingsSection>
           {admin && (
-            <section className="connection">
-              <h3>Deezer acquisition</h3>
-              <p>
+            <SettingsSection>
+              <Subheading>Deezer acquisition</Subheading>
+              <Text>
                 {data.deezerConfigured
                   ? "An ARL cookie is saved. Enter a new one to replace it."
                   : "Enter your Deezer ARL cookie to enable missing-song acquisition."}{" "}
                 Credentials are encrypted on disk and are never returned to the
                 browser.
-              </p>
+              </Text>
               <form onSubmit={(e) => void save(e, "deezer")}>
-                <label>
+                <FieldLabel>
                   Deezer ARL cookie
                   <Input
                     name="arl"
@@ -157,16 +161,16 @@ export function Connections({ admin }: { admin: boolean }) {
                     required
                     minLength={32}
                   />
-                </label>
+                </FieldLabel>
                 <Button disabled={busy}>Save Deezer credentials</Button>
               </form>
-            </section>
+            </SettingsSection>
           )}
-          <p>
-            <NavLink to="/imports/new" className="button">
-              Import Apple Music XML
-            </NavLink>
-          </p>
+          <Text>
+            <Button asChild>
+              <AppLink to="/imports/new">Import Apple Music XML</AppLink>
+            </Button>
+          </Text>
         </>
       )}
     </>

@@ -1,4 +1,6 @@
+import { Actions, Row } from "@/components/layout/content";
 import { ActiveProgress, StatusBadge } from "@/components/status";
+import { Caption, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MusicRequest as Request, User } from "@/lib/types";
@@ -20,8 +22,11 @@ export function RequestCard({
   onApproveDeletion: (request: Request) => void;
 }) {
   return (
-    <article className="request">
-      <div className="row">
+    <article
+      data-slot="request"
+      className="border-b border-solid border-sidebar-border pb-2.5"
+    >
+      <Row>
         <div>
           <strong>
             {r.title}
@@ -31,39 +36,39 @@ export function RequestCard({
                 ? " (Album)"
                 : ""}
           </strong>
-          <small>
+          <Caption>
             {r.artist || "Artist not specified"} / {r.target}
             {r.upgrade ? " / Upgrade" : ""}
-          </small>
+          </Caption>
         </div>
         <StatusBadge state={r.state || r.decision} />
-      </div>
+      </Row>
       <ActiveProgress state={r.state} title={r.title} transfer={r.transfer} />
       {r.kind === "album" && (
         <details>
-          <summary>
+          <summary className="focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3">
             {r.trackCount} tracks ·{" "}
             {r.items?.filter((i) => i.state === "available").length || 0}{" "}
             available
           </summary>
-          <p className="muted">
+          <Text className="text-[13px]">
             One approval covers this saved recording list and quality
             preference.
-          </p>
+          </Text>
           {r.items?.map((i, index) => (
             <div key={index}>
-              <div className="row">
+              <Row>
                 <div>
                   <strong>
                     {index + 1}. {i.title}
                   </strong>
-                  <small>
+                  <Caption>
                     {i.artist}
                     {i.detail ? " / " + i.detail : ""}
-                  </small>
+                  </Caption>
                 </div>
                 <StatusBadge state={i.state} />
-              </div>
+              </Row>
               <ActiveProgress
                 state={i.state}
                 title={i.title}
@@ -74,14 +79,14 @@ export function RequestCard({
         </details>
       )}
       {r.kind === "delete" && (
-        <p className="muted">
+        <Text className="text-[13px]">
           Removes this song for everyone in the shared library.{" "}
           {r.state && `${r.state.replaceAll("_", " ")}: ${r.detail || ""}`}
-        </p>
+        </Text>
       )}
-      {r.reason && <p className="muted">{r.reason}</p>}
+      {r.reason && <Text className="text-[13px]">{r.reason}</Text>}
       {r.decision === "awaiting_approval" && (
-        <div className="actions">
+        <Actions>
           {user.role === "admin" && (
             <>
               <Button
@@ -94,7 +99,7 @@ export function RequestCard({
                 Approve
               </Button>
               <form
-                className="decline"
+                className="flex gap-2 max-[700px]:flex-wrap"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void decide(
@@ -111,7 +116,7 @@ export function RequestCard({
                   maxLength={1000}
                   required
                 />
-                <Button className="quiet" disabled={busy}>
+                <Button variant="outline" disabled={busy}>
                   Decline
                 </Button>
               </form>
@@ -119,14 +124,14 @@ export function RequestCard({
           )}
           {r.owner === user.id && (
             <Button
-              className="quiet"
+              variant="outline"
               disabled={busy}
               onClick={() => void decide(r, "withdrawn")}
             >
               Withdraw
             </Button>
           )}
-        </div>
+        </Actions>
       )}
     </article>
   );

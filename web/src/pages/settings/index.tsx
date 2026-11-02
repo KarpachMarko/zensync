@@ -1,5 +1,7 @@
+import { NavigationLink, TabNav } from "@/components/navigation";
+import { PageHeading } from "@/components/typography";
 import type { User } from "@/lib/types";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { DeletionKeys } from "./api-keys";
 import { Connections } from "./connections";
 import { DownloadSettings } from "./downloads";
@@ -14,16 +16,18 @@ export function Settings({
 }) {
   return (
     <>
-      <h1 tabIndex={-1}>Settings</h1>
-      <nav className="tabs" aria-label="Settings">
-        <NavLink to="/settings/connections">Connections</NavLink>
-        <NavLink to="/settings/quality">Quality</NavLink>
-        <NavLink to="/settings/api">API keys</NavLink>
+      <PageHeading tabIndex={-1}>Settings</PageHeading>
+      <TabNav aria-label="Settings">
+        <NavigationLink to="/settings/connections">Connections</NavigationLink>
+        <NavigationLink to="/settings/quality">Quality</NavigationLink>
+        <NavigationLink to="/settings/api">API keys</NavigationLink>
         {user.role === "admin" && (
-          <NavLink to="/settings/downloads">Downloads</NavLink>
+          <NavigationLink to="/settings/downloads">Downloads</NavigationLink>
         )}
-        {user.role === "admin" && <NavLink to="/settings/users">Users</NavLink>}
-      </nav>
+        {user.role === "admin" && (
+          <NavigationLink to="/settings/users">Users</NavigationLink>
+        )}
+      </TabNav>
       <Routes>
         <Route
           path="connections"

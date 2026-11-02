@@ -22,12 +22,14 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("button", { name: "Collapse sidebar" }),
   ).toHaveText("");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
-  const icons = await page.locator("aside nav .symbol").evaluateAll((nodes) =>
-    nodes.map((n) => {
-      const r = n.getBoundingClientRect();
-      return r.x + r.width / 2;
-    }),
-  );
+  const icons = await page
+    .locator("aside nav [data-slot=nav-icon]")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => {
+        const r = n.getBoundingClientRect();
+        return r.x + r.width / 2;
+      }),
+    );
   expect(Math.max(...icons) - Math.min(...icons)).toBeLessThan(1);
   await page.getByRole("button", { name: "Open sidebar search" }).click();
   await page.route("**/api/v2/search?q=album%20query*", (route) =>
@@ -253,7 +255,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     await route.fulfill({ json: { ok: true } });
   });
   await page.goto("/requests");
-  await expect(page.locator("article.request")).toHaveCount(1);
+  await expect(page.locator("article[data-slot=request]")).toHaveCount(1);
   await page.getByText("2 tracks · 0 available").click();
   await expect(page.getByText("1. Album song one")).toBeVisible();
   await page.getByRole("button", { name: "Approve", exact: true }).click();
@@ -378,7 +380,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
       .getByText("Multi-track release", { exact: true }),
   ).toBeVisible();
   expect(
-    await page.locator(".status-section > summary").allTextContents(),
+    await page
+      .locator("[data-slot=status-section] > summary")
+      .allTextContents(),
   ).toEqual(["Existing library1", "Candidates for import2"]);
   await existing.locator("summary").click();
   await expect(
@@ -447,7 +451,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     name: "Downloading song: downloading",
   });
   await expect(running).not.toHaveAttribute("aria-valuenow");
-  const fill = running.locator(".active-progress-fill");
+  const fill = running.locator("[data-slot=transfer-fill]");
   expect(
     await fill.evaluate((element) => getComputedStyle(element).animationName),
   ).toBe("active-progress");
@@ -492,7 +496,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.getByLabel("Username", { exact: true }).fill("ui-member");
   await page.getByLabel("Initial password").fill("local-ui-test-password");
   await page.getByRole("button", { name: "Create user" }).click();
-  const member = page.locator(".row").filter({ hasText: "ui-member" });
+  const member = page
+    .locator("[data-slot=list-row]")
+    .filter({ hasText: "ui-member" });
   await expect(member).toBeVisible();
   await member
     .getByRole("checkbox", { name: "Allow adding music without approval" })
@@ -603,7 +609,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .last()
     .check();
   await page.getByRole("button", { name: "Create user" }).click();
-  const memberRow = page.locator(".row").filter({ hasText: "delete-member" });
+  const memberRow = page
+    .locator("[data-slot=list-row]")
+    .filter({ hasText: "delete-member" });
   await expect(
     memberRow.getByRole("checkbox", {
       name: "Allow deleting music without approval",

@@ -1,3 +1,4 @@
+import { Text } from "@/components/typography";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -79,7 +80,7 @@ export function DeletionDialog({
       }}
     >
       <AlertDialogContent
-        className="deletion-dialog"
+        className="block w-[min(480px,calc(100vw_-_32px))] max-w-none data-[size=default]:max-w-none data-[size=default]:sm:max-w-none max-h-[calc(100dvh_-_48px)] overflow-y-auto rounded-xl border border-solid border-border bg-card p-7 text-foreground shadow-[0_24px_80px_#0008] [&_h2]:mt-0 [&_h2]:mb-5 [&_h2]:text-2xl [&_p]:leading-[1.6]"
         aria-describedby={`${identity} ${description}`}
         aria-busy={pending}
         onEscapeKeyDown={(event) => {
@@ -88,35 +89,38 @@ export function DeletionDialog({
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <AlertDialogTitle>{title}</AlertDialogTitle>
-        <p id={identity} className="deletion-song">
+        <Text
+          id={identity}
+          className="rounded-md bg-background px-4 py-3.5 [&_strong]:block [&_strong]:wrap-anywhere [&_span]:block [&_span]:wrap-anywhere [&_span]:mt-[3px] [&_span]:text-sm [&_span]:text-muted-foreground"
+        >
           <strong>{song.title}</strong>
           <span>
             {song.artist}
             {song.album ? ` / ${song.album}` : ""}
           </span>
-        </p>
+        </Text>
         <AlertDialogDescription id={description}>
           {request
             ? "An administrator must approve this request before the song is removed from the shared library for everyone."
             : "This removes the song from the shared library for everyone. A recovery copy will be retained."}
         </AlertDialogDescription>
         {error && (
-          <p role="alert" className="deletion-error">
+          <Text role="alert" className="text-[#ffc3bd]">
             {error}
-          </p>
+          </Text>
         )}
         {pending && (
-          <p role="status">
+          <Text role="status">
             {request ? "Submitting deletion request…" : "Submitting deletion…"}
-          </p>
+          </Text>
         )}
-        <div className="deletion-dialog-actions">
-          <AlertDialogCancel type="button" className="quiet" disabled={pending}>
+        <div className="mt-6 flex flex-wrap justify-end gap-2.5">
+          <AlertDialogCancel variant="outline" type="button" disabled={pending}>
             Cancel
           </AlertDialogCancel>
           <Button
             type="button"
-            className={request ? "" : "danger"}
+            variant={request ? "default" : "destructive"}
             disabled={pending}
             onClick={() => void confirm()}
           >

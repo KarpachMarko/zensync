@@ -1,3 +1,6 @@
+import { FieldLabel } from "@/components/forms";
+import { Row } from "@/components/layout/content";
+import { Caption, SectionHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
@@ -36,19 +39,19 @@ export function DeletionKeys() {
   }
   return (
     <>
-      <h2>Deletion API keys</h2>
-      <p>
+      <SectionHeading>Deletion API keys</SectionHeading>
+      <Text>
         Connect an external client to request removal of songs from the shared
         library. Requests use your current deletion permission; otherwise an
         administrator must approve.
-      </p>
-      <p className="muted">
+      </Text>
+      <Text className="text-[13px]">
         These keys can submit deletion requests and read their own status.
         Approval and permission changes require signing in to ZenSync.
-      </p>
-      {error && <p role="alert">{error}</p>}
+      </Text>
+      {error && <Text role="alert">{error}</Text>}
       {token && (
-        <label>
+        <FieldLabel>
           Copy this key now. It is shown only once.
           <Input
             readOnly
@@ -57,25 +60,25 @@ export function DeletionKeys() {
             autoComplete="off"
             spellCheck={false}
           />
-        </label>
+        </FieldLabel>
       )}
       <Button disabled={busy} onClick={() => void change()}>
         Create deletion API key
       </Button>
       {keys.map((key) => (
-        <div className="row" key={key.id}>
+        <Row key={key.id}>
           <div>
             <strong>Deletion key · {key.id.slice(0, 8)}</strong>
-            <small>Created {key.created}</small>
+            <Caption>Created {key.created}</Caption>
           </div>
           <Button
-            className="quiet"
+            variant="outline"
             disabled={busy}
             onClick={() => void change(key.id)}
           >
             Revoke
           </Button>
-        </div>
+        </Row>
       ))}
     </>
   );

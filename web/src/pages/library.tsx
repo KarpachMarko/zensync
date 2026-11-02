@@ -1,4 +1,8 @@
+import { SearchField } from "@/components/forms";
+import { SearchForm } from "@/components/layout/content";
 import { LibrarySongRow } from "@/components/music/library-song-row";
+import { AppLink } from "@/components/navigation";
+import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { LibrarySong } from "@/lib/api";
@@ -6,7 +10,7 @@ import { api } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 export function Library({ canDelete }: { canDelete: boolean }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -34,38 +38,37 @@ export function Library({ canDelete }: { canDelete: boolean }) {
   const error = result.error?.message;
   return (
     <>
-      <h1 tabIndex={-1}>Library</h1>
-      <p>
+      <PageHeading tabIndex={-1}>Library</PageHeading>
+      <Text>
         Available music from your shared Navidrome library. Deleting a song
         removes it for everyone.
-      </p>
-      <form
-        className="searchbar"
+      </Text>
+      <SearchForm
         onSubmit={(e) => {
           e.preventDefault();
           if (query.trim()) navigate(searchHref(query.trim()));
         }}
       >
-        <label className="grow">
+        <SearchField>
           Search music
           <Input value={query} onChange={(e) => setQuery(e.target.value)} />
-        </label>
+        </SearchField>
         <Button disabled={busy}>Search</Button>
-      </form>
+      </SearchForm>
       {error && (
-        <p role="alert">
+        <Text role="alert">
           {error}{" "}
-          <NavLink to="/settings/connections">Connection settings</NavLink>
-        </p>
+          <AppLink to="/settings/connections">Connection settings</AppLink>
+        </Text>
       )}
       {rows.map((song) => (
         <LibrarySongRow key={song.id} song={song} canDelete={canDelete} />
       ))}
       {!busy && !error && rows.length === 0 && (
-        <p>
+        <Text>
           No music found.{" "}
-          <NavLink to="/search">Search for music to import</NavLink>.
-        </p>
+          <AppLink to="/search">Search for music to import</AppLink>.
+        </Text>
       )}
       {result.hasNextPage && (
         <Button disabled={busy} onClick={() => void result.fetchNextPage()}>

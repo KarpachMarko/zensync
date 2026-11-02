@@ -1,9 +1,11 @@
+import { Actions, Row } from "@/components/layout/content";
+import { AppLink } from "@/components/navigation";
+import { Caption, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong } from "@/lib/api";
 import { requestKey, time } from "@/lib/api";
 import { useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
 import { DeletionDialog } from "./deletion-dialog";
 export function LibrarySongRow({
   song,
@@ -32,18 +34,18 @@ export function LibrarySongRow({
     }
   }
   return (
-    <article className="library-song">
-      <div className="row">
+    <article data-slot="library-song">
+      <Row>
         <div>
           <strong>{song.title}</strong>
-          <small>
+          <Caption>
             {song.artist} / {song.album} / {time(song.duration)}
-          </small>
+          </Caption>
         </div>
-        <div className="actions">
+        <Actions>
           <Button
+            variant="outline"
             type="button"
-            className="quiet"
             aria-label={
               (canDelete ? "Delete song: " : "Request deletion: ") + song.title
             }
@@ -58,15 +60,15 @@ export function LibrarySongRow({
                   ? "Delete song"
                   : "Request deletion"}
           </Button>
-        </div>
-      </div>
+        </Actions>
+      </Row>
       {submitted && (
-        <p role="status">
+        <Text role="status">
           {canDelete
             ? "Deletion approved and queued. Follow progress in Requests or Activity."
             : "Deletion request submitted for administrator approval."}{" "}
-          <NavLink to="/requests">View requests</NavLink>
-        </p>
+          <AppLink to="/requests">View requests</AppLink>
+        </Text>
       )}
       <DeletionDialog
         open={confirming}

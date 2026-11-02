@@ -1,5 +1,14 @@
+import { SearchField } from "@/components/forms";
+import { Actions, Row, SearchForm } from "@/components/layout/content";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { SearchSection } from "@/components/music/search-section";
+import { AppLink } from "@/components/navigation";
+import {
+  Caption,
+  PageHeading,
+  SectionHeading,
+  Text,
+} from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation } from "@/hooks/use-api";
@@ -9,7 +18,6 @@ import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useEffect, useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
 type FoundAlbum = {
   id: number;
   title: string;
@@ -123,18 +131,17 @@ export function Search({ canDelete }: { canDelete: boolean }) {
   }
   return (
     <>
-      <h1 tabIndex={-1}>Search</h1>
-      <p>
+      <PageHeading tabIndex={-1}>Search</PageHeading>
+      <Text>
         Find music in your library and on Deezer, or paste a song or album link.
-      </p>
-      <form
-        className="searchbar"
+      </Text>
+      <SearchForm
         onSubmit={(e) => {
           e.preventDefault();
           void search();
         }}
       >
-        <label className="grow">
+        <SearchField>
           Song, artist, album or Deezer URL
           <Input
             value={query}
@@ -143,14 +150,19 @@ export function Search({ canDelete }: { canDelete: boolean }) {
             maxLength={500}
             required
           />
-        </label>
+        </SearchField>
         <Button disabled={busy}>Search</Button>
-      </form>
-      <div className="result-type-toggle" role="group" aria-label="Result type">
+      </SearchForm>
+      <div
+        className="mb-5 flex w-fit rounded-md border border-solid border-border"
+        role="group"
+        aria-label="Result type"
+      >
         {(["Both", "Album", "Song"] as const).map((type) => (
           <Button
             type="button"
             key={type}
+            className="rounded-none border-border bg-transparent text-muted-foreground first:rounded-l-[5px] last:rounded-r-[5px] aria-pressed:bg-primary aria-pressed:text-background"
             aria-pressed={resultType === type}
             onClick={() => setResultType(type)}
           >
@@ -162,20 +174,22 @@ export function Search({ canDelete }: { canDelete: boolean }) {
         <>
           <div hidden={!showSongs}>
             <SearchSection title="Existing library" count={library.length}>
-              {libraryLoading && <p role="status">Searching your library…</p>}
+              {libraryLoading && (
+                <Text role="status">Searching your library…</Text>
+              )}
               {libraryError && (
-                <p role="alert">
+                <Text role="alert">
                   {libraryError}{" "}
-                  <NavLink to="/settings/connections">
+                  <AppLink to="/settings/connections">
                     Connection settings
-                  </NavLink>
-                </p>
+                  </AppLink>
+                </Text>
               )}
               {!libraryLoading && !libraryError && library.length === 0 && (
-                <p>
+                <Text>
                   No matching music in your library. See candidates for import
                   below.
-                </p>
+                </Text>
               )}
               {library.map((song) => (
                 <LibrarySongRow
@@ -186,7 +200,8 @@ export function Search({ canDelete }: { canDelete: boolean }) {
               ))}
               {moreLibrary && (
                 <Button
-                  className="quiet toolbar"
+                  variant="outline"
+                  className="my-[22px] mx-0"
                   disabled={loadingMore}
                   onClick={() => void loadMoreLibrary()}
                 >
@@ -205,19 +220,19 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                 : 0)
             }
           >
-            {importLoading && <p role="status">Searching Deezer…</p>}
+            {importLoading && <Text role="status">Searching Deezer…</Text>}
             {showAlbums && album && (
-              <section className="album-result">
+              <section className="my-5 flex items-center justify-between gap-5 border-y border-solid border-border py-[18px] [&_h2]:m-0 [&_p]:my-1.5 [&_button]:shrink-0 max-[700px]:items-start max-[700px]:flex-col">
                 <div>
-                  <h2>{album.title}</h2>
-                  <p>
+                  <SectionHeading>{album.title}</SectionHeading>
+                  <Text>
                     {album.artist.name} / {album.trackCount}{" "}
                     {album.trackCount === 1 ? "track" : "tracks"}
-                  </p>
-                  <p className="muted">
+                  </Text>
+                  <Text className="text-[13px]">
                     Request the whole album with one approval, or choose
                     individual songs below.
-                  </p>
+                  </Text>
                 </div>
                 <Button
                   disabled={busy || albumRequested.has(album.id)}
@@ -230,110 +245,118 @@ export function Search({ canDelete }: { canDelete: boolean }) {
               </section>
             )}
             {showAlbums && album && albumRequested.has(album.id) && (
-              <p role="status">
+              <Text role="status">
                 Album request saved.{" "}
-                <NavLink to="/requests">View the single album request</NavLink>.
-              </p>
+                <AppLink to="/requests">View the single album request</AppLink>.
+              </Text>
             )}
-            {error && <p role="alert">{error}</p>}
+            {error && <Text role="alert">{error}</Text>}
             {warnings.map((w) => (
-              <p className="notice" role="status" key={w}>
+              <Text
+                className="bg-[#29384f] border-l-3 border-solid border-l-primary py-[13px] px-[18px] my-6 mx-0 text-[14px] max-w-[850px]"
+                role="status"
+                key={w}
+              >
                 {w}
-              </p>
+              </Text>
             ))}
             {showAlbums && albums.length > 0 && (
               <section aria-label="Album results">
-                <h2>Albums</h2>
+                <SectionHeading>Albums</SectionHeading>
                 {albums.map((found) => (
-                  <article className="row" key={found.id}>
-                    <div>
-                      <strong>{found.title}</strong>
-                      <small>
-                        {found.artist.name}
-                        {found.trackCount
-                          ? " / " +
-                            found.trackCount +
-                            (found.trackCount === 1 ? " track" : " tracks")
-                          : ""}
-                      </small>
-                    </div>
-                    <div className="actions">
-                      <NavLink
-                        to={searchHref(
-                          "https://www.deezer.com/album/" + found.id,
-                        )}
-                      >
-                        View tracks
-                      </NavLink>
-                      <Button
-                        disabled={busy || albumRequested.has(found.id)}
-                        onClick={() => void requestAlbum(found)}
-                      >
-                        {albumRequested.has(found.id)
-                          ? "Album requested"
-                          : "Request album"}
-                      </Button>
-                    </div>
-                  </article>
+                  <Row asChild key={found.id}>
+                    <article className="max-[700px]:items-start">
+                      <div>
+                        <strong>{found.title}</strong>
+                        <Caption>
+                          {found.artist.name}
+                          {found.trackCount
+                            ? " / " +
+                              found.trackCount +
+                              (found.trackCount === 1 ? " track" : " tracks")
+                            : ""}
+                        </Caption>
+                      </div>
+                      <Actions>
+                        <AppLink
+                          to={searchHref(
+                            "https://www.deezer.com/album/" + found.id,
+                          )}
+                        >
+                          View tracks
+                        </AppLink>
+                        <Button
+                          disabled={busy || albumRequested.has(found.id)}
+                          onClick={() => void requestAlbum(found)}
+                        >
+                          {albumRequested.has(found.id)
+                            ? "Album requested"
+                            : "Request album"}
+                        </Button>
+                      </Actions>
+                    </article>
+                  </Row>
                 ))}
               </section>
             )}
             {showAlbums && albums.some((a) => albumRequested.has(a.id)) && (
-              <p role="status">
+              <Text role="status">
                 Album request saved.{" "}
-                <NavLink to="/requests">View requests</NavLink>.
-              </p>
+                <AppLink to="/requests">View requests</AppLink>.
+              </Text>
             )}
             {showSongs &&
               results.length > 0 &&
               showAlbums &&
-              albums.length > 0 && <h2>Songs</h2>}
+              albums.length > 0 && <SectionHeading>Songs</SectionHeading>}
             {searched &&
               (!showSongs || results.length === 0) &&
               (!showAlbums || (albums.length === 0 && !album)) &&
               !importLoading &&
               !error && (
-                <p>
+                <Text>
                   {resultType === "Both"
                     ? "No matches."
                     : `No ${resultType.toLowerCase()} matches in the loaded results.`}{" "}
                   Try another search or choose Both.
-                </p>
+                </Text>
               )}
             <div hidden={!showSongs}>
               {results.map((t) => (
-                <article className="row" key={t.id}>
-                  <div>
-                    <strong>{label(t)}</strong>
-                    <small>
-                      {t.artist.name} / {t.album.title} / {time(t.duration)}
-                    </small>
-                  </div>
-                  <Button
-                    disabled={
-                      busy ||
-                      requested.has(t.id) ||
-                      !!(album && albumRequested.has(album.id))
-                    }
-                    onClick={() => void request(t)}
-                  >
-                    {album && albumRequested.has(album.id)
-                      ? "Included in album"
-                      : requested.has(t.id)
-                        ? "Requested"
-                        : "Request"}
-                  </Button>
-                </article>
+                <Row asChild key={t.id}>
+                  <article className="max-[700px]:items-start">
+                    <div>
+                      <strong>{label(t)}</strong>
+                      <Caption>
+                        {t.artist.name} / {t.album.title} / {time(t.duration)}
+                      </Caption>
+                    </div>
+                    <Button
+                      disabled={
+                        busy ||
+                        requested.has(t.id) ||
+                        !!(album && albumRequested.has(album.id))
+                      }
+                      onClick={() => void request(t)}
+                    >
+                      {album && albumRequested.has(album.id)
+                        ? "Included in album"
+                        : requested.has(t.id)
+                          ? "Requested"
+                          : "Request"}
+                    </Button>
+                  </article>
+                </Row>
               ))}
             </div>
           </SearchSection>
         </>
       )}
       {showSongs && requested.size > 0 && (
-        <p role="status">
-          Requests saved. <NavLink to="/requests">View approval status</NavLink>{" "}
-          or <NavLink to="/activity">follow acquisition progress</NavLink>.
-        </p>
+        <Text role="status">
+          Requests saved. <AppLink to="/requests">View approval status</AppLink>{" "}
+          or <AppLink to="/activity">follow acquisition progress</AppLink>.
+        </Text>
       )}
     </>
   );

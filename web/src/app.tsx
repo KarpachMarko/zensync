@@ -1,4 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { AuthLayout } from "@/components/layout/content";
+import { Text } from "@/components/typography";
 import { useSession } from "@/hooks/use-session";
 import { Activity } from "@/pages/activity";
 import { Imports } from "@/pages/imports";
@@ -21,14 +23,14 @@ export function App() {
   }, [location.pathname]);
   if (loading)
     return (
-      <div className="login">
-        <p>Opening your workspace…</p>
-      </div>
+      <AuthLayout>
+        <Text>Opening your workspace…</Text>
+      </AuthLayout>
     );
   if (!user) return <Login setup={setup} error={error} onSubmit={login} />;
   return (
     <AppShell user={user} onSignOut={signOut} onError={setError}>
-      {error && <p role="alert">{error}</p>}
+      {error && <Text role="alert">{error}</Text>}
       <Routes>
         <Route path="/requests" element={<Requests user={user} />} />
         <Route

@@ -1,3 +1,5 @@
+import { FieldLabel, NativeSelect } from "@/components/forms";
+import { SectionHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
@@ -14,9 +16,11 @@ export function Quality({
   const [message, setMessage] = useState("");
   return (
     <>
-      {message && <p role="status">{message}</p>}
-      <h2>Your quality preference</h2>
-      <p>Requests preserve a snapshot of this preference when submitted.</p>
+      {message && <Text role="status">{message}</Text>}
+      <SectionHeading>Your quality preference</SectionHeading>
+      <Text>
+        Requests preserve a snapshot of this preference when submitted.
+      </Text>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -36,22 +40,22 @@ export function Quality({
           }
         }}
       >
-        <label>
+        <FieldLabel>
           Allowed qualities, in order
-          <select name="quality" defaultValue={user.quality.join(",")}>
+          <NativeSelect name="quality" defaultValue={user.quality.join(",")}>
             <option value="lossless,320,128">Lossless → 320 → 128</option>
             <option value="lossless">Lossless only</option>
             <option value="320,128">320 → 128</option>
             <option value="320">320 only</option>
             <option value="128">128 only</option>
-          </select>
-        </label>
+          </NativeSelect>
+        </FieldLabel>
         <Button disabled={busy}>Save preference</Button>
       </form>
-      <p className="muted">
+      <Text className="text-[13px]">
         d-fi tries only the allowed qualities in this order. Existing playable
         music is reused; replacing shared audio is not enabled yet.
-      </p>
+      </Text>
     </>
   );
 }

@@ -1,3 +1,5 @@
+import { Actions, Row } from "@/components/layout/content";
+import { AppLink } from "@/components/navigation";
 import {
   ActiveProgress,
   StatusBadge,
@@ -5,11 +7,11 @@ import {
   blocked,
   finished,
 } from "@/components/status";
+import { Caption, PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { TransferProgress } from "@/lib/api";
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
 export function Activity({ admin }: { admin: boolean }) {
   const { api } = useApiMutation();
   const result = useApiQuery<
@@ -36,19 +38,19 @@ export function Activity({ admin }: { admin: boolean }) {
   }
   return (
     <>
-      <h1 tabIndex={-1}>Activity</h1>
-      <p>Follow downloads, library scans and migration tasks.</p>
+      <PageHeading tabIndex={-1}>Activity</PageHeading>
+      <Text>Follow downloads, library scans and migration tasks.</Text>
       {admin && (
-        <NavLink to="/settings/downloads">Manage parallel downloads</NavLink>
+        <AppLink to="/settings/downloads">Manage parallel downloads</AppLink>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && <Text role="alert">{error}</Text>}
       {loading ? (
-        <p>Loading activity…</p>
+        <Text>Loading activity…</Text>
       ) : rows.length === 0 ? (
-        <p className="emptytext">
+        <Text className="py-9 px-0">
           No execution tasks. Requests awaiting approval do not occupy a
           transfer slot.
-        </p>
+        </Text>
       ) : (
         ["In progress", "Blocked", "Completed"].map((title) => {
           const group = rows.filter(
@@ -63,24 +65,27 @@ export function Activity({ admin }: { admin: boolean }) {
           return (
             <StatusSection key={title} title={title} count={group.length}>
               {group.map((r) => (
-                <div className="activity-item" key={r.id}>
-                  <div className="row">
+                <div
+                  className="border-b border-solid border-sidebar-border"
+                  key={r.id}
+                >
+                  <Row>
                     <div>
                       <strong>{r.title}</strong>
-                      <small>{r.stage}</small>
+                      <Caption>{r.stage}</Caption>
                     </div>
-                    <div className="actions">
+                    <Actions>
                       <StatusBadge state={r.state} />
                       {(r.state === "failed" || r.state === "blocked") && (
                         <Button
-                          className="quiet"
+                          variant="outline"
                           onClick={() => void retry(r.id)}
                         >
                           Retry
                         </Button>
                       )}
-                    </div>
-                  </div>
+                    </Actions>
+                  </Row>
                   <ActiveProgress
                     state={r.state}
                     title={r.title}

@@ -1,12 +1,28 @@
+import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
+import {
+  Actions,
+  FieldGrid,
+  Notice,
+  PageTitle,
+  Row,
+  SearchBar,
+} from "@/components/layout/content";
+import { AppLink } from "@/components/navigation";
 import { StatusBadge } from "@/components/status";
+import {
+  Caption,
+  PageHeading,
+  SectionHeading,
+  Text,
+} from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 export function MigrationPage() {
   const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
@@ -63,8 +79,8 @@ export function MigrationPage() {
   if (!detail)
     return (
       <>
-        <h1 tabIndex={-1}>Migration</h1>
-        <p>{error || "Loading your migration…"}</p>
+        <PageHeading tabIndex={-1}>Migration</PageHeading>
+        <Text>{error || "Loading your migration…"}</Text>
       </>
     );
   const { migration: m, songs, playlists } = detail;
@@ -92,28 +108,30 @@ export function MigrationPage() {
     );
   return (
     <>
-      <div className="breadcrumbs">
-        <NavLink to="/imports">Imports</NavLink>
-        {playlistId && <NavLink to={"/imports/" + id}>{m.name}</NavLink>}
+      <div className="flex gap-[15px] mb-[22px] text-[13px] text-muted-foreground">
+        <AppLink to="/imports">Imports</AppLink>
+        {playlistId && <AppLink to={"/imports/" + id}>{m.name}</AppLink>}
       </div>
-      <div className="titlebar">
-        <h1 tabIndex={-1}>{currentPlaylist?.name || m.name}</h1>
+      <PageTitle>
+        <PageHeading tabIndex={-1}>
+          {currentPlaylist?.name || m.name}
+        </PageHeading>
         <StatusBadge state={m.state} />
-      </div>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      </PageTitle>
+      {error && <Text role="alert">{error}</Text>}
+      {notice && <Text role="status">{notice}</Text>}
       {m.error && (
-        <div className="notice">
-          {m.error} <NavLink to="/activity">Open Activity</NavLink>
-        </div>
+        <Notice>
+          {m.error} <AppLink to="/activity">Open Activity</AppLink>
+        </Notice>
       )}
       {m.state === "staged" ? (
         <>
-          <p>
+          <Text>
             Your snapshot is saved. Select the playlists you want to migrate;
             all {m.report.songs} catalog entries will be retained.
-          </p>
-          <div className="summaryline">
+          </Text>
+          <div className="my-6 flex flex-wrap items-center gap-4 text-muted-foreground max-[700px]:gap-2">
             <span>{m.report.unplaylisted} unplaylisted songs</span>
             <span>{m.report.missing} missing references</span>
             <span>{m.report.excluded} non-music records excluded</span>
@@ -129,9 +147,8 @@ export function MigrationPage() {
             }}
           >
             {playlists.map((p) => (
-              <label className="check" key={p.id}>
-                <input
-                  type="checkbox"
+              <CheckboxField key={p.id}>
+                <Checkbox
                   name="playlist"
                   value={p.id}
                   defaultChecked={p.selected}
@@ -139,7 +156,7 @@ export function MigrationPage() {
                 />
                 <span>
                   {p.name}{" "}
-                  <small>
+                  <Caption>
                     {p.entries.length} entries
                     {p.metadata.folder
                       ? " / Folder"
@@ -148,35 +165,37 @@ export function MigrationPage() {
                         : p.metadata.smart
                           ? " / Smart playlist snapshot"
                           : ""}
-                  </small>
+                  </Caption>
                 </span>
-              </label>
+              </CheckboxField>
             ))}
-            <label className="check">
-              <input name="favorites" type="checkbox" defaultChecked /> Import
-              positive favorite/loved flags when songs become available
-            </label>
+            <CheckboxField>
+              <Checkbox name="favorites" defaultChecked /> Import positive
+              favorite/loved flags when songs become available
+            </CheckboxField>
             <Button disabled={busy}>Commit migration</Button>
           </form>
           {m.report.warnings.length > 0 && (
             <details>
-              <summary>Import warnings ({m.report.warnings.length})</summary>
+              <summary className="focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3">
+                Import warnings ({m.report.warnings.length})
+              </summary>
               {m.report.warnings.slice(0, 100).map((w, i) => (
-                <p key={i}>{w}</p>
+                <Text key={i}>{w}</Text>
               ))}
             </details>
           )}
         </>
       ) : (
         <>
-          <div className="coverage">
+          <div className="my-7 flex items-center gap-5 max-[700px]:flex-wrap [&_strong]:text-[25px] [&_span]:text-sm [&_span]:font-normal [&_span]:text-muted-foreground [&_progress]:w-[200px] [&_progress]:h-[7px] [&_progress]:accent-[#a2d5bd]">
             <strong>
               {available} <span>of {songs.length} songs available</span>
             </strong>
             <progress max={Math.max(1, songs.length)} value={available} />
           </div>
           {m.state === "open" ? (
-            <div className="actions toolbar">
+            <Actions className="my-[22px] mx-0">
               <Button disabled={busy} onClick={() => void action("match")}>
                 Find matches
               </Button>
@@ -185,9 +204,9 @@ export function MigrationPage() {
                   ? "Publish available songs"
                   : "Publish to Navidrome"}
               </Button>
-              <NavLink to="/settings/connections">Connections</NavLink>
+              <AppLink to="/settings/connections">Connections</AppLink>
               <Button
-                className="quiet"
+                variant="outline"
                 disabled={busy}
                 onClick={() => {
                   if (
@@ -200,55 +219,56 @@ export function MigrationPage() {
               >
                 Finish migration
               </Button>
-            </div>
+            </Actions>
           ) : (
-            <div className="notice">
+            <Notice>
               Navidrome now owns these collections. Pending acquisitions
               continue, but will not change your playlists or favorites.
-            </div>
+            </Notice>
           )}
           {!currentPlaylist && (
-            <section className="playlist-list">
-              <h2>Migration playlists</h2>
+            <section className="mb-8">
+              <SectionHeading>Migration playlists</SectionHeading>
               {playlists
                 .filter((p) => p.selected)
                 .map((p) => (
-                  <NavLink
-                    className="row migration-link"
-                    to={"/imports/" + id + "/playlists/" + p.id}
-                    key={p.id}
-                  >
-                    <div>
-                      <strong>{p.name}</strong>
-                      <small>
-                        {p.entries.length} ordered entries
-                        {p.remoteId ? " / Published" : " / Not published yet"}
-                      </small>
-                    </div>
-                    <StatusBadge state={p.state} />
-                  </NavLink>
+                  <Row asChild key={p.id}>
+                    <AppLink
+                      className="max-[700px]:items-start no-underline"
+                      to={"/imports/" + id + "/playlists/" + p.id}
+                    >
+                      <div>
+                        <strong>{p.name}</strong>
+                        <Caption>
+                          {p.entries.length} ordered entries
+                          {p.remoteId ? " / Published" : " / Not published yet"}
+                        </Caption>
+                      </div>
+                      <StatusBadge state={p.state} />
+                    </AppLink>
+                  </Row>
                 ))}
             </section>
           )}
           {currentPlaylist && (
             <>
-              <p>
+              <Text>
                 {currentPlaylist.entries.length} ordered entries. Repeated songs
                 retain their positions. Unavailable entries are kept here until
                 they can be filled.
-              </p>
+              </Text>
               {currentPlaylist.error && (
-                <div className="notice">{currentPlaylist.error}</div>
+                <Notice>{currentPlaylist.error}</Notice>
               )}
               {currentPlaylist.state === "paused" && (
-                <section className="review-diff">
-                  <h2>Review external changes</h2>
-                  <p>
+                <section className="my-6 rounded-lg border border-solid border-[#526079] p-5">
+                  <SectionHeading>Review external changes</SectionHeading>
+                  <Text>
                     Resuming keeps the remote playlist’s current name and
                     settings, then permits replacing its song order with the
                     available migration entries listed below.
-                  </p>
-                  <div className="fields">
+                  </Text>
+                  <FieldGrid>
                     <Snapshot
                       title="Last verified playlist"
                       value={currentPlaylist.baseline}
@@ -257,8 +277,8 @@ export function MigrationPage() {
                       title="Current external playlist"
                       value={currentPlaylist.desired}
                     />
-                  </div>
-                  <div className="actions">
+                  </FieldGrid>
+                  <Actions>
                     <Button
                       disabled={
                         busy ||
@@ -280,7 +300,7 @@ export function MigrationPage() {
                       Resume after review
                     </Button>
                     <Button
-                      className="quiet"
+                      variant="outline"
                       disabled={busy}
                       onClick={() =>
                         void action(
@@ -290,14 +310,16 @@ export function MigrationPage() {
                     >
                       Hand over this playlist
                     </Button>
-                  </div>
+                  </Actions>
                 </section>
               )}
             </>
           )}
-          <h2>{currentPlaylist ? "Ordered songs" : "Complete catalog"}</h2>
-          <div className="searchbar">
-            <label className="grow">
+          <SectionHeading>
+            {currentPlaylist ? "Ordered songs" : "Complete catalog"}
+          </SectionHeading>
+          <SearchBar>
+            <SearchField>
               Filter songs
               <Input
                 value={filter}
@@ -307,23 +329,22 @@ export function MigrationPage() {
                 }}
                 placeholder="Title, artist or status"
               />
-            </label>
+            </SearchField>
             <Button
               disabled={busy || selected.size === 0}
               onClick={() => void acquireSelected()}
             >
               Request selected ({selected.size})
             </Button>
-          </div>
-          <p className="muted">
+          </SearchBar>
+          <Text className="text-[13px]">
             Find matches identifies exact album/title/artist/duration matches.
             Review other recordings before requesting. Missing audio downloads
             only after an explicit request and any required approval.
-          </p>
-          <div className="tablehead">
-            <label className="check">
-              <input
-                type="checkbox"
+          </Text>
+          <div className="flex min-h-[52px] items-center justify-between gap-5 border-b border-solid border-sidebar-border py-2.5 text-xs text-muted-foreground [&_label]:m-0">
+            <CheckboxField>
+              <Checkbox
                 checked={
                   shown.some(
                     (s) =>
@@ -358,13 +379,15 @@ export function MigrationPage() {
                 }
               />{" "}
               Select ready songs
-            </label>
+            </CheckboxField>
             <span>Status</span>
           </div>
           {shown.slice(0, limit).map((s, index) => (
-            <div className="songrow" key={s.id + "-" + index}>
-              <input
-                type="checkbox"
+            <div
+              className="flex min-h-[52px] items-center gap-3 border-b border-solid border-sidebar-border py-1.5 [&>input]:min-h-0 max-[700px]:flex-wrap"
+              key={s.id + "-" + index}
+            >
+              <Checkbox
                 aria-label={"Select " + s.metadata.title}
                 disabled={
                   !s.candidate || !!s.serverId || s.deferred || !!s.requestId
@@ -376,26 +399,30 @@ export function MigrationPage() {
                   setSelected(next);
                 }}
               />
-              {currentPlaylist && <span className="position">{index + 1}</span>}
+              {currentPlaylist && (
+                <span className="text-[12px] text-muted-foreground w-[22px]">
+                  {index + 1}
+                </span>
+              )}
               <Button
-                className="songlink"
+                className="block flex-1 min-w-0 text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm max-[700px]:basis-[65%]"
                 onClick={() => navigate("/imports/" + id + "/songs/" + s.id)}
               >
                 <strong>
                   {s.metadata.title}
                   {s.metadata.favorite ? " ♥" : ""}
                 </strong>
-                <small>
+                <Caption>
                   {s.metadata.artist || "Unknown artist"} /{" "}
                   {s.metadata.album || "Unknown album"}
                   {s.favoriteState === "review"
                     ? " / Favorite outcome needs review"
                     : ""}
-                </small>
+                </Caption>
               </Button>
               <StatusBadge state={status(s)} />
               <Button
-                className="quiet"
+                variant="outline"
                 disabled={busy}
                 onClick={() =>
                   void action(
@@ -408,7 +435,7 @@ export function MigrationPage() {
             </div>
           ))}
           {shown.length > limit && (
-            <Button className="quiet" onClick={() => setLimit(limit + 100)}>
+            <Button variant="outline" onClick={() => setLimit(limit + 100)}>
               Show more ({shown.length - limit} remaining)
             </Button>
           )}

@@ -1,4 +1,14 @@
+import { SearchField } from "@/components/forms";
+import { Actions, Row, SearchForm } from "@/components/layout/content";
+import { AppLink } from "@/components/navigation";
 import { ActiveProgress, StatusBadge } from "@/components/status";
+import {
+  Caption,
+  PageHeading,
+  SectionHeading,
+  Subheading,
+  Text,
+} from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation } from "@/hooks/use-api";
@@ -6,7 +16,6 @@ import type { LibrarySong, Track } from "@/lib/api";
 import { label, time } from "@/lib/api";
 import { status, type Migration, type Source } from "@/lib/migration";
 import React, { useState } from "react";
-import { NavLink } from "react-router-dom";
 export function Review({
   source: s,
   migration: m,
@@ -57,23 +66,23 @@ export function Review({
   }
   return (
     <>
-      <NavLink to={"/imports/" + m.id}>Back to migration</NavLink>
-      <h1 tabIndex={-1}>{s.metadata.title}</h1>
-      <p>
+      <AppLink to={"/imports/" + m.id}>Back to migration</AppLink>
+      <PageHeading tabIndex={-1}>{s.metadata.title}</PageHeading>
+      <Text>
         {s.metadata.artist} / {s.metadata.album} / {time(s.metadata.duration)}
-      </p>
+      </Text>
       <StatusBadge state={status(s)} />
       <ActiveProgress state={s.jobState} title={s.metadata.title} />
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      {error && <Text role="alert">{error}</Text>}
+      {notice && <Text role="status">{notice}</Text>}
       {s.candidate && (
-        <section className="chosen">
-          <h2>Selected recording</h2>
+        <section className="my-6 rounded-lg border border-solid border-[#526079] p-5 [&_h2]:mt-0">
+          <SectionHeading>Selected recording</SectionHeading>
           <strong>{label(s.candidate)}</strong>
-          <p>
+          <Text>
             {s.candidate.artist.name} / {s.candidate.album.title} /{" "}
             {time(s.candidate.duration)}
-          </p>
+          </Text>
           <Button
             disabled={
               busy ||
@@ -89,46 +98,46 @@ export function Review({
         </section>
       )}
       {s.requestId && (
-        <p>
-          <NavLink to="/requests">View request and approval</NavLink> /{" "}
-          <NavLink to="/activity">View acquisition progress</NavLink>
-        </p>
+        <Text>
+          <AppLink to="/requests">View request and approval</AppLink> /{" "}
+          <AppLink to="/activity">View acquisition progress</AppLink>
+        </Text>
       )}
       <Button
-        className="quiet"
+        variant="outline"
         disabled={busy}
         onClick={() => void act(s.deferred ? "resume" : "defer")}
       >
         {s.deferred ? "Resume" : "Skip for now"}
       </Button>
       {s.favoriteState === "review" && m.state === "open" && (
-        <section className="notice">
-          <p>
+        <section className="bg-[#29384f] border-l-3 border-solid border-l-primary py-[13px] px-[18px] my-6 mx-0 text-[14px] max-w-[850px]">
+          <Text>
             The earlier favorite write has an uncertain outcome. Keep
             Navidrome’s current state, or explicitly try starring this song
             again.
-          </p>
-          <div className="actions">
+          </Text>
+          <Actions>
             <Button disabled={busy} onClick={() => void act("favorite-done")}>
               Keep current favorite state
             </Button>
             <Button
-              className="quiet"
+              variant="outline"
               disabled={busy}
               onClick={() => void act("favorite-retry")}
             >
               Retry favorite import once
             </Button>
-          </div>
+          </Actions>
         </section>
       )}
-      <h2>Find the intended recording</h2>
-      <p>
+      <SectionHeading>Find the intended recording</SectionHeading>
+      <Text>
         Compare album, version and duration. Resolving a match does not request
         a new download. You can also paste a Deezer song or share URL.
-      </p>
-      <form className="searchbar" onSubmit={find}>
-        <label className="grow">
+      </Text>
+      <SearchForm onSubmit={find}>
+        <SearchField>
           Search or Deezer song URL
           <Input
             value={query}
@@ -136,20 +145,20 @@ export function Review({
             maxLength={500}
             required
           />
-        </label>
+        </SearchField>
         <Button disabled={busy}>Find candidates</Button>
-      </form>
+      </SearchForm>
       {candidates && (
         <>
-          <h3>Already in Navidrome</h3>
-          {candidates.library.length === 0 && <p>No local candidates.</p>}
+          <Subheading>Already in Navidrome</Subheading>
+          {candidates.library.length === 0 && <Text>No local candidates.</Text>}
           {candidates.library.map((t) => (
-            <div className="row" key={t.id}>
+            <Row key={t.id}>
               <div>
                 <strong>{t.title}</strong>
-                <small>
+                <Caption>
                   {t.artist} / {t.album} / {time(t.duration)}
-                </small>
+                </Caption>
               </div>
               <Button
                 disabled={busy}
@@ -157,19 +166,19 @@ export function Review({
               >
                 Use existing
               </Button>
-            </div>
+            </Row>
           ))}
-          <h3>Deezer recordings</h3>
+          <Subheading>Deezer recordings</Subheading>
           {candidates.deezer.length === 0 && (
-            <p>No results. Try a direct song URL.</p>
+            <Text>No results. Try a direct song URL.</Text>
           )}
           {candidates.deezer.map((t) => (
-            <div className="row" key={t.id}>
+            <Row key={t.id}>
               <div>
                 <strong>{label(t)}</strong>
-                <small>
+                <Caption>
                   {t.artist.name} / {t.album.title} / {time(t.duration)}
-                </small>
+                </Caption>
               </div>
               <Button
                 disabled={busy}
@@ -179,7 +188,7 @@ export function Review({
               >
                 Use this recording
               </Button>
-            </div>
+            </Row>
           ))}
         </>
       )}

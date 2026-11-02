@@ -11,4 +11,4 @@
 - Use TanStack React Query for API reads, mutations, pagination, polling, and cache management.
 - Use other TanStack libraries, including Table and Form, when they suit the feature.
 - Avoid the TypeScript `any` type. Use explicit domain types, generics, or `unknown` with narrowing.
-- Use Tailwind CSS for styling; keep shared component recipes composed from Tailwind utilities and theme tokens.
+- Keep Tailwind styling in React component `className` values. Extract shared typography, form, and layout components to reduce duplication. Avoid global component selectors or `@apply` recipes; global CSS should contain only framework imports, theme tokens, document defaults, and animation definitions.

@@ -362,3 +362,61 @@ test("library pagination appends server pages through Query", async ({
   ).not.toBeVisible();
   expect(offsets).toEqual([0, 100]);
 });
+
+test("collapsed sidebar stays usable on a narrow screen", async ({
+  page,
+}, testInfo) => {
+  await musicFixture(page, true);
+  await page.goto("/search?q=Owned");
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(
+    navigation.getByRole("link", { name: "Library", exact: true }),
+  ).toBeVisible();
+  await expect(
+    navigation.getByText("Library", { exact: true }),
+  ).not.toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Existing library", exact: true })
+      .locator("details"),
+  ).toHaveCSS("border-left-width", "0px");
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("desktop-collapsed.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(navigation.getByText("Library", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Expand sidebar" }),
+  ).not.toBeVisible();
+  await expect(
+    page.getByLabel("Song, artist, album or Deezer URL"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Owned recording", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("button", { name: "Delete song: Owned recording", exact: true })
+    .click();
+  const dialog = page.getByRole("alertdialog", { name: "Delete this song?" });
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  const bounds = await dialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("mobile-dialog.png"),
+    fullPage: true,
+  });
+});

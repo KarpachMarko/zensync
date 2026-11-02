@@ -1,3 +1,6 @@
+import { Checkbox, CheckboxField, FieldLabel } from "@/components/forms";
+import { FieldGrid, Row } from "@/components/layout/content";
+import { Caption, SectionHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
@@ -48,22 +51,21 @@ export function Users({
   }
   return (
     <>
-      {result.error && <p role="alert">{result.error.message}</p>}
-      {message && <p role="status">{message}</p>}
-      <h2>Users & permissions</h2>
+      {result.error && <Text role="alert">{result.error.message}</Text>}
+      {message && <Text role="status">{message}</Text>}
+      <SectionHeading>Users & permissions</SectionHeading>
       {users.map((u) => (
-        <div className="row" key={u.id}>
+        <Row className="max-[700px]:flex-wrap max-[700px]:gap-2" key={u.id}>
           <strong>
             {u.username}
-            <small>{u.role}</small>
+            <Caption>{u.role}</Caption>
           </strong>
           <div>
             {u.role === "admin" ? (
               <span>Administrator</span>
             ) : (
-              <label className="check permission-toggle">
-                <input
-                  type="checkbox"
+              <CheckboxField className="m-0 text-[13px]">
+                <Checkbox
                   checked={u.direct}
                   disabled={busy}
                   onChange={async (e) => {
@@ -91,12 +93,11 @@ export function Users({
                   }}
                 />
                 Allow adding music without approval
-              </label>
+              </CheckboxField>
             )}
             {u.role !== "admin" && (
-              <label className="check">
-                <input
-                  type="checkbox"
+              <CheckboxField>
+                <Checkbox
                   checked={u.directDelete}
                   disabled={busy}
                   onChange={async (e) => {
@@ -131,19 +132,19 @@ export function Users({
                   }}
                 />
                 Allow deleting music without approval
-              </label>
+              </CheckboxField>
             )}
           </div>
-        </div>
+        </Row>
       ))}
-      <h2>Add a user</h2>
+      <SectionHeading>Add a user</SectionHeading>
       <form onSubmit={add}>
-        <div className="fields">
-          <label>
+        <FieldGrid>
+          <FieldLabel>
             Username
             <Input name="username" autoComplete="off" maxLength={80} required />
-          </label>
-          <label>
+          </FieldLabel>
+          <FieldLabel>
             Initial password
             <Input
               name="password"
@@ -153,20 +154,18 @@ export function Users({
               maxLength={72}
               required
             />
-          </label>
-        </div>
-        <label className="check">
-          <input name="direct" type="checkbox" /> Allow adding music without
-          approval
-        </label>
-        <label className="check">
-          <input name="directDelete" type="checkbox" /> Allow deleting music
-          without approval
-        </label>
-        <p className="muted">
+          </FieldLabel>
+        </FieldGrid>
+        <CheckboxField>
+          <Checkbox name="direct" /> Allow adding music without approval
+        </CheckboxField>
+        <CheckboxField>
+          <Checkbox name="directDelete" /> Allow deleting music without approval
+        </CheckboxField>
+        <Text className="text-[13px]">
           Adding and deleting have separate permissions. Other deletion requests
           require admin approval. Upgrades still require admin approval.
-        </p>
+        </Text>
         <Button disabled={busy}>Create user</Button>
       </form>
     </>

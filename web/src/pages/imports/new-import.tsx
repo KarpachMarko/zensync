@@ -1,9 +1,12 @@
+import { FieldLabel } from "@/components/forms";
+import { AppLink } from "@/components/navigation";
+import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { upload } from "@/lib/api";
 import { useMutation } from "@tanstack/react-query";
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 export function NewImport() {
   const { mutateAsync: uploadFile } = useMutation({ mutationFn: upload });
   const [error, setError] = useState(""),
@@ -29,14 +32,14 @@ export function NewImport() {
   }
   return (
     <>
-      <NavLink to="/imports">Imports</NavLink>
-      <h1 tabIndex={-1}>Start a migration</h1>
-      <p>
+      <AppLink to="/imports">Imports</AppLink>
+      <PageHeading tabIndex={-1}>Start a migration</PageHeading>
+      <Text>
         In Apple Music, choose File → Library → Export Library. For one
         playlist, choose File → Library → Export Playlist and select XML.
-      </p>
+      </Text>
       <form onSubmit={submit}>
-        <label>
+        <FieldLabel>
           Apple Music or iTunes XML export
           <Input
             name="xml"
@@ -44,13 +47,13 @@ export function NewImport() {
             accept=".xml,application/xml,text/xml"
             required
           />
-        </label>
-        <p>
+        </FieldLabel>
+        <Text>
           Uploading saves a private snapshot. It does not download music or
           change Navidrome. You’ll choose playlists and favorites in the
           preview.
-        </p>
-        {error && <p role="alert">{error}</p>}
+        </Text>
+        {error && <Text role="alert">{error}</Text>}
         <Button disabled={busy}>
           {busy ? "Reading your library…" : "Upload and preview"}
         </Button>
