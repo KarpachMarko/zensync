@@ -130,3 +130,7 @@ python3 scripts/test-navidrome.py
 ```
 
 Go tests cover legacy relocation, restart recovery, collision protection, admin-only retry, first-setup races, approval/isolation, hostile XML, ingestion/idempotency, an acquisition fixture using real generated audio and ffprobe, playlist recovery, external edits, handover and filesystem safety. The browser test uses the real local Go backend for setup/import/review; only search/request metadata interactions use controlled browser fixtures. The disposable Docker test also exercises real Navidrome 0.64.2 relocation and confirms unchanged song identity, favorites and duplicate playlist references, alongside playlist/favorite writes and restart persistence with synthetic local music. These tests do **not** perform an authenticated live Deezer download: your ARL/account's availability and quality entitlement are verified during your first actual acquisition.
+
+## Removing shared music
+
+Use Library → Request deletion, or Delete song when you have the separate deletion permission. Administrators review pending deletions in Requests and manage the grant in Settings → Users. Settings → API keys creates scoped keys for external deletion clients. See the [deletion API and recovery guide](deletion-api.md) for endpoints, storage requirements and recovery instructions. Navidrome keeps its read-only music mount.

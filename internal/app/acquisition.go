@@ -322,12 +322,13 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 	}
 	songs := []Song{}
 	for offset := 0; offset < 10000; offset += 100 {
-		page, err := a.navSearch(ctx, c, t.Title, offset)
+		var count int
+		page, err := a.navSearch(ctx, c, t.Title, offset, &count)
 		if err != nil {
 			return "", err
 		}
 		songs = append(songs, page...)
-		if len(page) < 100 {
+		if count < 100 {
 			break
 		}
 	}

@@ -339,15 +339,42 @@ func (a *App) connectionRoutes(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	send(w, 200, map[string]any{"ok": true, "version": verified.ServerVersion})
 }
-func (a *App) navSearch(ctx context.Context, c Credentials, q string, offset int) ([]Song, error) {
+func (a *App) navSearch(ctx context.Context, c Credentials, q string, offset int, rawCount ...*int) ([]Song, error) {
 	out, e := a.nav(ctx, c, "search3", url.Values{"query": {q}, "songCount": {"100"}, "songOffset": {strconv.Itoa(offset)}, "albumCount": {"0"}, "artistCount": {"0"}})
 	if e != nil {
 		return nil, e
 	}
+	if len(rawCount) > 0 {
+		*rawCount[0] = len(out.Search.Songs)
+	}
 	if out.Search.Songs == nil {
 		return []Song{}, nil
 	}
-	return out.Search.Songs, nil
+	rows, e := a.DB.Query("SELECT DISTINCT song_id FROM song_deletions WHERE phase='removed'")
+	if e != nil {
+		return nil, e
+	}
+	removed := map[string]bool{}
+	for rows.Next() {
+		var song string
+		if e = rows.Scan(&song); e != nil {
+			rows.Close()
+			return nil, e
+		}
+		removed[song] = true
+	}
+	e = rows.Err()
+	rows.Close()
+	if e != nil {
+		return nil, e
+	}
+	songs := []Song{}
+	for _, song := range out.Search.Songs {
+		if !removed[song.ID] {
+			songs = append(songs, song)
+		}
+	}
+	return songs, nil
 }
 func (a *App) library(w http.ResponseWriter, r *http.Request) {
 	c, e := a.shared()
@@ -359,9 +386,18 @@ func (a *App) library(w http.ResponseWriter, r *http.Request) {
 	if offset < 0 {
 		offset = 0
 	}
-	songs, e := a.navSearch(r.Context(), c, r.URL.Query().Get("q"), offset)
+	var count int
+	songs, e := a.navSearch(r.Context(), c, r.URL.Query().Get("q"), offset, &count)
 	if e != nil {
 		fail(w, 502, e.Error())
+		return
+	}
+	if r.URL.Query().Get("details") == "1" {
+		next := -1
+		if count == 100 {
+			next = offset + 100
+		}
+		send(w, 200, map[string]any{"songs": songs, "nextOffset": next})
 		return
 	}
 	send(w, 200, songs)

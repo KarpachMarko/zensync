@@ -18,7 +18,7 @@ Keep application login separate from Navidrome account linking. The shared servi
 - One-time migration from a fixed source snapshot, not persistent Apple synchronization. No source refresh schedules or updated-XML merge engine.
 - Matching, manual review, persistent unresolved migration entries and **Skip for now**. Importing metadata never automatically downloads the whole library.
 - Search for tracks, albums and artists; acquisition through d-fi; safe file placement and verified Navidrome availability.
-- Admin approval for member acquisitions by default, with an independent **Add music without approval** grant. Members cannot delete shared audio.
+- Admin approval for member acquisitions by default, with an independent **Add music without approval** grant. Song deletion has a separate **Delete music without approval** grant; other deletion requests require admin approval.
 - Per-user ordered quality profiles, explicit quality upgrades, and admin-approved replacement of old files.
 - Persistent requests/tasks, Activity, retries, cancellation, restart recovery, user isolation and Wavio acquisition compatibility.
 - Dedicated routed pages with the chosen collapsible sidebar, compact song rows and Mixtape-inspired migration playlist detail.
@@ -166,6 +166,6 @@ Required end-to-end acceptance scenarios:
 - Finish migration with pending requests. Existing requests continue under approval/defer rules, but late completion, restarts and replayed events cannot write playlists or favorites after handover.
 - Favorite import is owner-scoped, never infers unstar from absent data, and does not repeatedly undo an external unstar. Uncertain write outcomes are actionable.
 - Default profile falls back through allowed qualities and reports the result; disallowed qualities are never silently chosen. Existing audio is reused until an explicit Upgrade request.
-- Direct-acquisition permission does not authorize replacement/deletion. Approved upgrade validates new audio and preserves affected references before retiring the old file; failure retains a recoverable old asset.
+- Direct-acquisition permission does not authorize replacement/deletion. Deletion uses a separate direct-delete grant or admin-approved request. Approved upgrade validates new audio and preserves affected references before retiring the old file; failure retains a recoverable old asset.
 - Crash tests cover download, validation, placement before database commit, scan, remote playlist/star write, handover and replacement. Repeated events do not duplicate assets or entries.
 - Authorization, revocation, private counts/errors/SSE replay, safe credential handling, recovery and backup/restore pass the [multi-user acceptance criteria](multi-user-design.md).

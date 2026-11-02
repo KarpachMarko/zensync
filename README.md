@@ -8,7 +8,7 @@ The first migration workflow is implemented: first-access administrator setup, A
 
 Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
 
-See [deployment and first-migration instructions](docs/deployment.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
+See [deployment and first-migration instructions](docs/deployment.md) and the [song deletion API](docs/deletion-api.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
 
 ## Phase 1
 
@@ -18,7 +18,7 @@ See [deployment and first-migration instructions](docs/deployment.md). Wavio com
 - Migration stays open to fill missing entries until explicit handover. External edits pause the affected playlist. After handover, Navidrome owns playlists/favorites; outstanding acquisitions continue without changing those collections.
 - Persistent unresolved entries with Skip for now. Confidently matched existing music can fill skipped entries without a new download; alternative versions require review.
 - Per-user ordered quality profiles: lossless first, then allowed lower qualities. Reuse existing audio unless Upgrade is explicitly requested; replacing a shared file requires admin approval and verification.
-- Admin-approved member acquisitions by default, with an optional direct-acquisition grant. Members cannot delete shared audio.
+- Admin-approved member acquisitions by default, with an optional direct-acquisition grant. Song deletion has a separate direct-delete grant; other deletion requests require admin approval.
 - Wavio connects directly to Navidrome for playback and collection management, and uses ZenSync's acquisition adapter. Approval may appear as Queued in Wavio; details are shown in ZenSync.
 - Dedicated Library, Search, Imports, Requests, Activity and Settings pages with a collapsible sidebar and compact music rows.
 

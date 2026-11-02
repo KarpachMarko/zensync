@@ -18,6 +18,7 @@ import {
   finished,
   blocked,
 } from "./status";
+import { DeletionKeys } from "./deletions";
 import { DownloadSettings } from "./downloads";
 import { api, setCSRF } from "./api";
 import { Search, Library, Connections } from "./music";
@@ -27,11 +28,13 @@ type User = {
   username: string;
   role: string;
   direct: boolean;
+  directDelete: boolean;
   quality: string[];
 };
 type Request = {
   state: string;
   kind: string;
+  detail?: string;
   trackCount?: number;
   items?: { title: string; artist: string; state: string; detail: string }[];
   id: string;
@@ -261,7 +264,12 @@ function App() {
             path="/settings/*"
             element={<Settings user={user} reload={load} />}
           />
-          <Route path="/library/:view" element={<Library />} />
+          <Route
+            path="/library/:view"
+            element={
+              <Library canDelete={user.role === "admin" || user.directDelete} />
+            }
+          />
           <Route path="/search" element={<Search />} />
           <Route path="/imports" element={<Imports />} />
           <Route path="/imports/new" element={<NewImport />} />
@@ -317,7 +325,7 @@ function Requests({ user }: { user: User }) {
       </h1>
       <p>
         {user.role === "admin"
-          ? "Review acquisition requests across the workspace."
+          ? "Review acquisition and deletion requests across the workspace."
           : "Your music requests and approval decisions."}
       </p>
       <div className="actions toolbar">
@@ -353,7 +361,11 @@ function Requests({ user }: { user: User }) {
                     <div>
                       <strong>
                         {r.title}
-                        {r.kind === "album" ? " (Album)" : ""}
+                        {r.kind === "delete"
+                          ? " (Delete song)"
+                          : r.kind === "album"
+                            ? " (Album)"
+                            : ""}
                       </strong>
                       <small>
                         {r.artist || "Artist not specified"} / {r.target}
@@ -391,6 +403,13 @@ function Requests({ user }: { user: User }) {
                       ))}
                     </details>
                   )}
+                  {r.kind === "delete" && (
+                    <p className="muted">
+                      Removes this song for everyone in the shared library.{" "}
+                      {r.state &&
+                        `${r.state.replaceAll("_", " ")}: ${r.detail || ""}`}
+                    </p>
+                  )}
                   {r.reason && <p className="muted">{r.reason}</p>}
                   {r.decision === "awaiting_approval" && (
                     <div className="actions">
@@ -398,7 +417,15 @@ function Requests({ user }: { user: User }) {
                         <>
                           <button
                             disabled={busy}
-                            onClick={() => void decide(r, "approved")}
+                            onClick={() => {
+                              if (
+                                r.kind !== "delete" ||
+                                window.confirm(
+                                  `Remove “${r.title}” from the shared library for everyone?`,
+                                )
+                              )
+                                void decide(r, "approved");
+                            }}
                           >
                             Approve
                           </button>
@@ -559,6 +586,7 @@ function Settings({
         username: f.get("username"),
         password: f.get("password"),
         direct: f.get("direct") === "on",
+        directDelete: f.get("directDelete") === "on",
       });
       form.reset();
       await loadUsers();
@@ -575,6 +603,7 @@ function Settings({
       <nav className="tabs" aria-label="Settings">
         <NavLink to="/settings/connections">Connections</NavLink>
         <NavLink to="/settings/quality">Quality</NavLink>
+        <NavLink to="/settings/api">API keys</NavLink>
         {user.role === "admin" && (
           <NavLink to="/settings/downloads">Downloads</NavLink>
         )}
@@ -592,43 +621,87 @@ function Settings({
                 {u.username}
                 <small>{u.role}</small>
               </strong>
-              {u.role === "admin" ? (
-                <span>Administrator</span>
-              ) : (
-                <label className="check permission-toggle">
-                  <input
-                    type="checkbox"
-                    checked={u.direct}
-                    disabled={busy}
-                    onChange={async (e) => {
-                      const direct = e.target.checked;
-                      setUsers((users) =>
-                        users.map((current) =>
-                          current.id === u.id
-                            ? { ...current, direct }
-                            : current,
-                        ),
-                      );
-                      setBusy(true);
-                      try {
-                        await api("/users/" + u.id, "PUT", { direct });
-                        await loadUsers();
-                        setMessage("Permissions saved for " + u.username + ".");
-                      } catch (e) {
+              <div>
+                {u.role === "admin" ? (
+                  <span>Administrator</span>
+                ) : (
+                  <label className="check permission-toggle">
+                    <input
+                      type="checkbox"
+                      checked={u.direct}
+                      disabled={busy}
+                      onChange={async (e) => {
+                        const direct = e.target.checked;
                         setUsers((users) =>
                           users.map((current) =>
-                            current.id === u.id ? u : current,
+                            current.id === u.id
+                              ? { ...current, direct }
+                              : current,
                           ),
                         );
-                        setMessage((e as Error).message);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  />
-                  Allow adding music without approval
-                </label>
-              )}
+                        setBusy(true);
+                        try {
+                          await api("/users/" + u.id, "PUT", { direct });
+                          await loadUsers();
+                          setMessage(
+                            "Permissions saved for " + u.username + ".",
+                          );
+                        } catch (e) {
+                          setUsers((users) =>
+                            users.map((current) =>
+                              current.id === u.id ? u : current,
+                            ),
+                          );
+                          setMessage((e as Error).message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    />
+                    Allow adding music without approval
+                  </label>
+                )}
+                {u.role !== "admin" && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={u.directDelete}
+                      disabled={busy}
+                      onChange={async (e) => {
+                        const directDelete = e.target.checked;
+                        setUsers((current) =>
+                          current.map((person) =>
+                            person.id === u.id
+                              ? { ...person, directDelete }
+                              : person,
+                          ),
+                        );
+                        setBusy(true);
+                        try {
+                          await api(`/users/${u.id}/permissions`, "PUT", {
+                            directDelete,
+                          });
+                          await loadUsers();
+                          if (u.id === user.id) await reload();
+                          setMessage("Deletion permission updated.");
+                        } catch (err) {
+                          setUsers((current) =>
+                            current.map((person) =>
+                              person.id === u.id
+                                ? { ...person, directDelete: !directDelete }
+                                : person,
+                            ),
+                          );
+                          setMessage((err as Error).message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    />
+                    Allow deleting music without approval
+                  </label>
+                )}
+              </div>
             </div>
           ))}
           <h2>Add a user</h2>
@@ -659,13 +732,20 @@ function Settings({
               <input name="direct" type="checkbox" /> Allow adding music without
               approval
             </label>
+            <label className="check">
+              <input name="directDelete" type="checkbox" /> Allow deleting music
+              without approval
+            </label>
             <p className="muted">
-              Upgrades still require admin approval. Members cannot delete
-              shared audio.
+              Adding and deleting have separate permissions. Other deletion
+              requests require admin approval. Upgrades still require admin
+              approval.
             </p>
             <button disabled={busy}>Create user</button>
           </form>
         </>
+      ) : location.pathname.endsWith("/api") ? (
+        <DeletionKeys />
       ) : location.pathname.endsWith("/downloads") && user.role === "admin" ? (
         <DownloadSettings />
       ) : location.pathname.endsWith("/quality") ? (

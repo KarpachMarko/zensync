@@ -49,14 +49,16 @@ type App struct {
 	deezerURL        string
 }
 type User struct {
-	ID       string          `json:"id"`
-	Username string          `json:"username"`
-	Role     string          `json:"role"`
-	Direct   bool            `json:"direct"`
-	Quality  json.RawMessage `json:"quality"`
+	ID           string          `json:"id"`
+	Username     string          `json:"username"`
+	Role         string          `json:"role"`
+	DirectDelete bool            `json:"directDelete"`
+	Direct       bool            `json:"direct"`
+	Quality      json.RawMessage `json:"quality"`
 }
 type Request struct {
 	State      string          `json:"state"`
+	Detail     string          `json:"detail,omitempty"`
 	Kind       string          `json:"kind"`
 	TrackCount int             `json:"trackCount,omitempty"`
 	Items      []AlbumItem     `json:"items,omitempty"`
@@ -92,7 +94,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 2 {
+		if e == nil && version > 3 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -175,6 +177,10 @@ func (a *App) Handler() http.Handler {
 			}
 			return
 		}
+		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			a.deletionBearer(w, r)
+			return
+		}
 		if r.Method != "GET" && !sameHostOrigin(r) {
 			fail(w, 403, "Origin rejected")
 			return
@@ -210,6 +216,12 @@ func (a *App) Handler() http.Handler {
 			}
 			http.SetCookie(w, &http.Cookie{Name: "zensync_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 			send(w, 200, map[string]bool{"ok": true})
+		case (r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/")):
+			a.deletionKeyRoutes(w, r, u)
+		case r.URL.Path == "/api/v2/deletion-requests" && r.Method == "POST":
+			a.createDeletionRequest(w, r, u)
+		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && strings.HasSuffix(r.URL.Path, "/permissions") && r.Method == "PUT":
+			a.deletePermission(w, r, u)
 		case r.URL.Path == "/api/v2/requests" && r.Method == "GET":
 			a.listRequests(w, u)
 		case r.URL.Path == "/api/v2/requests" && r.Method == "POST":
@@ -239,7 +251,7 @@ func (a *App) authenticate(r *http.Request) (User, string, error) {
 	if e != nil {
 		return u, "", e
 	}
-	e = a.DB.QueryRow("SELECT u.id,u.username,u.role,u.direct,u.quality,s.csrf FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?", digest(c.Value), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &csrf)
+	e = a.DB.QueryRow("SELECT u.id,u.username,u.role,u.direct,u.quality,s.csrf,EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=u.id) FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?", digest(c.Value), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &csrf, &u.DirectDelete)
 	u.Quality = json.RawMessage(q)
 	return u, csrf, e
 }

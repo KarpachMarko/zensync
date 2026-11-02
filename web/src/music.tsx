@@ -384,20 +384,63 @@ function SearchSection({
   );
 }
 
-export function Library() {
+export function Library({ canDelete }: { canDelete: boolean }) {
+  const [notice, setNotice] = useState("");
+  const [deletions, setDeletions] = useState<Set<string>>(new Set());
+  const deletionKeys = useRef<Record<string, string>>({});
+  async function remove(song: LibrarySong) {
+    if (
+      !window.confirm(
+        canDelete
+          ? `Remove “${song.title}” from the shared library for everyone? A recovery copy will be retained.`
+          : `Request removal of “${song.title}” from the shared library for everyone? An administrator must approve.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api(
+        "/deletion-requests",
+        "POST",
+        { songId: song.id },
+        (deletionKeys.current[song.id] ||= requestKey()),
+      );
+      setDeletions((previous) => new Set([...previous, song.id]));
+      setNotice(
+        canDelete
+          ? "Deletion approved and queued. Follow progress in Requests or Activity."
+          : "Deletion request submitted for administrator approval.",
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const navigate = useNavigate();
   const [rows, setRows] = useState<LibrarySong[]>([]),
     [query, setQuery] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [offset, setOffset] = useState(0);
+    [nextOffset, setNextOffset] = useState(-1);
   async function load(start = 0) {
     setBusy(true);
     setError("");
     try {
-      const songs = await api<LibrarySong[]>("/library?q=&offset=" + start);
+      const response = await api<
+        LibrarySong[] | { songs: LibrarySong[]; nextOffset: number }
+      >("/library?q=&offset=" + start + "&details=1");
+      const songs = Array.isArray(response) ? response : response.songs;
       setRows(start ? [...rows, ...songs] : songs);
-      setOffset(start);
+      setNextOffset(
+        Array.isArray(response)
+          ? songs.length === 100
+            ? start + 100
+            : -1
+          : response.nextOffset,
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -410,7 +453,15 @@ export function Library() {
   return (
     <>
       <h1 tabIndex={-1}>Library</h1>
-      <p>Available music from your shared Navidrome library.</p>
+      <p>
+        Available music from your shared Navidrome library. Deleting a song
+        removes it for everyone.
+      </p>
+      {notice && (
+        <p role="status">
+          {notice} <NavLink to="/requests">View requests</NavLink>
+        </p>
+      )}
       <form
         className="searchbar"
         onSubmit={(e) => {
@@ -439,7 +490,23 @@ export function Library() {
               {s.artist} / {s.album}
             </small>
           </div>
-          <span>{time(s.duration)}</span>
+          <div className="actions">
+            <span>{time(s.duration)}</span>
+            <button
+              className="quiet"
+              aria-label={
+                (canDelete ? "Delete song: " : "Request deletion: ") + s.title
+              }
+              disabled={busy || deletions.has(s.id)}
+              onClick={() => void remove(s)}
+            >
+              {deletions.has(s.id)
+                ? "Deletion requested"
+                : canDelete
+                  ? "Delete song"
+                  : "Request deletion"}
+            </button>
+          </div>
         </div>
       ))}
       {!busy && !error && rows.length === 0 && (
@@ -448,8 +515,8 @@ export function Library() {
           <NavLink to="/search">Search for music to import</NavLink>.
         </p>
       )}
-      {rows.length - offset === 100 && (
-        <button disabled={busy} onClick={() => void load(offset + 100)}>
+      {nextOffset >= 0 && (
+        <button disabled={busy} onClick={() => void load(nextOffset)}>
           Load more
         </button>
       )}

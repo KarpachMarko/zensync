@@ -98,3 +98,19 @@ CREATE TABLE IF NOT EXISTS migration_task_wakeups (
  migration_id TEXT NOT NULL REFERENCES migrations(id), action TEXT NOT NULL,
  PRIMARY KEY(migration_id,action)
 );
+
+-- Deletion grants are independent of direct acquisition permission.
+CREATE TABLE IF NOT EXISTS delete_permissions (
+ user_id TEXT PRIMARY KEY REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS song_deletions (
+ request_id TEXT PRIMARY KEY REFERENCES requests(id), song_id TEXT NOT NULL,
+ file_path TEXT NOT NULL, checksum TEXT NOT NULL,
+ phase TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE TABLE IF NOT EXISTS deletion_api_keys (
+ id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), token_hash TEXT NOT NULL UNIQUE,
+ created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO schema_version VALUES(3);

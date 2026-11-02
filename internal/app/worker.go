@@ -63,7 +63,13 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 					maintenanceRunning = true
 					lastMaintenance = time.Now()
 					work.Add(1)
-					go func() { defer work.Done(); a.runMigrationTask(ctx); a.refreshAlbums(); maintenanceDone <- struct{}{} }()
+					go func() {
+						defer work.Done()
+						a.runDeletion(ctx)
+						a.runMigrationTask(ctx)
+						a.refreshAlbums()
+						maintenanceDone <- struct{}{}
+					}()
 				}
 				for a.activeAcquisitions() < a.downloadLimit() {
 					claim := a.claimAcquisition()
@@ -89,10 +95,8 @@ func (a *App) runMigrationTask(ctx context.Context) {
 	if e != nil {
 		return
 	}
-	if action != "match" {
-		a.opMu.Lock()
-		defer a.opMu.Unlock()
-	}
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
 	m, e := a.getMigration(mid, owner)
 	if e != nil {
 		return
@@ -403,6 +407,9 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 		return
 	}
 	defer tx.Rollback()
+	if _, e = tx.Exec("UPDATE song_deletions SET phase='reacquired' WHERE song_id=? AND phase='removed'", songID); e != nil {
+		return
+	}
 	if _, e = tx.Exec("UPDATE jobs SET state='available',stage='Verified in Navidrome' WHERE id=?", jid); e != nil {
 		return
 	}

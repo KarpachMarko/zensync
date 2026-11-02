@@ -452,15 +452,136 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.getByRole("button", { name: "Create user" }).click();
   const member = page.locator(".row").filter({ hasText: "ui-member" });
   await expect(member).toBeVisible();
-  await member.getByRole("checkbox").check();
+  await member
+    .getByRole("checkbox", { name: "Allow adding music without approval" })
+    .check();
   await expect(page.getByRole("status")).toHaveText(
     "Permissions saved for ui-member.",
   );
   await page.reload();
-  await expect(member.getByRole("checkbox")).toBeChecked();
-  await member.getByRole("checkbox").uncheck();
+  await expect(
+    member.getByRole("checkbox", {
+      name: "Allow adding music without approval",
+    }),
+  ).toBeChecked();
+  await member
+    .getByRole("checkbox", { name: "Allow adding music without approval" })
+    .uncheck();
   await expect(page.getByRole("status")).toHaveText(
     "Permissions saved for ui-member.",
   );
+  // Deletion uses a distinct request, explicit shared-library confirmation,
+  // and the same approval inbox. Backend deletion is exercised in Go tests.
+  await page.route("**/api/v2/library?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "delete-song",
+          title: "Shared deletion song",
+          artist: "Artist",
+          album: "Album",
+          duration: 90,
+        },
+      ],
+    }),
+  );
+  let deletionSubmissions = 0;
+  await page.route("**/api/v2/deletion-requests", async (route) => {
+    deletionSubmissions++;
+    expect(route.request().postDataJSON()).toEqual({ songId: "delete-song" });
+    expect(
+      route.request().headers()["idempotency-key"].length,
+    ).toBeGreaterThanOrEqual(8);
+    await route.fulfill({ status: 201, json: { id: "fixture-delete" } });
+  });
+  await page.goto("/library/songs");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("for everyone");
+    await dialog.accept();
+  });
+  await page
+    .getByRole("button", { name: "Delete song: Shared deletion song" })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Deletion approved and queued",
+  );
+  expect(deletionSubmissions).toBe(1);
+  let deleteDecision = "awaiting_approval";
+  await page.route("**/api/v2/requests", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "fixture-delete",
+          kind: "delete",
+          title: "Shared deletion song",
+          artist: "Artist",
+          target: "navidrome:song:delete-song",
+          decision: deleteDecision,
+          quality: [],
+          reason: "",
+          state: deleteDecision === "approved" ? "queued" : "",
+          detail: "Queued for library removal",
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/v2/requests/fixture-delete", async (route) => {
+    expect(route.request().postDataJSON().decision).toBe("approved");
+    deleteDecision = "approved";
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/requests");
+  await expect(
+    page.getByText("Shared deletion song (Delete song)"),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Approve", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/queued: Queued for library removal/),
+  ).toBeVisible();
+
+  await page.goto("/settings/people");
+  await page.getByLabel("Username", { exact: true }).fill("delete-member");
+  await page.getByLabel("Initial password").fill("local-member-password");
+  await page
+    .getByLabel("Allow deleting music without approval", { exact: true })
+    .last()
+    .check();
+  await page.getByRole("button", { name: "Create user" }).click();
+  const memberRow = page.locator(".row").filter({ hasText: "delete-member" });
+  await expect(
+    memberRow.getByRole("checkbox", {
+      name: "Allow deleting music without approval",
+    }),
+  ).toBeChecked();
+  await memberRow
+    .getByRole("checkbox", { name: "Allow deleting music without approval" })
+    .uncheck();
+  await expect(page.getByRole("status")).toHaveText(
+    "Deletion permission updated.",
+  );
+  await page.reload();
+  await expect(
+    memberRow.getByRole("checkbox", {
+      name: "Allow deleting music without approval",
+    }),
+  ).not.toBeChecked();
+
+  await page.goto("/settings/api");
+  await page.getByRole("button", { name: "Create deletion API key" }).click();
+  await expect(
+    page.getByLabel("Copy this key now. It is shown only once."),
+  ).toHaveValue(/^[0-9a-f]{64}$/);
+  await page.reload();
+  await expect(
+    page.getByLabel("Copy this key now. It is shown only once."),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Revoke", exact: true }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
 });
