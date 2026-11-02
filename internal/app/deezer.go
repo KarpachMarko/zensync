@@ -163,6 +163,25 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		send(w, 200, []Track{t})
 		return
 	}
+	if r.URL.Query().Get("details") == "1" {
+		tracks, trackErr := a.searchDeezer(r.Context(), q)
+		albums, albumErr := a.searchAlbums(r.Context(), q)
+		if trackErr != nil && albumErr != nil {
+			fail(w, 502, "Deezer search is unavailable; try again later")
+			return
+		}
+		warnings := []string{}
+		if trackErr != nil {
+			tracks = []Track{}
+			warnings = append(warnings, "Song search is temporarily unavailable. Album results are shown.")
+		}
+		if albumErr != nil {
+			albums = []AlbumSummary{}
+			warnings = append(warnings, "Album search is temporarily unavailable. Song results are shown.")
+		}
+		send(w, 200, map[string]any{"tracks": tracks, "albums": albums, "warnings": warnings})
+		return
+	}
 	out, e := a.searchDeezer(r.Context(), q)
 	if e != nil {
 		fail(w, 502, e.Error())
@@ -295,4 +314,37 @@ func (a *App) albumTracks(ctx context.Context, id string) ([]Track, error) {
 		}
 	}
 	return nil, errors.New("Album exceeds 5,000 tracks")
+}
+
+type AlbumSummary struct {
+	ID         int64  `json:"id"`
+	Title      string `json:"title"`
+	Artist     Artist `json:"artist"`
+	TrackCount int    `json:"trackCount,omitempty"`
+}
+
+func (a *App) searchAlbums(ctx context.Context, q string) ([]AlbumSummary, error) {
+	out := []AlbumSummary{}
+	if strings.TrimSpace(q) == "" {
+		return out, nil
+	}
+	var response struct {
+		Data []struct {
+			ID     int64  `json:"id"`
+			Title  string `json:"title"`
+			Artist Artist `json:"artist"`
+			Count  int    `json:"nb_tracks"`
+		} `json:"data"`
+	}
+	if e := a.deezer(ctx, "/search/album?limit=20&q="+url.QueryEscape(q), &response); e != nil {
+		return nil, e
+	}
+	seen := map[int64]bool{}
+	for _, a := range response.Data {
+		if a.ID > 0 && a.Title != "" && !seen[a.ID] {
+			seen[a.ID] = true
+			out = append(out, AlbumSummary{ID: a.ID, Title: a.Title, Artist: a.Artist, TrackCount: a.Count})
+		}
+	}
+	return out, nil
 }
