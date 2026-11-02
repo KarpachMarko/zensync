@@ -18,6 +18,7 @@ import {
   finished,
   blocked,
 } from "./status";
+import { DeletionDialog } from "./deletion-dialog";
 import { DeletionKeys } from "./deletions";
 import { DownloadSettings } from "./downloads";
 import type { TransferProgress } from "./api";
@@ -278,7 +279,12 @@ function App() {
               <Library canDelete={user.role === "admin" || user.directDelete} />
             }
           />
-          <Route path="/search" element={<Search />} />
+          <Route
+            path="/search"
+            element={
+              <Search canDelete={user.role === "admin" || user.directDelete} />
+            }
+          />
           <Route path="/imports" element={<Imports />} />
           <Route path="/imports/new" element={<NewImport />} />
           <Route path="/imports/:id" element={<MigrationPage />} />
@@ -297,6 +303,9 @@ function App() {
   );
 }
 function Requests({ user }: { user: User }) {
+  const [deletionToApprove, setDeletionToApprove] = useState<Request | null>(
+    null,
+  );
   const [rows, setRows] = useState<Request[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -437,13 +446,8 @@ function Requests({ user }: { user: User }) {
                           <button
                             disabled={busy}
                             onClick={() => {
-                              if (
-                                r.kind !== "delete" ||
-                                window.confirm(
-                                  `Remove “${r.title}” from the shared library for everyone?`,
-                                )
-                              )
-                                void decide(r, "approved");
+                              if (r.kind === "delete") setDeletionToApprove(r);
+                              else void decide(r, "approved");
                             }}
                           >
                             Approve
@@ -491,6 +495,20 @@ function Requests({ user }: { user: User }) {
           );
         })
       )}
+      <DeletionDialog
+        open={deletionToApprove !== null}
+        mode="approve"
+        song={deletionToApprove || { title: "", artist: "" }}
+        onClose={() => setDeletionToApprove(null)}
+        onConfirm={async () => {
+          if (!deletionToApprove) return;
+          await api("/requests/" + deletionToApprove.id, "POST", {
+            decision: "approved",
+            reason: "",
+          });
+          await load();
+        }}
+      />
     </>
   );
 }

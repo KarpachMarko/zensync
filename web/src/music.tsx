@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { NavLink, useSearchParams, useNavigate } from "react-router-dom";
 import { api, Track, LibrarySong, label, time, requestKey } from "./api";
+import { DeletionDialog } from "./deletion-dialog";
 import { StatusBadge } from "./status";
 type FoundAlbum = {
   id: number;
@@ -8,7 +9,12 @@ type FoundAlbum = {
   artist: { name: string };
   trackCount?: number;
 };
-export function Search() {
+export function Search({ canDelete }: { canDelete: boolean }) {
+  const [resultType, setResultType] = useState<"Both" | "Album" | "Song">(
+    "Both",
+  );
+  const showAlbums = resultType !== "Song";
+  const showSongs = resultType !== "Album";
   const [album, setAlbum] = useState<FoundAlbum>();
   const [albums, setAlbums] = useState<FoundAlbum[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -184,51 +190,67 @@ export function Search() {
         </label>
         <button disabled={busy}>Search</button>
       </form>
+      <div className="result-type-toggle" role="group" aria-label="Result type">
+        {(["Both", "Album", "Song"] as const).map((type) => (
+          <button
+            type="button"
+            key={type}
+            aria-pressed={resultType === type}
+            onClick={() => setResultType(type)}
+          >
+            {type}
+          </button>
+        ))}
+      </div>
       {searched && (
         <>
-          <SearchSection title="Existing library" count={library.length}>
-            {libraryLoading && <p role="status">Searching your library…</p>}
-            {libraryError && (
-              <p role="alert">
-                {libraryError}{" "}
-                <NavLink to="/settings/connections">
-                  Connection settings
-                </NavLink>
-              </p>
-            )}
-            {!libraryLoading && !libraryError && library.length === 0 && (
-              <p>
-                No matching music in your library. See candidates for import
-                below.
-              </p>
-            )}
-            {library.map((song) => (
-              <article className="row" key={song.id}>
-                <div>
-                  <strong>{song.title}</strong>
-                  <small>
-                    {song.artist} / {song.album} / {time(song.duration)}
-                  </small>
-                </div>
-                <StatusBadge state="available" />
-              </article>
-            ))}
-            {moreLibrary && (
-              <button
-                className="quiet toolbar"
-                disabled={loadingMore}
-                onClick={() => void loadMoreLibrary()}
-              >
-                {loadingMore ? "Loading…" : "Load more library results"}
-              </button>
-            )}
-          </SearchSection>
+          <div hidden={!showSongs}>
+            <SearchSection title="Existing library" count={library.length}>
+              {libraryLoading && <p role="status">Searching your library…</p>}
+              {libraryError && (
+                <p role="alert">
+                  {libraryError}{" "}
+                  <NavLink to="/settings/connections">
+                    Connection settings
+                  </NavLink>
+                </p>
+              )}
+              {!libraryLoading && !libraryError && library.length === 0 && (
+                <p>
+                  No matching music in your library. See candidates for import
+                  below.
+                </p>
+              )}
+              {library.map((song) => (
+                <LibrarySongRow
+                  key={song.id}
+                  song={song}
+                  canDelete={canDelete}
+                />
+              ))}
+              {moreLibrary && (
+                <button
+                  className="quiet toolbar"
+                  disabled={loadingMore}
+                  onClick={() => void loadMoreLibrary()}
+                >
+                  {loadingMore ? "Loading…" : "Load more library results"}
+                </button>
+              )}
+            </SearchSection>
+          </div>
           <SearchSection
             title="Candidates for import"
-            count={results.length + albums.length}
+            count={
+              (showSongs ? results.length : 0) +
+              (showAlbums
+                ? albums.length +
+                  (album && !albums.some((a) => a.id === album.id) ? 1 : 0)
+                : 0)
+            }
           >
             {importLoading && <p role="status">Searching Deezer…</p>}
-            {album && (
+            {showAlbums && album && (
               <section className="album-result">
                 <div>
                   <h2>{album.title}</h2>
@@ -251,7 +273,7 @@ export function Search() {
                 </button>
               </section>
             )}
-            {album && albumRequested.has(album.id) && (
+            {showAlbums && album && albumRequested.has(album.id) && (
               <p role="status">
                 Album request saved.{" "}
                 <NavLink to="/requests">View the single album request</NavLink>.
@@ -263,7 +285,7 @@ export function Search() {
                 {w}
               </p>
             ))}
-            {albums.length > 0 && (
+            {showAlbums && albums.length > 0 && (
               <section aria-label="Album results">
                 <h2>Albums</h2>
                 {albums.map((found) => (
@@ -303,52 +325,58 @@ export function Search() {
                 ))}
               </section>
             )}
-            {albums.some((a) => albumRequested.has(a.id)) && (
+            {showAlbums && albums.some((a) => albumRequested.has(a.id)) && (
               <p role="status">
                 Album request saved.{" "}
                 <NavLink to="/requests">View requests</NavLink>.
               </p>
             )}
-            {results.length > 0 && albums.length > 0 && <h2>Songs</h2>}
+            {showSongs &&
+              results.length > 0 &&
+              showAlbums &&
+              albums.length > 0 && <h2>Songs</h2>}
             {searched &&
-              results.length === 0 &&
-              albums.length === 0 &&
-              !album &&
+              (!showSongs || results.length === 0) &&
+              (!showAlbums || (albums.length === 0 && !album)) &&
               !importLoading &&
               !error && (
                 <p>
-                  No matches. Try another song, artist or album name, or paste a
-                  Deezer link.
+                  {resultType === "Both"
+                    ? "No matches."
+                    : `No ${resultType.toLowerCase()} matches in the loaded results.`}{" "}
+                  Try another search or choose Both.
                 </p>
               )}
-            {results.map((t) => (
-              <article className="row" key={t.id}>
-                <div>
-                  <strong>{label(t)}</strong>
-                  <small>
-                    {t.artist.name} / {t.album.title} / {time(t.duration)}
-                  </small>
-                </div>
-                <button
-                  disabled={
-                    busy ||
-                    requested.has(t.id) ||
-                    !!(album && albumRequested.has(album.id))
-                  }
-                  onClick={() => void request(t)}
-                >
-                  {album && albumRequested.has(album.id)
-                    ? "Included in album"
-                    : requested.has(t.id)
-                      ? "Requested"
-                      : "Request"}
-                </button>
-              </article>
-            ))}
+            <div hidden={!showSongs}>
+              {results.map((t) => (
+                <article className="row" key={t.id}>
+                  <div>
+                    <strong>{label(t)}</strong>
+                    <small>
+                      {t.artist.name} / {t.album.title} / {time(t.duration)}
+                    </small>
+                  </div>
+                  <button
+                    disabled={
+                      busy ||
+                      requested.has(t.id) ||
+                      !!(album && albumRequested.has(album.id))
+                    }
+                    onClick={() => void request(t)}
+                  >
+                    {album && albumRequested.has(album.id)
+                      ? "Included in album"
+                      : requested.has(t.id)
+                        ? "Requested"
+                        : "Request"}
+                  </button>
+                </article>
+              ))}
+            </div>
           </SearchSection>
         </>
       )}
-      {requested.size > 0 && (
+      {showSongs && requested.size > 0 && (
         <p role="status">
           Requests saved. <NavLink to="/requests">View approval status</NavLink>{" "}
           or <NavLink to="/activity">follow acquisition progress</NavLink>.
@@ -384,41 +412,81 @@ function SearchSection({
   );
 }
 
-export function Library({ canDelete }: { canDelete: boolean }) {
-  const [notice, setNotice] = useState("");
-  const [deletions, setDeletions] = useState<Set<string>>(new Set());
-  const deletionKeys = useRef<Record<string, string>>({});
-  async function remove(song: LibrarySong) {
-    if (
-      !window.confirm(
-        canDelete
-          ? `Remove “${song.title}” from the shared library for everyone? A recovery copy will be retained.`
-          : `Request removal of “${song.title}” from the shared library for everyone? An administrator must approve.`,
-      )
-    )
-      return;
+function LibrarySongRow({
+  song,
+  canDelete,
+}: {
+  song: LibrarySong;
+  canDelete: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const key = useRef<string>("");
+  async function remove() {
     setBusy(true);
-    setError("");
-    setNotice("");
     try {
       await api(
         "/deletion-requests",
         "POST",
         { songId: song.id },
-        (deletionKeys.current[song.id] ||= requestKey()),
+        (key.current ||= requestKey()),
       );
-      setDeletions((previous) => new Set([...previous, song.id]));
-      setNotice(
-        canDelete
-          ? "Deletion approved and queued. Follow progress in Requests or Activity."
-          : "Deletion request submitted for administrator approval.",
-      );
-    } catch (e) {
-      setError((e as Error).message);
+      setSubmitted(true);
     } finally {
       setBusy(false);
     }
   }
+  return (
+    <article className="library-song">
+      <div className="row">
+        <div>
+          <strong>{song.title}</strong>
+          <small>
+            {song.artist} / {song.album} / {time(song.duration)}
+          </small>
+        </div>
+        <div className="actions">
+          <StatusBadge state="available" />
+          <button
+            type="button"
+            className="quiet"
+            aria-label={
+              (canDelete ? "Delete song: " : "Request deletion: ") + song.title
+            }
+            disabled={busy || submitted}
+            onClick={() => setConfirming(true)}
+          >
+            {submitted
+              ? "Deletion requested"
+              : busy
+                ? "Submitting…"
+                : canDelete
+                  ? "Delete song"
+                  : "Request deletion"}
+          </button>
+        </div>
+      </div>
+      {submitted && (
+        <p role="status">
+          {canDelete
+            ? "Deletion approved and queued. Follow progress in Requests or Activity."
+            : "Deletion request submitted for administrator approval."}{" "}
+          <NavLink to="/requests">View requests</NavLink>
+        </p>
+      )}
+      <DeletionDialog
+        open={confirming}
+        mode={canDelete ? "delete" : "request"}
+        song={song}
+        onClose={() => setConfirming(false)}
+        onConfirm={remove}
+      />
+    </article>
+  );
+}
+
+export function Library({ canDelete }: { canDelete: boolean }) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<LibrarySong[]>([]),
     [query, setQuery] = useState(""),
@@ -457,11 +525,6 @@ export function Library({ canDelete }: { canDelete: boolean }) {
         Available music from your shared Navidrome library. Deleting a song
         removes it for everyone.
       </p>
-      {notice && (
-        <p role="status">
-          {notice} <NavLink to="/requests">View requests</NavLink>
-        </p>
-      )}
       <form
         className="searchbar"
         onSubmit={(e) => {
@@ -482,32 +545,8 @@ export function Library({ canDelete }: { canDelete: boolean }) {
           <NavLink to="/settings/connections">Connection settings</NavLink>
         </p>
       )}
-      {rows.map((s) => (
-        <div className="row" key={s.id}>
-          <div>
-            <strong>{s.title}</strong>
-            <small>
-              {s.artist} / {s.album}
-            </small>
-          </div>
-          <div className="actions">
-            <span>{time(s.duration)}</span>
-            <button
-              className="quiet"
-              aria-label={
-                (canDelete ? "Delete song: " : "Request deletion: ") + s.title
-              }
-              disabled={busy || deletions.has(s.id)}
-              onClick={() => void remove(s)}
-            >
-              {deletions.has(s.id)
-                ? "Deletion requested"
-                : canDelete
-                  ? "Delete song"
-                  : "Request deletion"}
-            </button>
-          </div>
-        </div>
+      {rows.map((song) => (
+        <LibrarySongRow key={song.id} song={song} canDelete={canDelete} />
       ))}
       {!busy && !error && rows.length === 0 && (
         <p>

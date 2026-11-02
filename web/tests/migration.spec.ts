@@ -537,12 +537,15 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     await route.fulfill({ status: 201, json: { id: "fixture-delete" } });
   });
   await page.goto("/library/songs");
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("for everyone");
-    await dialog.accept();
-  });
   await page
     .getByRole("button", { name: "Delete song: Shared deletion song" })
+    .click();
+  const deletionDialog = page.getByRole("alertdialog", {
+    name: "Delete this song?",
+  });
+  await expect(deletionDialog).toContainText("Shared deletion song");
+  await deletionDialog
+    .getByRole("button", { name: "Delete song", exact: true })
     .click();
   await expect(page.getByRole("status")).toContainText(
     "Deletion approved and queued",
@@ -576,8 +579,15 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByText("Shared deletion song (Delete song)"),
   ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Approve", exact: true }).click();
+  const approvalDialog = page.getByRole("alertdialog", {
+    name: "Approve song deletion?",
+  });
+  await expect(approvalDialog).toContainText("Shared deletion song");
+  await approvalDialog
+    .getByRole("button", { name: "Approve deletion", exact: true })
+    .click();
+  await expect(approvalDialog).not.toBeVisible();
   await expect(
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
