@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from "react";
 import { NavLink, useSearchParams, useNavigate } from "react-router-dom";
 import { api, Track, LibrarySong, label, time, requestKey } from "./api";
 import { DeletionDialog } from "./deletion-dialog";
-import { StatusBadge } from "./status";
 type FoundAlbum = {
   id: number;
   title: string;
@@ -447,7 +446,6 @@ function LibrarySongRow({
           </small>
         </div>
         <div className="actions">
-          <StatusBadge state="available" />
           <button
             type="button"
             className="quiet"
