@@ -1,4 +1,3 @@
-import { StatusPill } from "@/components/status";
 import {
   SidebarInset,
   SidebarProvider,
@@ -33,16 +32,12 @@ export function AppShell({
     >
       <WorkspaceSidebar user={user} onSignOut={onSignOut} onError={onError} />
       <SidebarInset className="block w-full min-w-0 max-w-[1440px] px-11 pt-7 pb-[70px] max-[700px]:px-[18px] max-[700px]:py-6">
-        <header className="mb-8 flex items-center justify-between text-[13px] text-muted-foreground max-[700px]:mb-[25px]">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger
-              className="border-0 p-1 md:hidden"
-              aria-label="Open navigation"
-            />
-            <span>Shared music workspace</span>
-          </div>
-          <StatusPill>Music migration</StatusPill>
-        </header>
+        <div className="mb-4 md:hidden">
+          <SidebarTrigger
+            className="border-0 p-1"
+            aria-label="Open navigation"
+          />
+        </div>
         {children}
       </SidebarInset>
     </SidebarProvider>
