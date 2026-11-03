@@ -1,3 +1,4 @@
+import { DeleteMigration } from "@/components/imports/delete-migration";
 import { ExpandableSection } from "@/components/expandable-section";
 import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
 import { MigrationChoices } from "@/components/imports/migration-choices";
@@ -120,7 +121,13 @@ export function MigrationPage() {
         <PageHeading tabIndex={-1}>
           {currentPlaylist?.name || m.name}
         </PageHeading>
-        <StatusBadge state={m.state} />
+        <Actions>
+          <StatusBadge state={m.state} />
+          <DeleteMigration
+            migration={m}
+            onDeleted={() => navigate("/imports", { replace: true })}
+          />
+        </Actions>
       </PageTitle>
       {error && <Text role="alert">{error}</Text>}
       {m.error && (

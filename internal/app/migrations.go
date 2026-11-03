@@ -237,6 +237,10 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 404, "Migration not found")
 		return
 	}
+	if len(parts) == 1 && r.Method == "DELETE" {
+		a.deleteMigration(w, u, mid)
+		return
+	}
 	if len(parts) == 1 && r.Method == "GET" {
 		songs, e := a.sources(mid)
 		if e != nil {
@@ -637,4 +641,49 @@ func (a *App) resolveSource(sid, serverID, candidate string) error {
 		return e
 	}
 	return tx.Commit()
+}
+
+// deleteMigration removes a private snapshot under the same lock used by
+// matching and publication, so no collection updates can outlive deletion.
+// Acquisition requests are independent records and retain their lifecycle.
+func (a *App) deleteMigration(w http.ResponseWriter, u User, mid string) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	m, err := a.getMigration(mid, u.ID)
+	if err != nil {
+		fail(w, 404, "Migration not found")
+		return
+	}
+	if m.State != "staged" && m.State != "open" {
+		fail(w, 409, "Only unfinished migrations can be deleted")
+		return
+	}
+	tx, err := a.DB.Begin()
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	defer tx.Rollback()
+	for _, statement := range []string{
+		"DELETE FROM request_sources WHERE source_id IN (SELECT id FROM source_songs WHERE migration_id=?)",
+		"DELETE FROM source_resolutions WHERE source_id IN (SELECT id FROM source_songs WHERE migration_id=?)",
+		"DELETE FROM source_songs WHERE migration_id=?",
+		"DELETE FROM migration_playlists WHERE migration_id=?",
+		"DELETE FROM migration_task_wakeups WHERE migration_id=?",
+		"DELETE FROM migration_tasks WHERE migration_id=?",
+		"DELETE FROM migrations WHERE id=?",
+	} {
+		if _, err = tx.Exec(statement, mid); err != nil {
+			a.internal(w, err)
+			return
+		}
+	}
+	if err = audit(tx, u.ID, u.ID, "migration.deleted", mid); err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
 }
