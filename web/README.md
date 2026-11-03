@@ -72,3 +72,5 @@ Use `useAppForm` from `hooks/use-app-form.ts` for submitted forms. Its registere
 `SearchBox` shares validated search behavior across the sidebar, library, main search, and migration matching. `useAutosave` stores drafts in TanStack Form and uses the same Zod schemas to gate its serialized mutation queue. Keep pending-edit flushing, rollback, and authentication-boundary checks when changing autosave behavior.
 
 The app icon is `public/icon.svg`, reused by `AppIcon`, `Brand`, the empty migration state, and the browser favicon. Preserve this shared SVG asset instead of drawing separate logos in each screen.
+
+The Imports page owns creation and history. Its New migration action opens a validated XML-upload dialog, followed by the existing preview and migration detail flow. Keep staged/open imports in the In progress section and handed-over/completed imports in the initially collapsed history. `/imports/new` redirects to the same page with its dialog open; dialog URL state uses nuqs.

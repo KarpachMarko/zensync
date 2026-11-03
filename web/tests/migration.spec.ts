@@ -88,7 +88,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByRole("navigation", { name: "Main navigation" })
     .getByRole("link", { name: "Imports" })
     .click();
-  await page.getByRole("link", { name: "New migration" }).click();
+  await page.getByRole("button", { name: "New migration" }).click();
   await page
     .getByLabel("Apple Music or iTunes XML export")
     .setInputFiles(path.resolve("../internal/apple/testdata/library.xml"));

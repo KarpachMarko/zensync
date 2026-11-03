@@ -112,13 +112,18 @@ test("XML form validates missing and oversized files before uploading", async ({
           },
         },
       });
+    if (path.endsWith("/imports") && route.request().method() === "GET")
+      return route.fulfill({ json: [] });
     if (path.endsWith("/imports") && route.request().method() === "POST") {
       uploads++;
       return route.fulfill({ json: { id: "unexpected" } });
     }
     throw new Error("Unexpected API: " + path);
   });
-  await page.goto("/imports/new");
+  await page.goto("/imports");
+  await page
+    .getByRole("button", { name: "New migration", exact: true })
+    .click();
   const submit = page.getByRole("button", {
     name: "Upload and preview",
     exact: true,
@@ -138,4 +143,86 @@ test("XML form validates missing and oversized files before uploading", async ({
     "Choose an export smaller than 32 MiB.",
   );
   expect(uploads).toBe(0);
+});
+
+test("Imports combines creation, active work, and collapsed history", async ({
+  page,
+}) => {
+  await page.route("**/api/v2/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/setup"))
+      return route.fulfill({ json: { required: false } });
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: {
+          csrf: "fixture",
+          user: {
+            id: "member",
+            username: "member",
+            role: "member",
+            direct: false,
+            directDelete: false,
+            quality: ["128"],
+          },
+        },
+      });
+    if (path.endsWith("/imports"))
+      return route.fulfill({
+        json: [
+          {
+            id: "active",
+            name: "Current library",
+            state: "open",
+            report: { songs: 4, playlists: 1 },
+          },
+          {
+            id: "preview",
+            name: "Awaiting review",
+            state: "staged",
+            report: { songs: 2, playlists: 0 },
+          },
+          {
+            id: "old",
+            name: "Previous library",
+            state: "handed_over",
+            report: { songs: 9, playlists: 2 },
+          },
+        ],
+      });
+    throw new Error("Unexpected API: " + path);
+  });
+  await page.goto("/imports");
+  const active = page.getByRole("region", { name: "In progress" });
+  await expect(
+    active.getByRole("link", { name: /Current library/ }),
+  ).toBeVisible();
+  await expect(
+    active.getByRole("link", { name: /Awaiting review/ }),
+  ).toBeVisible();
+  const history = page.getByRole("button", { name: /Completed imports/ });
+  await expect(history).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("link", { name: /Previous library/ }),
+  ).not.toBeVisible();
+  await history.click();
+  await expect(
+    page.getByRole("link", { name: /Previous library/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "New migration", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "New migration",
+    exact: true,
+  });
+  await expect(
+    dialog.getByLabel("Apple Music or iTunes XML export"),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/imports\?new=true$/);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/imports$/);
+  await page.goto("/imports/new");
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/imports\?new=true$/);
 });

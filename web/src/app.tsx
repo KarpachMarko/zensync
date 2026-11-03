@@ -5,7 +5,6 @@ import { useSession } from "@/hooks/use-session";
 import { Activity } from "@/pages/activity";
 import { Imports } from "@/pages/imports";
 import { MigrationPage } from "@/pages/imports/migration";
-import { NewImport } from "@/pages/imports/new-import";
 import { AcceptInvite } from "@/pages/invite";
 import { Library } from "@/pages/library";
 import { Login } from "@/pages/login";
@@ -59,7 +58,10 @@ export function App() {
           }
         />
         <Route path="/imports" element={<Imports />} />
-        <Route path="/imports/new" element={<NewImport />} />
+        <Route
+          path="/imports/new"
+          element={<Navigate to="/imports?new=true" replace />}
+        />
         <Route path="/imports/:id" element={<MigrationPage />} />
         <Route
           path="/imports/:id/songs/:sourceId"
