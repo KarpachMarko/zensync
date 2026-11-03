@@ -35,7 +35,9 @@ export function RequestCard({
               ? " (Delete song)"
               : r.kind === "album"
                 ? " (Album)"
-                : ""}
+                : r.kind === "upload"
+                  ? " (Uploaded audio)"
+                  : ""}
           </strong>
           <Caption>
             {r.artist || "Artist not specified"} / {r.target}

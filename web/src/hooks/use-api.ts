@@ -15,7 +15,7 @@ export function useApiQuery<T>(
 ) {
   const query = useQuery({
     queryKey: ["api", path],
-    queryFn: () => api<T>(path),
+    queryFn: ({ signal }) => api<T>(path, "GET", undefined, undefined, signal),
     ...options,
   });
   return {

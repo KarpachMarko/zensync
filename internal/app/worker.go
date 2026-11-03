@@ -90,22 +90,28 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	return done
 }
 func (a *App) runMigrationTask(ctx context.Context) {
+	if !a.migrationMu.TryLock() {
+		return
+	}
+	defer a.migrationMu.Unlock()
 	var tid, owner, mid, action string
 	e := a.DB.QueryRow("SELECT id,owner,migration_id,action FROM migration_tasks WHERE state='queued' ORDER BY created,rowid LIMIT 1").Scan(&tid, &owner, &mid, &action)
 	if e != nil {
 		return
 	}
 	a.opMu.Lock()
-	defer a.opMu.Unlock()
 	m, e := a.getMigration(mid, owner)
 	if e != nil {
+		a.opMu.Unlock()
 		return
 	}
 	if m.State != "open" {
 		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='cancelled',message='Migration no longer open' WHERE id=?", tid)
+		a.opMu.Unlock()
 		return
 	}
 	_, e = a.DB.Exec("UPDATE migration_tasks SET state='running',message=? WHERE id=?", map[string]string{"match": "Matching existing library and Deezer recordings", "publish": "Verifying and publishing personal collections"}[action], tid)
+	a.opMu.Unlock()
 	if e != nil {
 		return
 	}
@@ -113,6 +119,10 @@ func (a *App) runMigrationTask(ctx context.Context) {
 		e = a.matchMigration(ctx, owner, mid)
 	} else {
 		e = a.publishMigration(ctx, owner, mid)
+	}
+	if current, err := a.getMigration(mid, owner); err != nil || current.State != "open" {
+		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='cancelled',message='Migration no longer open' WHERE id=?", tid)
+		return
 	}
 	slog.Info("migration task finished", "task_id", tid, "migration_id", mid, "action", action, "success", e == nil)
 	state, message := "completed", "Finished"
@@ -286,7 +296,13 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	}
 	var file, actual, metadata string
 	e = a.DB.QueryRow("SELECT file_path,quality,metadata FROM assets WHERE target=?", target).Scan(&file, &actual, &metadata)
-	if e == sql.ErrNoRows {
+	if e == sql.ErrNoRows && strings.HasPrefix(target, "upload:") {
+		file, actual, metadata, e = a.placeUploadedAudio(jid, rid, target)
+		if e != nil {
+			a.jobState(jid, "failed", e.Error())
+			return
+		}
+	} else if e == sql.ErrNoRows {
 		t, err := a.track(ctx, target)
 		if err != nil {
 			a.jobState(jid, "failed", err.Error())
@@ -420,13 +436,16 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 		return
 	}
 	providerID, _ := strconv.ParseInt(strings.TrimPrefix(target, "deezer:track:"), 10, 64)
-	if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND match_state IN ('confident','manual') AND server_id=''", songID, providerID); e != nil {
-		return
+	if providerID > 0 {
+		if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND match_state IN ('confident','manual') AND server_id=''", songID, providerID); e != nil {
+			return
+		}
 	}
 	if e = tx.Commit(); e != nil {
 		return
 	}
 	_ = os.RemoveAll(filepath.Join(a.dataDir, "staging", jid))
+	a.cleanAudioUpload(target)
 	rows, e := a.DB.Query("SELECT DISTINCT m.owner,m.id,m.target_user,m.state FROM source_songs s JOIN migrations m ON m.id=s.migration_id WHERE s.server_id=?", songID)
 	if e != nil {
 		return

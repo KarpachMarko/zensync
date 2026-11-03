@@ -1,3 +1,4 @@
+import { AudioUpload } from "@/components/imports/audio-upload";
 import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
 import { useDeezerPreview } from "@/hooks/use-deezer-preview";
 import { Actions, Row } from "@/components/layout/content";
@@ -12,7 +13,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useApiMutation } from "@/hooks/use-api";
+import { useImportAction } from "@/hooks/use-import-action";
 import type { LibrarySong, Track } from "@/lib/api";
 import { api as readAPI, label, time } from "@/lib/api";
 import { songGuidance, status, type Migration, type Source } from "@/lib/migration";
@@ -25,20 +26,20 @@ type Candidates = {
   library: LibrarySong[];
   libraryError?: string;
   deezerError?: string;
+  deezerMatches?: Record<string, { confident: boolean; reasons: string[] }>;
+  deezerAmbiguous?: boolean;
 };
 
 export function Review({
   source: s,
   migration: m,
-  reload,
   onClose,
 }: {
   source: Source;
   migration: Migration;
-  reload: () => Promise<void>;
   onClose: () => void;
 }) {
-  const { api } = useApiMutation();
+  const { act: save } = useImportAction(m.id);
   const preview = useDeezerPreview();
   const [query, setQuery] = useState(
     (s.metadata.artist + " " + s.metadata.title).trim().slice(0, 500),
@@ -50,7 +51,7 @@ export function Review({
   const prefix = "/imports/" + m.id + "/songs/" + s.id;
   const candidates = useQuery({
     queryKey: ["migration-candidates", m.id, s.id, query],
-    queryFn: () => readAPI<Candidates>(prefix + "/candidates", "POST", { query }),
+    queryFn: ({ signal }) => readAPI<Candidates>(prefix + "/candidates", "POST", { query }, undefined, signal),
     enabled: !s.serverId || searchRequested,
     staleTime: 60_000,
   });
@@ -63,11 +64,11 @@ export function Review({
     setBusy(true);
     setError("");
     try {
-      await api(prefix + "/" + action, "POST", body);
-      await reload();
+      await save("songs/" + s.id + "/" + action, body);
       toast.success(
         action === "acquire" ? "Acquisition request saved." : "Song updated.",
       );
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to update song.");
     } finally {
@@ -113,6 +114,15 @@ export function Review({
             buttonLabel={candidates.isFetching ? "Searching…" : "Search"}
             onSearch={find}
           />
+          {editable && (
+            <AudioUpload
+              source={s}
+              prefix={prefix}
+              busy={busy}
+              onBusyChange={setBusy}
+              onUploaded={async () => { onClose(); }}
+            />
+          )}
           <Text className="m-0 max-w-none text-xs leading-5">
             {songGuidance(s)}
           </Text>
@@ -191,6 +201,9 @@ export function Review({
                 <h2 id="deezer-recordings-heading" className="m-0 border-0 border-b border-solid border-border pb-2 text-sm font-semibold">
                   Deezer recordings <span className="text-xs font-normal text-muted-foreground">({candidates.data.deezer.length})</span>
                 </h2>
+                {candidates.data.deezerAmbiguous && (
+                  <Text className="my-2 text-xs">Multiple recordings match the metadata. Compare their versions before choosing.</Text>
+                )}
                 {candidates.data.deezerError ? (
                   <Text role="alert" className="my-2 text-xs">
                     Deezer search failed: {candidates.data.deezerError} Search again to retry.
@@ -203,6 +216,13 @@ export function Review({
                     <div className="min-w-0 break-words">
                       <strong>{label(t)}</strong>
                       <Caption>{t.artist.name} / {t.album.title} / {time(t.duration)}</Caption>
+                      {candidates.data.deezerMatches?.[t.id] && (
+                        <p className="m-0 mt-1 text-xs leading-5 text-muted-foreground">
+                          {candidates.data.deezerMatches[t.id].confident
+                            ? "Title, artist credits, album and duration match."
+                            : candidates.data.deezerMatches[t.id].reasons.join(" · ")}
+                        </p>
+                      )}
                       <DeezerRecordingTools
                         track={t}
                         playing={preview.playing && preview.active?.id === t.id}

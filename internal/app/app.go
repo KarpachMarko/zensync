@@ -36,12 +36,15 @@ type App struct {
 	activeJobs       map[string]string
 	activeTargets    map[string]bool
 	importMu         sync.Mutex
+	reviewMu         sync.Mutex
+	reviewTracks     map[int64]reviewRecording
 	providerMu       sync.Mutex
 	lastMetadata     time.Time
 	metadataInterval time.Duration
 	DB               *sql.DB
 	mu               sync.Mutex
 	failures         []time.Time
+	migrationMu      sync.Mutex
 	opMu             sync.Mutex
 	key              []byte
 	dataDir          string

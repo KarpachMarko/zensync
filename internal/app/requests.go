@@ -86,6 +86,9 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 			}
 		} else {
 			out[index].Kind = "track"
+			if strings.HasPrefix(out[index].Target, "upload:") {
+				out[index].Kind = "upload"
+			}
 			if out[index].State == "downloading" {
 				var job string
 				if err := a.DB.QueryRow("SELECT id FROM jobs WHERE request_id=?", out[index].ID).Scan(&job); err != nil && err != sql.ErrNoRows {
@@ -99,6 +102,12 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 	send(w, 200, out)
 }
 func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
+	a.createVerifiedRequest(w, r, u, nil)
+}
+
+// Internal migration requests already have a server-verified recording. The
+// worker still rechecks provider metadata before executing an approved request.
+func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u User, recording *Track) {
 	var in struct {
 		Target   string `json:"target"`
 		Title    string `json:"title"`
@@ -123,7 +132,13 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	var verified Track
 	{
-		t, e := a.track(r.Context(), in.Target)
+		var t Track
+		var e error
+		if recording != nil {
+			t = *recording
+		} else {
+			t, e = a.track(r.Context(), in.Target)
+		}
 		if e != nil {
 			fail(w, 400, e.Error())
 			return
@@ -198,7 +213,16 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
-	send(w, 201, map[string]string{"id": rid})
+	response := map[string]any{"id": rid}
+	if in.SourceID != "" {
+		var mid string
+		if a.DB.QueryRow("SELECT migration_id FROM source_songs WHERE id=?", in.SourceID).Scan(&mid) == nil {
+			if songs, err := a.sources(mid, in.SourceID); err == nil && len(songs) == 1 {
+				response["source"] = songs[0]
+			}
+		}
+	}
+	send(w, 201, response)
 }
 func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	rid := strings.TrimPrefix(r.URL.Path, "/api/v2/requests/")
@@ -286,6 +310,12 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	if e != nil {
 		a.internal(w, e)
 		return
+	}
+	if in.Decision != "approved" {
+		var target string
+		if a.DB.QueryRow("SELECT target FROM requests WHERE id=?", rid).Scan(&target) == nil {
+			a.cleanAudioUpload(target)
+		}
 	}
 	send(w, 200, map[string]bool{"ok": true})
 }

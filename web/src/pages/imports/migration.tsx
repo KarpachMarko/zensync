@@ -15,15 +15,16 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { useApiQuery } from "@/hooks/use-api";
+import { useImportAction } from "@/hooks/use-import-action";
 import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
 import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 export function MigrationPage() {
-  const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
+  const { act: save } = useImportAction(id);
   const [recordingId, setRecordingId] = useQueryState(
     "recording",
     parseAsString.withOptions({ history: "push" }),
@@ -44,14 +45,12 @@ export function MigrationPage() {
   });
   const detail = result.data;
   const error = actionError || result.error?.message;
-  const load = result.reload;
   async function action(path: string, body?: unknown) {
     setBusy(true);
     setError("");
 
     try {
-      await api("/imports/" + id + "/" + path, "POST", body);
-      await load();
+      await save(path, body);
       if (path === "match" || path === "publish")
         toast.success(
           "Task queued. Progress is shown in Activity and updates here.",
@@ -69,15 +68,13 @@ export function MigrationPage() {
     try {
       for (const song of selectedVisible) {
         const sid = song.id;
-        await api("/imports/" + id + "/songs/" + sid + "/acquire", "POST");
+        await save("songs/" + sid + "/acquire");
         saved++;
       }
       setSelected(new Set());
-      await load();
       toast.success(`${saved} acquisition requests saved.`);
     } catch (e) {
       setError(`${saved} requests saved. ${(e as Error).message}`);
-      await load();
     } finally {
       setBusy(false);
     }
@@ -368,7 +365,6 @@ export function MigrationPage() {
           key={currentSource.id}
           source={currentSource}
           migration={m}
-          reload={load}
           onClose={() => {
             if (sourceId) navigate("/imports/" + id, { replace: true });
             else void setRecordingId(null, { history: "replace" });

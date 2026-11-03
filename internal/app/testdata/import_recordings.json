@@ -1,0 +1,1744 @@
+[
+  {
+    "name": "Tee Grizzley Side Nigga",
+    "source": {
+      "title": "Side Nigga",
+      "artist": "Tee Grizzley",
+      "album": "My Moment",
+      "duration": 168.438
+    },
+    "selected": {
+      "id": 345411041,
+      "title": "Side Ni**a",
+      "title_version": "",
+      "duration": 168,
+      "isrc": "QMCE31701011",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Tee Grizzley"
+      },
+      "album": {
+        "title": "My Moment"
+      },
+      "contributors": [
+        {
+          "name": "Tee Grizzley",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Tee Grizzley Side Nigga",
+        "tracks": [
+          {
+            "id": 345411041,
+            "title": "Side Ni**a",
+            "title_version": "",
+            "duration": 168,
+            "isrc": "QMCE31701011",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Tee Grizzley"
+            },
+            "album": {
+              "title": "My Moment"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Lil Pump Esskeetit",
+    "source": {
+      "title": "Esskeetit",
+      "artist": "Lil Pump",
+      "album": "Esskeetit - Single",
+      "duration": 181.714
+    },
+    "selected": {
+      "id": 1287609912,
+      "title": "Lil Pump Esskeetit",
+      "title_version": "",
+      "duration": 179,
+      "isrc": "QZKDK2075004",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "Pigott"
+      },
+      "album": {
+        "title": "Energetic Vibes"
+      },
+      "contributors": [
+        {
+          "name": "Pigott",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": false,
+    "searches": [
+      {
+        "query": "Lil Pump Esskeetit",
+        "tracks": [
+          {
+            "id": 1287609912,
+            "title": "Lil Pump Esskeetit",
+            "title_version": "",
+            "duration": 179,
+            "isrc": "QZKDK2075004",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Pigott"
+            },
+            "album": {
+              "title": "Energetic Vibes"
+            }
+          },
+          {
+            "id": 484090122,
+            "title": "Esskeetit",
+            "title_version": "",
+            "duration": 181,
+            "isrc": "USWB11800706",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Lil Pump"
+            },
+            "album": {
+              "title": "Esskeetit"
+            }
+          },
+          {
+            "id": 418441962,
+            "title": "Esketit (Feelin' Like I'm Lil Pump) (feat. Trap Watkins)",
+            "duration": 182,
+            "isrc": "QZ5FN1758219",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Dubskie"
+            },
+            "album": {
+              "title": "Esketit (Feelin' Like I'm Lil Pump)"
+            }
+          },
+          {
+            "id": 1197234442,
+            "title": "LIL PUMP ESSKEETIT REMIX",
+            "title_version": "",
+            "duration": 123,
+            "isrc": "QZ5FN2107398",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Artist"
+            },
+            "album": {
+              "title": "NO BE TODAY 16"
+            }
+          },
+          {
+            "id": 496269892,
+            "title": "Esskeetit (Originally Performed by Lil Pump) [Instrumental]",
+            "duration": 177,
+            "isrc": "QZ22B1930629",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "3 Dope Brothas"
+            },
+            "album": {
+              "title": "Esskeetit (Originally Performed by Lil Pump) [Instrumental]"
+            }
+          },
+          {
+            "id": 1056356852,
+            "title": "Esskeetit (Originally Performed by Lil Pump) (Karaoke Instrumental)",
+            "title_version": "(Karaoke Instrumental)",
+            "duration": 190,
+            "isrc": "UKNUP1800084",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "The Karaoke Crew"
+            },
+            "album": {
+              "title": "Karaoke Hits"
+            }
+          },
+          {
+            "id": 492938782,
+            "title": "Esskeetit (Originally Performed by Lil Pump) (Instrumental Version)",
+            "title_version": "(Instrumental Version)",
+            "duration": 185,
+            "isrc": "QZ5FN1862442",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Karaoke Pro"
+            },
+            "album": {
+              "title": "Sing Your Heart Out, Vol. 2"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Young Thug Anybody (feat. Nicki Minaj)",
+    "source": {
+      "title": "Anybody (feat. Nicki Minaj)",
+      "artist": "Young Thug",
+      "album": "Hear No Evil - Single",
+      "duration": 254.947
+    },
+    "selected": {
+      "id": 485901722,
+      "title": "Anybody (feat. Nicki Minaj)",
+      "title_version": "",
+      "duration": 254,
+      "isrc": "USAT21801877",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Young Thug"
+      },
+      "album": {
+        "title": "Hear No Evil"
+      },
+      "contributors": [
+        {
+          "name": "Young Thug",
+          "role": "Main"
+        },
+        {
+          "name": "Nicki Minaj",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Young Thug Anybody (feat. Nicki Minaj)",
+        "tracks": [
+          {
+            "id": 485901722,
+            "title": "Anybody (feat. Nicki Minaj)",
+            "title_version": "",
+            "duration": 254,
+            "isrc": "USAT21801877",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Young Thug"
+            },
+            "album": {
+              "title": "Hear No Evil"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Young Thug Up (feat. Lil Uzi Vert)",
+    "source": {
+      "title": "Up (feat. Lil Uzi Vert)",
+      "artist": "Young Thug",
+      "album": "Hear No Evil - Single",
+      "duration": 296.413
+    },
+    "selected": {
+      "id": 485901732,
+      "title": "Up (feat. Lil Uzi Vert)",
+      "title_version": "",
+      "duration": 296,
+      "isrc": "USAT21801500",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Young Thug"
+      },
+      "album": {
+        "title": "Hear No Evil"
+      },
+      "contributors": [
+        {
+          "name": "Young Thug",
+          "role": "Main"
+        },
+        {
+          "name": "Lil Uzi Vert",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Young Thug Up (feat. Lil Uzi Vert)",
+        "tracks": [
+          {
+            "id": 485901732,
+            "title": "Up (feat. Lil Uzi Vert)",
+            "title_version": "",
+            "duration": 296,
+            "isrc": "USAT21801500",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Young Thug"
+            },
+            "album": {
+              "title": "Hear No Evil"
+            }
+          },
+          {
+            "id": 1813112317,
+            "title": "Strawberry Peels (feat. Young Thug & Gunna)",
+            "title_version": "",
+            "duration": 115,
+            "isrc": "USAT22001634",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Lil Uzi Vert"
+            },
+            "album": {
+              "title": "Turnt Up"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Young Thug Now (feat. 21 Savage)",
+    "source": {
+      "title": "Now (feat. 21 Savage)",
+      "artist": "Young Thug",
+      "album": "Hear No Evil - Single",
+      "duration": 206.773
+    },
+    "selected": {
+      "id": 485901742,
+      "title": "Now (feat. 21 Savage)",
+      "title_version": "",
+      "duration": 206,
+      "isrc": "USAT21801499",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Young Thug"
+      },
+      "album": {
+        "title": "Hear No Evil"
+      },
+      "contributors": [
+        {
+          "name": "Young Thug",
+          "role": "Main"
+        },
+        {
+          "name": "21 Savage",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Young Thug Now (feat. 21 Savage)",
+        "tracks": [
+          {
+            "id": 485901742,
+            "title": "Now (feat. 21 Savage)",
+            "title_version": "",
+            "duration": 206,
+            "isrc": "USAT21801499",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Young Thug"
+            },
+            "album": {
+              "title": "Hear No Evil"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "XXXTENTACION infinity (888) [feat. Joey Bada$$]",
+    "source": {
+      "title": "infinity (888) [feat. Joey Bada$$]",
+      "artist": "XXXTENTACION",
+      "album": "?",
+      "duration": 176.591
+    },
+    "selected": {
+      "id": 472992642,
+      "title": "infinity (888)",
+      "title_version": "",
+      "duration": 177,
+      "isrc": "USUG11800504",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "XXXTENTACION"
+      },
+      "album": {
+        "title": "?"
+      },
+      "contributors": [
+        {
+          "name": "XXXTENTACION",
+          "role": "Main"
+        },
+        {
+          "name": "Joey Bada$$",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "XXXTENTACION infinity (888) [feat. Joey Bada$$]",
+        "tracks": [
+          {
+            "id": 472992642,
+            "title": "infinity (888)",
+            "title_version": "",
+            "duration": 177,
+            "isrc": "USUG11800504",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "XXXTENTACION"
+            },
+            "album": {
+              "title": "?"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "XXXTENTACION & Matt OX $$$",
+    "source": {
+      "title": "$$$",
+      "artist": "XXXTENTACION & Matt OX",
+      "album": "?",
+      "duration": 130.403
+    },
+    "selected": {
+      "id": 472992672,
+      "title": "$$$",
+      "title_version": "",
+      "duration": 130,
+      "isrc": "USUG11800448",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "XXXTENTACION"
+      },
+      "album": {
+        "title": "?"
+      },
+      "contributors": [
+        {
+          "name": "XXXTENTACION",
+          "role": "Main"
+        },
+        {
+          "name": "Matt Ox",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "XXXTENTACION & Matt OX $$$",
+        "tracks": [
+          {
+            "id": 472992672,
+            "title": "$$$",
+            "title_version": "",
+            "duration": 130,
+            "isrc": "USUG11800448",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "XXXTENTACION"
+            },
+            "album": {
+              "title": "?"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Tommy Cash Pussy Money Weed",
+    "source": {
+      "title": "Pussy Money Weed",
+      "artist": "Tommy Cash",
+      "album": "Pussy Money Weed - Single",
+      "duration": 214.623
+    },
+    "selected": {
+      "id": 1866434897,
+      "title": "Pussy Money Weed",
+      "title_version": "",
+      "duration": 214,
+      "isrc": "UK9951702001",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Tommy Cash"
+      },
+      "album": {
+        "title": "Pussy Money Weed"
+      },
+      "contributors": [
+        {
+          "name": "Tommy Cash",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Tommy Cash Pussy Money Weed",
+        "tracks": [
+          {
+            "id": 1866434897,
+            "title": "Pussy Money Weed",
+            "title_version": "",
+            "duration": 214,
+            "isrc": "UK9951702001",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Tommy Cash"
+            },
+            "album": {
+              "title": "Pussy Money Weed"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "LIZER & FLESH False Mirror",
+    "source": {
+      "title": "False Mirror",
+      "artist": "LIZER & FLESH",
+      "album": "False Mirror",
+      "duration": 141.943
+    },
+    "selected": {
+      "id": 396213062,
+      "title": "False Mirror",
+      "duration": 142,
+      "isrc": "RUA1D1710401",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "FLESH, LIZER"
+      },
+      "album": {
+        "title": "False Mirror"
+      },
+      "contributors": [
+        {
+          "name": "FLESH, LIZER",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "LIZER & FLESH False Mirror",
+        "tracks": [
+          {
+            "id": 396213062,
+            "title": "False Mirror",
+            "duration": 142,
+            "isrc": "RUA1D1710401",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FLESH, LIZER"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 396213002,
+            "title": "Я вчера проснулся",
+            "duration": 174,
+            "isrc": "RUA1D1710395",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FLESH, LIZER"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148047,
+            "title": "Broken Mirror",
+            "title_version": "",
+            "duration": 178,
+            "isrc": "RUA1D1710402",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148017,
+            "title": "Kids",
+            "title_version": "",
+            "duration": 229,
+            "isrc": "RUA1D1710400",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148077,
+            "title": "Притяжение",
+            "title_version": "",
+            "duration": 300,
+            "isrc": "RUA1D1710397",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148067,
+            "title": "Расчехлёж",
+            "title_version": "",
+            "duration": 183,
+            "isrc": "RUA1D1710394",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148027,
+            "title": "Wanna Cry",
+            "title_version": "",
+            "duration": 185,
+            "isrc": "RUA1D1710399",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          },
+          {
+            "id": 1733148057,
+            "title": "Делим на ноль",
+            "title_version": "",
+            "duration": 165,
+            "isrc": "RUA1D1710396",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Lizer"
+            },
+            "album": {
+              "title": "False Mirror"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Джарахов Пьём",
+    "source": {
+      "title": "Пьём",
+      "artist": "Джарахов",
+      "album": "Пьём - Single",
+      "duration": 217.388
+    },
+    "selected": {
+      "id": 3700840302,
+      "title": "Пьём",
+      "title_version": "",
+      "duration": 220,
+      "isrc": "FR59R1868519",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "Dzharakhov"
+      },
+      "album": {
+        "title": "Пьём"
+      },
+      "contributors": [
+        {
+          "name": "Dzharakhov",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "Джарахов Пьём",
+        "tracks": [
+          {
+            "id": 3700840302,
+            "title": "Пьём",
+            "title_version": "",
+            "duration": 220,
+            "isrc": "FR59R1868519",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Dzharakhov"
+            },
+            "album": {
+              "title": "Пьём"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "FEDUK 27",
+    "source": {
+      "title": "27",
+      "artist": "FEDUK",
+      "album": "27 - Single",
+      "duration": 147.228
+    },
+    "selected": {
+      "id": 2084706947,
+      "title": "27",
+      "title_version": "",
+      "duration": 147,
+      "isrc": "RUB421900642",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "FEDUK"
+      },
+      "album": {
+        "title": "27"
+      },
+      "contributors": [
+        {
+          "name": "FEDUK",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "FEDUK 27",
+        "tracks": [
+          {
+            "id": 2084706947,
+            "title": "27",
+            "title_version": "",
+            "duration": 147,
+            "isrc": "RUB421900642",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "27"
+            }
+          },
+          {
+            "id": 1031372352,
+            "title": "Rozovoye vino",
+            "title_version": "",
+            "duration": 246,
+            "isrc": "FR96X1712690",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Eldzhey"
+            },
+            "album": {
+              "title": "Rozovoye vino"
+            }
+          },
+          {
+            "id": 2054096727,
+            "title": "Potion",
+            "title_version": "",
+            "duration": 146,
+            "isrc": "DGA062217432",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Jul"
+            },
+            "album": {
+              "title": "Potion"
+            }
+          },
+          {
+            "id": 1030850372,
+            "title": "Moryak",
+            "title_version": "",
+            "duration": 168,
+            "isrc": "FRX201780354",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Moryak"
+            }
+          },
+          {
+            "id": 2080864007,
+            "title": "Хлопья летят наверх",
+            "title_version": "",
+            "duration": 262,
+            "isrc": "RUB421800148",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Хлопья летят наверх"
+            }
+          },
+          {
+            "id": 1134184052,
+            "title": "Benger",
+            "title_version": "",
+            "duration": 184,
+            "isrc": "RUA582002190",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Benger"
+            }
+          },
+          {
+            "id": 2516211061,
+            "title": "Мечты",
+            "title_version": "",
+            "duration": 111,
+            "isrc": "RUB422303136",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Aarne"
+            },
+            "album": {
+              "title": "AA LANGUAGE 2"
+            }
+          },
+          {
+            "id": 2084706897,
+            "title": "Закрывай глаза",
+            "title_version": "",
+            "duration": 189,
+            "isrc": "RUB421800558",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Закрывай глаза"
+            }
+          },
+          {
+            "id": 4005548831,
+            "title": "Аста ла виста",
+            "title_version": "",
+            "duration": 212,
+            "isrc": "DGA0P2331224",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Скриптонит"
+            },
+            "album": {
+              "title": "YEAHH, Pt. 1"
+            }
+          },
+          {
+            "id": 1005473242,
+            "title": "Tour de France",
+            "title_version": "",
+            "duration": 276,
+            "isrc": "FR59R1749040",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Fri"
+            }
+          },
+          {
+            "id": 1007068782,
+            "title": "Околофутбола",
+            "title_version": "",
+            "duration": 213,
+            "isrc": "FRX201749515",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Околофутбола"
+            }
+          },
+          {
+            "id": 2526754531,
+            "title": "Кабы не было тебя",
+            "title_version": "",
+            "duration": 160,
+            "isrc": "RUB632300950",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Клава Кока"
+            },
+            "album": {
+              "title": "Кабы не было тебя"
+            }
+          },
+          {
+            "id": 1805139147,
+            "title": "Ты",
+            "title_version": "",
+            "duration": 161,
+            "isrc": "QZNJV2253657",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Dose"
+            },
+            "album": {
+              "title": "Ты"
+            }
+          },
+          {
+            "id": 4250423401,
+            "title": "NO LOVE",
+            "title_version": "",
+            "duration": 139,
+            "isrc": "RUAJF2678580",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "LIL KRYSTALLL"
+            },
+            "album": {
+              "title": "EASTERN PROMISE"
+            }
+          },
+          {
+            "id": 3573624951,
+            "title": "Откровения",
+            "title_version": "",
+            "duration": 215,
+            "isrc": "FRX201931240",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "OG Buda"
+            },
+            "album": {
+              "title": "ОПГ СИТИ"
+            }
+          },
+          {
+            "id": 4054983631,
+            "title": "LETO",
+            "title_version": "",
+            "duration": 147,
+            "isrc": "RUAGV2617323",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "JONY"
+            },
+            "album": {
+              "title": "LETO"
+            }
+          },
+          {
+            "id": 556090212,
+            "title": "Холостяк",
+            "title_version": "",
+            "duration": 181,
+            "isrc": "RUA0G1800590",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "ЛСП"
+            },
+            "album": {
+              "title": "Холостяк"
+            }
+          },
+          {
+            "id": 1071732972,
+            "title": "Море",
+            "title_version": "",
+            "duration": 200,
+            "isrc": "RUA1D2041369",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Mayot"
+            },
+            "album": {
+              "title": "GHETTO GARDEN"
+            }
+          },
+          {
+            "id": 2337200415,
+            "title": "Мятный",
+            "title_version": "",
+            "duration": 150,
+            "isrc": "QM7282309781",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Markul"
+            },
+            "album": {
+              "title": "Мятный"
+            }
+          },
+          {
+            "id": 1588622972,
+            "title": "Shivers (feat. FEDUK & SLAVA MARLOW)",
+            "title_version": "",
+            "duration": 166,
+            "isrc": "GBAHS2101524",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Ed Sheeran"
+            },
+            "album": {
+              "title": "Shivers (feat. FEDUK & SLAVA MARLOW)"
+            }
+          },
+          {
+            "id": 4070803221,
+            "title": "Времени нет",
+            "title_version": "",
+            "duration": 242,
+            "isrc": "DGA062267170",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Баста"
+            },
+            "album": {
+              "title": "Времени нет"
+            }
+          },
+          {
+            "id": 1952327927,
+            "title": "Стильный Ай",
+            "title_version": "",
+            "duration": 162,
+            "isrc": "RUA322202925",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "В тон улицам"
+            }
+          },
+          {
+            "id": 1005473452,
+            "title": "Budapesht",
+            "title_version": "",
+            "duration": 189,
+            "isrc": "FR59R1749054",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Notnyj staf"
+            }
+          },
+          {
+            "id": 1070686852,
+            "title": "Kraski",
+            "title_version": "",
+            "duration": 219,
+            "isrc": "RUA582001575",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "FEDUK"
+            },
+            "album": {
+              "title": "Kraski"
+            }
+          },
+          {
+            "id": 2556512182,
+            "title": "To Road",
+            "title_version": "",
+            "duration": 134,
+            "isrc": "DGA0P2302916",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Hugo Loud"
+            },
+            "album": {
+              "title": "ON MY WAY"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "A$AP Rocky, Gucci Mane & 21 Savage Cocky (feat. London On Da Track)",
+    "source": {
+      "title": "Cocky (feat. London On Da Track)",
+      "artist": "A$AP Rocky, Gucci Mane & 21 Savage",
+      "album": "Cocky (feat. London On Da Track) - Single",
+      "duration": 232.413
+    },
+    "selected": {
+      "id": 461372122,
+      "title": "Cocky (feat. London On Da Track)",
+      "title_version": "",
+      "duration": 232,
+      "isrc": "USRC11800213",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "A$AP Rocky"
+      },
+      "album": {
+        "title": "Cocky (feat. London On Da Track)"
+      },
+      "contributors": [
+        {
+          "name": "A$AP Rocky",
+          "role": "Main"
+        },
+        {
+          "name": "Gucci Mane",
+          "role": "Main"
+        },
+        {
+          "name": "21 Savage",
+          "role": "Main"
+        },
+        {
+          "name": "London On Da Track",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "A$AP Rocky, Gucci Mane & 21 Savage Cocky (feat. London On Da Track)",
+        "tracks": []
+      },
+      {
+        "query": "A$AP Rocky Cocky (feat. London On Da Track)",
+        "tracks": [
+          {
+            "id": 461372122,
+            "title": "Cocky (feat. London On Da Track)",
+            "title_version": "",
+            "duration": 232,
+            "isrc": "USRC11800213",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "A$AP Rocky"
+            },
+            "album": {
+              "title": "Cocky (feat. London On Da Track)"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "kizaru & Smokepurpp Deep End",
+    "source": {
+      "title": "Deep End",
+      "artist": "kizaru & Smokepurpp",
+      "album": "Karmageddon",
+      "duration": 272.847
+    },
+    "selected": {
+      "id": 1975781517,
+      "title": "Deep End",
+      "title_version": "",
+      "duration": 272,
+      "isrc": "RUA011900401",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Kizaru"
+      },
+      "album": {
+        "title": "Karmageddon"
+      },
+      "contributors": [
+        {
+          "name": "Kizaru",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": false,
+    "searches": [
+      {
+        "query": "kizaru & Smokepurpp Deep End",
+        "tracks": []
+      },
+      {
+        "query": "kizaru Deep End",
+        "tracks": [
+          {
+            "id": 1975781517,
+            "title": "Deep End",
+            "title_version": "",
+            "duration": 272,
+            "isrc": "RUA011900401",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Kizaru"
+            },
+            "album": {
+              "title": "Karmageddon"
+            }
+          },
+          {
+            "id": 1952617657,
+            "title": "Everything Works Out In The End (Live in Dublin / 2022)",
+            "title_version": "(Live in Dublin / 2022)",
+            "duration": 289,
+            "isrc": "USC4R2217095",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Kodaline"
+            },
+            "album": {
+              "title": "Our Roots Run Deep (Live)"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "LSP Что-то ещё",
+    "source": {
+      "title": "Что-то ещё",
+      "artist": "LSP",
+      "album": "Magic City",
+      "duration": 240.915
+    },
+    "selected": {
+      "id": 1460806302,
+      "title": "Chto-to eshhyo",
+      "title_version": "",
+      "duration": 240,
+      "isrc": "QMPU51501893",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "LSP"
+      },
+      "album": {
+        "title": "Magic City"
+      },
+      "contributors": [
+        {
+          "name": "LSP",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "LSP Что-то ещё",
+        "tracks": []
+      },
+      {
+        "query": "лсп Что-то ещё",
+        "tracks": [
+          {
+            "id": 1460806302,
+            "title": "Chto-to eshhyo",
+            "title_version": "",
+            "duration": 240,
+            "isrc": "QMPU51501893",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "LSP"
+            },
+            "album": {
+              "title": "Magic City"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "OFFMi ОНА (feat. _lesny)",
+    "source": {
+      "title": "ОНА (feat. _lesny)",
+      "artist": "OFFMi",
+      "album": "TO U",
+      "duration": 183.759
+    },
+    "selected": {
+      "id": 2205962577,
+      "title": "ОНА",
+      "title_version": "",
+      "duration": 183,
+      "isrc": "RUUM72000040",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "OFFMi"
+      },
+      "album": {
+        "title": "TO U"
+      },
+      "contributors": [
+        {
+          "name": "OFFMi",
+          "role": "Main"
+        },
+        {
+          "name": "_lesny",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "OFFMi ОНА (feat. _lesny)",
+        "tracks": []
+      },
+      {
+        "query": "OFFMi ОНА",
+        "tracks": [
+          {
+            "id": 2205962577,
+            "title": "ОНА",
+            "title_version": "",
+            "duration": 183,
+            "isrc": "RUUM72000040",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "OFFMi"
+            },
+            "album": {
+              "title": "TO U"
+            }
+          },
+          {
+            "id": 2222564347,
+            "title": "Они запали",
+            "title_version": "",
+            "duration": 192,
+            "isrc": "RUUM72000785",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "OFFMi"
+            },
+            "album": {
+              "title": "КПД 100"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MORGENSHTERN & Allj Cadillac",
+    "source": {
+      "title": "Cadillac",
+      "artist": "MORGENSHTERN & Allj",
+      "album": "Cadillac - Single",
+      "duration": 177.609
+    },
+    "selected": {
+      "id": 1396680942,
+      "title": "Cadillac",
+      "title_version": "",
+      "duration": 177,
+      "isrc": "FR96X2071332",
+      "readable": true,
+      "explicit_lyrics": true,
+      "artist": {
+        "name": "Morgenshtern"
+      },
+      "album": {
+        "title": "Cadillac"
+      },
+      "contributors": [
+        {
+          "name": "Morgenshtern",
+          "role": "Main"
+        },
+        {
+          "name": "Eldzhey",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": false,
+    "searches": [
+      {
+        "query": "MORGENSHTERN & Allj Cadillac",
+        "tracks": []
+      },
+      {
+        "query": "MORGENSHTERN Cadillac",
+        "tracks": [
+          {
+            "id": 1396680942,
+            "title": "Cadillac",
+            "title_version": "",
+            "duration": 177,
+            "isrc": "FR96X2071332",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Cadillac"
+            }
+          },
+          {
+            "id": 1390568902,
+            "title": "Cadillac Club Remix (by Skazka Music)",
+            "title_version": "(by Skazka Music)",
+            "duration": 192,
+            "isrc": "FRX202085490",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Cadillac (Remix Pack)"
+            }
+          },
+          {
+            "id": 2348495435,
+            "title": "CADILLAC (ROCK REMIX)",
+            "title_version": "",
+            "duration": 178,
+            "isrc": "RUAGV2302683",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Golden Hits"
+            }
+          },
+          {
+            "id": 1390568912,
+            "title": "Cadillac Retro Remix (by CVPELLV)",
+            "title_version": "(by CVPELLV)",
+            "duration": 149,
+            "isrc": "FRX202085491",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Cadillac (Remix Pack)"
+            }
+          },
+          {
+            "id": 1390568922,
+            "title": "Cadillac Chill Remix (by Gosha)",
+            "title_version": "(by Gosha)",
+            "duration": 224,
+            "isrc": "FRX202085492",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Cadillac (Remix Pack)"
+            }
+          },
+          {
+            "id": 1392457842,
+            "title": "Cadillac (Deep Whizzo Remix)",
+            "title_version": "(Deep Whizzo Remix)",
+            "duration": 207,
+            "isrc": "FRX202082107",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Morgenshtern"
+            },
+            "album": {
+              "title": "Cadillac (Deep Whizzo Remix)"
+            }
+          },
+          {
+            "id": 1563984202,
+            "title": "Cadillac Morgenshtern",
+            "title_version": "",
+            "duration": 140,
+            "isrc": "QZPLR2152121",
+            "readable": true,
+            "explicit_lyrics": true,
+            "artist": {
+              "name": "Dj pill.one"
+            },
+            "album": {
+              "title": "Cadillac Morgenshtern"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "LSP & M'Dee Весновка-ушача",
+    "source": {
+      "title": "Весновка-ушача",
+      "artist": "LSP & M'Dee",
+      "album": "Весновка-ушача - Single",
+      "duration": 276.923
+    },
+    "selected": {
+      "id": 1396823962,
+      "title": "Vesnovka-ushacha",
+      "title_version": "",
+      "duration": 276,
+      "isrc": "FR59R1930379",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "LSP"
+      },
+      "album": {
+        "title": "Весновка-ушача"
+      },
+      "contributors": [
+        {
+          "name": "LSP",
+          "role": "Main"
+        },
+        {
+          "name": "M'Dee",
+          "role": "Main"
+        }
+      ]
+    },
+    "confident": true,
+    "searches": [
+      {
+        "query": "LSP & M'Dee Весновка-ушача",
+        "tracks": []
+      },
+      {
+        "query": "лсп Весновка-ушача",
+        "tracks": [
+          {
+            "id": 1396823962,
+            "title": "Vesnovka-ushacha",
+            "title_version": "",
+            "duration": 276,
+            "isrc": "FR59R1930379",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "LSP"
+            },
+            "album": {
+              "title": "Весновка-ушача"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "GLAM GO! YOLO-LAND (feat. CAKEBOY, GONE.Fludd, Flipper Floyd & IROH)",
+    "source": {
+      "title": "YOLO-LAND (feat. CAKEBOY, GONE.Fludd, Flipper Floyd & IROH)",
+      "artist": "GLAM GO!",
+      "album": "WEEDEDED",
+      "duration": 227.448
+    },
+    "selected": {
+      "id": 2036147967,
+      "title": "YOLO-LAND",
+      "title_version": "",
+      "duration": 257,
+      "isrc": "RUA011900447",
+      "readable": true,
+      "explicit_lyrics": false,
+      "artist": {
+        "name": "GLAM GO!"
+      },
+      "album": {
+        "title": "WEEDEDED"
+      },
+      "contributors": [
+        {
+          "name": "GLAM GO!",
+          "role": "Main"
+        },
+        {
+          "name": "Iroh",
+          "role": "Featured"
+        },
+        {
+          "name": "GONE.Fludd",
+          "role": "Featured"
+        },
+        {
+          "name": "Cakeboy",
+          "role": "Featured"
+        },
+        {
+          "name": "Flipper Floyd",
+          "role": "Featured"
+        }
+      ]
+    },
+    "confident": false,
+    "searches": [
+      {
+        "query": "GLAM GO! YOLO-LAND (feat. CAKEBOY, GONE.Fludd, Flipper Floyd & IROH)",
+        "tracks": []
+      },
+      {
+        "query": "GLAM GO! YOLO",
+        "tracks": [
+          {
+            "id": 2036147967,
+            "title": "YOLO-LAND",
+            "title_version": "",
+            "duration": 257,
+            "isrc": "RUA011900447",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "GLAM GO!"
+            },
+            "album": {
+              "title": "WEEDEDED"
+            }
+          },
+          {
+            "id": 77468107,
+            "title": "Gold",
+            "title_version": "",
+            "duration": 285,
+            "isrc": "AUFF81300507",
+            "readable": true,
+            "explicit_lyrics": false,
+            "artist": {
+              "name": "Chet Faker"
+            },
+            "album": {
+              "title": "Built on Glass"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -139,8 +139,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   ).toBeVisible();
   await expect(page.getByLabel("Search or Deezer song URL")).toBeVisible();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("dialog").getByText("Skipped for now", { exact: true }),
+    page.locator('[data-slot="import-song"]').filter({ hasText: "Second song" }).getByText("Skipped for now", { exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(

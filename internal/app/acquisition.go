@@ -27,9 +27,10 @@ func trackMatches(t Track, s Song) bool {
 
 type probe struct {
 	Streams []struct {
-		Codec   string `json:"codec_name"`
-		Type    string `json:"codec_type"`
-		BitRate string `json:"bit_rate"`
+		Codec   string            `json:"codec_name"`
+		Type    string            `json:"codec_type"`
+		BitRate string            `json:"bit_rate"`
+		Tags    map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
 		Duration string            `json:"duration"`
@@ -38,6 +39,9 @@ type probe struct {
 }
 
 func (a *App) validateAudio(path string, t Track, quality string) error {
+	if strings.HasPrefix(quality, "uploaded:") {
+		return a.validateUploadedAudio(path, t, strings.TrimPrefix(quality, "uploaded:"))
+	}
 	info, e := os.Lstat(path)
 	if e != nil || !info.Mode().IsRegular() || info.Size() < 1024 || info.Size() > 1<<30 {
 		return errors.New("Downloaded audio is missing, unsafe or exceeds 1 GiB")

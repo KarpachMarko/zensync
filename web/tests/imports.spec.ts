@@ -86,7 +86,7 @@ test("commit starts matching and each result has a clear next action", async ({ 
       } });
       if (body.query === "alternative" && failSearch)
         return route.fulfill({ status: 502, json: { error: "Search unavailable" } });
-      return route.fulfill({ json: { library: [], deezer: [recording] } });
+      return route.fulfill({ json: { library: [], deezer: [recording], deezerMatches: { 42: { confident: false, reasons: ["Artist differs", "Duration differs (3:00 vs 3:30)"] } } } });
     }
     if (path.endsWith("/resolve")) {
       detail.songs[3].candidate = recording;
@@ -130,6 +130,7 @@ test("commit starts matching and each result has a clear next action", async ({ 
   const dialog = page.getByRole("dialog", { name: "Ambiguous song", exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Use this recording" })).toBeVisible();
+  await expect(dialog.getByText("Artist differs · Duration differs (3:00 vs 3:30)", { exact: true })).toBeVisible();
   expect(candidateQueries).toEqual(["Artist Ambiguous song"]);
   expect(new URL(page.url()).pathname).toBe("/imports/migration");
   expect(new URL(page.url()).searchParams.get("recording")).toBe("Ambiguous song");
@@ -169,8 +170,11 @@ test("commit starts matching and each result has a clear next action", async ({ 
   await unresolvedDialog.getByRole("button", { name: "Retry search" }).click();
   await expect(unresolvedDialog.getByRole("alert")).toHaveCount(0);
   await unresolvedDialog.getByRole("button", { name: "Use this recording" }).click();
+  await expect(unresolvedDialog).toHaveCount(0);
+  await unresolved.getByRole("button", { name: "Review recording", exact: true }).click();
   await expect(unresolvedDialog.getByRole("heading", { name: "Selected recording" })).toBeVisible();
   await expect(unresolvedDialog.getByRole("button", { name: "Request missing audio" })).toBeEnabled();
+  await expect.poll(() => new URL(page.url()).searchParams.get("recording")).toBe("Unresolved song");
   await page.reload();
   await expect(unresolvedDialog).toBeVisible();
   await unresolvedDialog.getByRole("button", { name: "Close", exact: true }).click();

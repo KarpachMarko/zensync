@@ -180,8 +180,14 @@ func (a *App) getMigration(mid, owner string) (Migration, error) {
 	m.Report = json.RawMessage(report)
 	return m, e
 }
-func (a *App) sources(mid string) ([]Source, error) {
-	rows, e := a.DB.Query(`SELECT s.id,s.metadata,s.server_id,s.candidate,s.match_state,s.deferred,s.favorite_state,COALESCE(r.id,''),COALESCE(r.decision,''),COALESCE(j.state,'') FROM source_songs s LEFT JOIN requests r ON r.id=(SELECT rs.request_id FROM request_sources rs JOIN requests rq ON rq.id=rs.request_id WHERE rs.source_id=s.id ORDER BY rq.created DESC,rq.rowid DESC LIMIT 1) LEFT JOIN jobs j ON j.request_id=r.id WHERE s.migration_id=? ORDER BY s.rowid`, mid)
+func (a *App) sources(mid string, sourceIDs ...string) ([]Source, error) {
+	query := `SELECT s.id,s.metadata,s.server_id,s.candidate,s.match_state,s.deferred,s.favorite_state,COALESCE(r.id,''),COALESCE(r.decision,''),COALESCE(j.state,'') FROM source_songs s LEFT JOIN requests r ON r.id=(SELECT rs.request_id FROM request_sources rs JOIN requests rq ON rq.id=rs.request_id WHERE rs.source_id=s.id ORDER BY rq.created DESC,rq.rowid DESC LIMIT 1) LEFT JOIN jobs j ON j.request_id=r.id WHERE s.migration_id=?`
+	args := []any{mid}
+	if len(sourceIDs) > 0 {
+		query += " AND s.id=?"
+		args = append(args, sourceIDs[0])
+	}
+	rows, e := a.DB.Query(query+" ORDER BY s.rowid", args...)
 	if e != nil {
 		return nil, e
 	}
@@ -269,7 +275,11 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	if parts[1] == "songs" && len(parts) == 4 {
-		a.sourceAction(w, r, u, m, parts[2], parts[3])
+		if parts[3] == "upload" {
+			a.uploadSourceAudio(w, r, u, mid, parts[2])
+		} else {
+			a.sourceAction(w, r, u, m, parts[2], parts[3])
+		}
 		return
 	}
 	a.opMu.Lock()
@@ -471,8 +481,6 @@ func (a *App) finishMigrationTask(tid, owner, mid, action, state, message string
 	return tx.Commit()
 }
 func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Migration, sid, action string) {
-	a.opMu.Lock()
-	defer a.opMu.Unlock()
 	var data, candidate, server string
 	var deferred bool
 	e := a.DB.QueryRow("SELECT metadata,candidate,server_id,deferred FROM source_songs WHERE id=? AND migration_id=?", sid, m.ID).Scan(&data, &candidate, &server, &deferred)
@@ -519,12 +527,70 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			} else {
 				tracks = append(tracks, track)
 			}
-		} else if results, err := a.searchDeezer(r.Context(), q); err != nil {
-			deezerError = err.Error()
 		} else {
+			results, err := a.searchImportRecordings(r.Context(), source, q)
 			tracks = results
+			if err != nil {
+				deezerError = err.Error()
+			}
 		}
-		send(w, 200, map[string]any{"deezer": tracks, "library": navSongs, "libraryError": libraryError, "deezerError": deezerError})
+		assessments := map[int64]RecordingMatch{}
+		confident := 0
+		for _, track := range tracks {
+			assessments[track.ID] = assessRecording(source, track)
+			if assessments[track.ID].Confident {
+				confident++
+			}
+		}
+		a.rememberReviewTracks(tracks)
+		send(w, 200, map[string]any{"deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryError": libraryError, "deezerError": deezerError})
+		return
+	}
+	var resolvedServer, resolvedCandidate string
+	if action == "resolve" {
+		if m.State == "staged" {
+			fail(w, 409, "Commit the migration first")
+			return
+		}
+		var in struct {
+			Target   string `json:"target"`
+			ServerID string `json:"serverId"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		if in.ServerID != "" {
+			c, err := a.personal(u.ID)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			response, err := a.nav(r.Context(), c, "getSong", mapValues("id", in.ServerID))
+			if err != nil || response.Song.ID != in.ServerID {
+				fail(w, 400, "Song is not available to your linked Navidrome account")
+				return
+			}
+			resolvedServer = in.ServerID
+		} else {
+			track, err := a.reviewTrack(r.Context(), in.Target)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			resolvedCandidate = apple.JSON(track)
+		}
+	}
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	// Reads above may have overlapped a deletion or another source action.
+	m, e = a.getMigration(m.ID, u.ID)
+	if e != nil {
+		fail(w, 404, "Migration not found")
+		return
+	}
+	e = a.DB.QueryRow("SELECT candidate,server_id,deferred FROM source_songs WHERE id=? AND migration_id=?", sid, m.ID).Scan(&candidate, &server, &deferred)
+	if e != nil {
+		fail(w, 404, "Source song not found")
 		return
 	}
 	if m.State == "staged" {
@@ -558,13 +624,6 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 	case "defer", "resume":
 		_, e = a.DB.Exec("UPDATE source_songs SET deferred=? WHERE id=?", action == "defer", sid)
 	case "resolve":
-		var in struct {
-			Target   string `json:"target"`
-			ServerID string `json:"serverId"`
-		}
-		if !decode(w, r, &in) {
-			return
-		}
 		var pending int
 		if e = a.DB.QueryRow(`SELECT count(*) FROM request_sources rs JOIN requests r ON r.id=rs.request_id LEFT JOIN jobs j ON j.request_id=r.id WHERE rs.source_id=? AND r.decision IN ('approved','awaiting_approval') AND COALESCE(j.state,'') NOT IN ('failed','cancelled','available')`, sid).Scan(&pending); e != nil {
 			a.internal(w, e)
@@ -574,26 +633,7 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			fail(w, 409, "Withdraw or finish the existing request before changing its recording")
 			return
 		}
-		if in.ServerID != "" {
-			c, err := a.personal(u.ID)
-			if err != nil {
-				fail(w, 400, err.Error())
-				return
-			}
-			response, err := a.nav(r.Context(), c, "getSong", mapValues("id", in.ServerID))
-			if err != nil || response.Song.ID != in.ServerID {
-				fail(w, 400, "Song is not available to your linked Navidrome account")
-				return
-			}
-			e = a.resolveSource(sid, in.ServerID, "")
-		} else {
-			t, err := a.track(r.Context(), in.Target)
-			if err != nil {
-				fail(w, 400, err.Error())
-				return
-			}
-			e = a.resolveSource(sid, "", apple.JSON(t))
-		}
+		e = a.resolveSource(sid, resolvedServer, resolvedCandidate)
 	case "acquire":
 		if deferred {
 			fail(w, 409, "Resume this song before requesting acquisition")
@@ -620,7 +660,7 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 		var revision string
 		_ = a.DB.QueryRow("SELECT revision FROM source_resolutions WHERE source_id=?", sid).Scan(&revision)
 		r.Header.Set("Idempotency-Key", digest(sid+fmt.Sprint(t.ID)+prior+revision))
-		a.createRequest(w, r, u)
+		a.createVerifiedRequest(w, r, u, &t)
 		return
 	default:
 		fail(w, 404, "Unknown source action")
@@ -633,7 +673,11 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 	if m.State == "open" && m.TargetUser != "" && action == "resolve" {
 		_, _ = a.queueMigration(u.ID, m.ID, "publish")
 	}
-	send(w, 200, map[string]bool{"ok": true})
+	response := map[string]any{"ok": true}
+	if songs, err := a.sources(m.ID, sid); err == nil && len(songs) == 1 {
+		response["source"] = songs[0]
+	}
+	send(w, 200, response)
 }
 
 func (a *App) resolveSource(sid, serverID, candidate string) error {
@@ -654,8 +698,9 @@ func (a *App) resolveSource(sid, serverID, candidate string) error {
 	return tx.Commit()
 }
 
-// deleteMigration removes a private snapshot under the same lock used by
-// matching and publication, so no collection updates can outlive deletion.
+// deleteMigration removes a private snapshot under the publication write lock,
+// so no collection writes can outlive deletion. Matching checks the latest
+// migration state in its conditional updates.
 // Acquisition requests are independent records and retain their lifecycle.
 func (a *App) deleteMigration(w http.ResponseWriter, u User, mid string) {
 	a.opMu.Lock()

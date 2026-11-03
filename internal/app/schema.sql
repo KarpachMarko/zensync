@@ -121,3 +121,9 @@ CREATE TABLE IF NOT EXISTS invitations (
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT OR IGNORE INTO schema_version VALUES(4);
+
+CREATE TABLE IF NOT EXISTS audio_uploads (
+ target TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id),
+ file_path TEXT NOT NULL, metadata TEXT NOT NULL, quality TEXT NOT NULL,
+ checksum TEXT NOT NULL
+);
