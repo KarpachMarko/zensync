@@ -1,0 +1,50 @@
+// This adapter is compiled inside the pinned GoFi module. The original GoFi
+// implementation remains upstream; only its existing callbacks are wrapped.
+package dfi
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/d-fi/GoFi/types"
+)
+
+func zenSyncDownloadHooks(message string) DownloadTrackHooks {
+	hooks := terminalDownloadHooks(message)
+	if os.Getenv("ZENSYNC_PROGRESS") != "1" {
+		return hooks
+	}
+	emit := func(phase string, downloaded, total int64) {
+		event := struct {
+			Phase      string `json:"phase"`
+			Downloaded int64  `json:"downloaded"`
+			Total      int64  `json:"total"`
+		}{phase, downloaded, total}
+		data, err := json.Marshal(event)
+		if err == nil {
+			fmt.Printf("ZENSYNC_TRANSFER %s\n", data)
+		}
+	}
+	progress, status := hooks.Progress, hooks.Status
+	hooks.Progress = func(track types.TrackType, transferred, total int64) {
+		emit("download", transferred, total)
+		if progress != nil {
+			progress(track, transferred, total)
+		}
+	}
+	hooks.Status = func(message string) {
+		// Emit only fixed phase names: never titles, URLs, cookies or upstream errors.
+		for _, phase := range []string{"Decrypting", "Tagging", "Saving"} {
+			if strings.HasPrefix(message, phase+" ") {
+				emit(strings.ToLower(phase), 0, 0)
+				break
+			}
+		}
+		if status != nil {
+			status(message)
+		}
+	}
+	return hooks
+}

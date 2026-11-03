@@ -15,11 +15,11 @@ Updated 2 November 2026. This document supplements the authoritative [implementa
 
 Two roles: **Admin** and **Member**. Members browse the common library, manage their migrations and quality preferences, and request music. **Add music without approval** is an independent grant, off by default; only admins grant/revoke it.
 
-Shared credentials, server/storage configuration, account/grant administration, request decisions and file deletion are admin-only. Members manage their profile, own sessions/API keys, personal Navidrome link and ordered quality profile. Credentials/hashes are never returned in normal responses, logs or configuration exports.
+Shared credentials, server/storage configuration, account/grant administration, request decisions are admin-only. File deletion uses a separate direct-delete grant (admins have it implicitly); other users submit requests for admin approval. Members manage their profile, own sessions/API keys, personal Navidrome link and ordered quality profile. Credentials/hashes are never returned in normal responses, logs or configuration exports.
 
 Quality profiles order supported allowed qualities. Default: lossless first, followed by lower qualities in descending preference. Per-user preferences do not isolate or duplicate shared files. Ordinary requests reuse a playable matching recording already present; explicit **Upgrade** is required to seek better quality. Requests store a quality-profile snapshot so later preference changes do not silently modify approved work.
 
-Members, including those with direct-acquisition permission, cannot delete shared files. An upgrade that replaces a shared asset requires explicit admin approval. Keep the old file until the new asset and affected Navidrome references are verified; failed verification must not destroy the old asset. Removing an entry, withdrawing a request, deleting an import or changing a favorite never deletes shared audio.
+Direct-acquisition permission does not authorize deletion. Members may separately receive direct-delete permission; otherwise shared-file deletion requires an admin-approved request. An upgrade that replaces a shared asset requires explicit admin approval. Keep the old file until the new asset and affected Navidrome references are verified; failed verification must not destroy the old asset. Removing an entry, withdrawing a request, deleting an import or changing a favorite never deletes shared audio.
 
 A route, hidden button, user ID, profile header, SSE topic or client-side role is never an authorization boundary. Do not accept owner IDs or permission changes from ordinary member payloads.
 
@@ -91,7 +91,7 @@ Required acceptance tests:
 
 - Two users import identical source IDs and identically named playlists; their playlists and imported favorites land under different linked Navidrome accounts while the shared audio is stored once.
 - A user without a personal link can search/request music, but cannot publish migration collections. An expired/broken link never falls back to the shared account.
-- Members cannot acquire before approval, delete files, replace shared assets without admin approval, alter grants or impersonate through body/URL/header/key.
+- Members cannot acquire before approval, delete files without the separate deletion grant or approved request, replace shared assets without admin approval, alter grants or impersonate through body/URL/header/key.
 - A direct-acquisition member can acquire new music but still cannot approve replacement or deletion.
 - Per-user ordered profiles remain separate; fallback is reported and bounded by allowed qualities. Existing audio is reused without an explicit upgrade. Profile edits cannot silently alter pending approved targets.
 - All acquisition entry points enforce approval. Concurrent approval/retry creates one compatible job, not duplicate downloads; incompatible target/quality requirements are not silently combined.

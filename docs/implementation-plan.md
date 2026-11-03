@@ -1,6 +1,6 @@
 # ZenSync implementation plan
 
-Status: first XML-to-Navidrome migration workflow implemented, including explicit missing-song acquisition with d-fi 2.3.5. Real Navidrome integration and controlled acquisition tests pass; authenticated live Deezer verification and the remaining phase-1 scope are pending. See [deployment notes](deployment.md) for the exact implemented scope. Updated 2 November 2026 after the product-decision review. This document and [multi-user design](multi-user-design.md) are authoritative. The assessment and existing mockups are historical references where they describe broader or different behavior.
+Status: first XML-to-Navidrome migration workflow implemented, including explicit missing-song acquisition with d-fi 2.3.5. Real Navidrome integration and controlled acquisition tests pass; authenticated live Deezer verification and the remaining phase-1 scope are pending. See [deployment notes](deployment.md) for the exact implemented scope. Updated 2 November 2026 after the product-decision review. This document and [multi-user design](multi-user-design.md) are authoritative. The assessment and removed mockups (available in Git history) are historical references where they describe broader or different behavior.
 
 ## Product purpose and ownership
 
@@ -18,7 +18,7 @@ Keep application login separate from Navidrome account linking. The shared servi
 - One-time migration from a fixed source snapshot, not persistent Apple synchronization. No source refresh schedules or updated-XML merge engine.
 - Matching, manual review, persistent unresolved migration entries and **Skip for now**. Importing metadata never automatically downloads the whole library.
 - Search for tracks, albums and artists; acquisition through d-fi; safe file placement and verified Navidrome availability.
-- Admin approval for member acquisitions by default, with an independent **Add music without approval** grant. Members cannot delete shared audio.
+- Admin approval for member acquisitions by default, with an independent **Add music without approval** grant. Song deletion has a separate **Delete music without approval** grant; other deletion requests require admin approval.
 - Per-user ordered quality profiles, explicit quality upgrades, and admin-approved replacement of old files.
 - Persistent requests/tasks, Activity, retries, cancellation, restart recovery, user isolation and Wavio acquisition compatibility.
 - Dedicated routed pages with the chosen collapsible sidebar, compact song rows and Mixtape-inspired migration playlist detail.
@@ -166,6 +166,6 @@ Required end-to-end acceptance scenarios:
 - Finish migration with pending requests. Existing requests continue under approval/defer rules, but late completion, restarts and replayed events cannot write playlists or favorites after handover.
 - Favorite import is owner-scoped, never infers unstar from absent data, and does not repeatedly undo an external unstar. Uncertain write outcomes are actionable.
 - Default profile falls back through allowed qualities and reports the result; disallowed qualities are never silently chosen. Existing audio is reused until an explicit Upgrade request.
-- Direct-acquisition permission does not authorize replacement/deletion. Approved upgrade validates new audio and preserves affected references before retiring the old file; failure retains a recoverable old asset.
+- Direct-acquisition permission does not authorize replacement/deletion. Deletion uses a separate direct-delete grant or admin-approved request. Approved upgrade validates new audio and preserves affected references before retiring the old file; failure retains a recoverable old asset.
 - Crash tests cover download, validation, placement before database commit, scan, remote playlist/star write, handover and replacement. Repeated events do not duplicate assets or entries.
 - Authorization, revocation, private counts/errors/SSE replay, safe credential handling, recovery and backup/restore pass the [multi-user acceptance criteria](multi-user-design.md).

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"database/sql"
 	"encoding/json"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
@@ -8,7 +9,7 @@ import (
 )
 
 func (a *App) users(w http.ResponseWriter) {
-	rows, e := a.DB.Query("SELECT id,username,role,direct,quality FROM users ORDER BY username")
+	rows, e := a.DB.Query("SELECT id,username,role,direct,quality,EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=users.id) FROM users ORDER BY username")
 	if e != nil {
 		a.internal(w, e)
 		return
@@ -18,7 +19,7 @@ func (a *App) users(w http.ResponseWriter) {
 	for rows.Next() {
 		var u User
 		var q string
-		if e = rows.Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q); e != nil {
+		if e = rows.Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &u.DirectDelete); e != nil {
 			a.internal(w, e)
 			return
 		}
@@ -33,9 +34,10 @@ func (a *App) users(w http.ResponseWriter) {
 }
 func (a *App) createUser(w http.ResponseWriter, r *http.Request, actor User) {
 	var in struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Direct   bool   `json:"direct"`
+		Username     string `json:"username"`
+		Password     string `json:"password"`
+		Direct       bool   `json:"direct"`
+		DirectDelete bool   `json:"directDelete"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -67,6 +69,9 @@ func (a *App) createUser(w http.ResponseWriter, r *http.Request, actor User) {
 	}
 	uid := id()
 	_, e = tx.Exec("INSERT INTO users(id,username,password,role,direct) VALUES(?,?,?,'member',?)", uid, in.Username, hash, in.Direct)
+	if e == nil && in.DirectDelete {
+		_, e = tx.Exec("INSERT INTO delete_permissions(user_id) VALUES(?)", uid)
+	}
 	if e == nil {
 		e = audit(tx, uid, actor.ID, "user.created", uid)
 	}
@@ -105,4 +110,51 @@ func (a *App) quality(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	send(w, 200, in)
+}
+
+// updateUser changes the acquisition permission used by both new requests and workers.
+func (a *App) updateUser(w http.ResponseWriter, r *http.Request, actor User) {
+	var in struct {
+		Direct *bool `json:"direct"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Direct == nil {
+		fail(w, 400, "Direct permission is required")
+		return
+	}
+	uid := strings.TrimPrefix(r.URL.Path, "/api/v2/users/")
+	tx, e := a.DB.Begin()
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	defer tx.Rollback()
+	var role string
+	e = tx.QueryRow("SELECT role FROM users WHERE id=?", uid).Scan(&role)
+	if e == sql.ErrNoRows {
+		fail(w, 404, "User not found")
+		return
+	}
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	if role == "admin" {
+		fail(w, 400, "Administrators already have full permissions")
+		return
+	}
+	_, e = tx.Exec("UPDATE users SET direct=? WHERE id=?", *in.Direct, uid)
+	if e == nil {
+		e = audit(tx, uid, actor.ID, "user.permissions_updated", uid)
+	}
+	if e == nil {
+		e = tx.Commit()
+	}
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
 }

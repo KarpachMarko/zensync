@@ -20,8 +20,12 @@ func TestDownloadSettingsAuthorizationAndPersistence(t *testing.T) {
 		t.Fatal("default concurrency")
 	}
 	expect(t, member.call("PUT", "/api/v2/settings/downloads", `{"parallelDownloads":8}`, ""), 403)
-	for _, value := range []string{"0", "9", "1.5", "\"3\""} {
+	for _, value := range []string{"0", "-1", "1.5", "\"3\""} {
 		expect(t, admin.call("PUT", "/api/v2/settings/downloads", `{"parallelDownloads":`+value+`}`, ""), 400)
+	}
+	expect(t, admin.call("PUT", "/api/v2/settings/downloads", `{"parallelDownloads":24}`, ""), 200)
+	if a.downloadLimit() != 24 {
+		t.Fatal("concurrency above eight was not accepted")
 	}
 	expect(t, admin.call("PUT", "/api/v2/settings/downloads", `{"parallelDownloads":2}`, ""), 200)
 	if a.downloadLimit() != 2 {

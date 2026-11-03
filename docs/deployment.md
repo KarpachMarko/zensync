@@ -20,7 +20,7 @@ ZenSync now imports an Apple Music/iTunes XML snapshot, matches existing Navidro
 
 3. Open `http://<server-ip>:8080`. On an empty database, the first page asks you to create the administrator account. There is no bootstrap password/hash environment variable. Setup closes atomically after the first administrator is created. Existing databases keep their accounts and passwords; upgrading never resets them.
 
-The image includes the API, compiled UI, **d-fi 2.3.5**, ffmpeg/ffprobe, CA certificates and time zone data. d-fi is built from release commit `fa5612209bccf3ec64aae518c76bf86dcc63c7b8`; its MIT license is included in the image. See the [pinned d-fi source](https://github.com/d-fi/GoFi/tree/fa5612209bccf3ec64aae518c76bf86dcc63c7b8).
+The image includes the API, compiled UI, **d-fi 2.3.5**, ffmpeg/ffprobe, CA certificates and time zone data. d-fi is built from release commit `fa5612209bccf3ec64aae518c76bf86dcc63c7b8`; its MIT license is included in the image. A small source adapter exposes its existing byte-progress callbacks to ZenSync; the downloader still runs in an isolated process. See the [pinned d-fi source](https://github.com/d-fi/GoFi/tree/fa5612209bccf3ec64aae518c76bf86dcc63c7b8).
 
 Compose runs as UID/GID 10001 with a read-only application filesystem, dropped capabilities, a persistent named `/data` volume, a shared `/music` bind mount and temporary `/tmp`. Keep your existing `/data` mount when upgrading. You may replace the named volume with your established local-disk bind mount, provided it is writable by UID 10001. Do not place the SQLite database on NFS/SMB or run multiple replicas against it; a service lock prevents concurrent owners.
 
@@ -30,13 +30,21 @@ Compose runs as UID/GID 10001 with a read-only application filesystem, dropped c
 
 Open **Settings → Connections**:
 
-1. **Shared Navidrome server:** enter its base URL and a service account with shared-library access and scan permission. Use a hostname reachable from the container, such as `http://navidrome:4533` on a shared Docker network, or your server's LAN address. `localhost` inside ZenSync refers to the ZenSync container. Saving verifies the account through OpenSubsonic.
+1. **Shared Navidrome server:** enter its base URL and a service account with shared-library access and scan permission. Use a hostname reachable from the container, such as `http://navidrome:4533` on a shared Docker network, or your server's LAN address. `localhost` inside ZenSync refers to the ZenSync container. Complete credentials are verified through OpenSubsonic and saved automatically.
 2. **Your personal Navidrome account:** link the existing Navidrome account that should own imported playlists/favorites. ZenSync never falls back to the service account for those writes. It is fine to use the same account for both roles in a single-user installation, but enter both links explicitly.
-3. **Deezer acquisition:** save the ARL cookie from the Deezer account you use with d-fi. The cookie is verified by d-fi during acquisition. ZenSync uses encrypted storage and creates a mode-0600 per-job config while the downloader runs. It never puts the ARL in command-line arguments or returns it to the browser. Raw downloader output is discarded to avoid leaking credentials.
+3. **Deezer acquisition:** save the ARL cookie from the Deezer account you use with d-fi. The cookie is verified by d-fi during acquisition. ZenSync uses encrypted storage and creates a mode-0600 per-job config while the downloader runs. It never puts the ARL in command-line arguments or returns it to the browser. Raw downloader output is discarded to avoid leaking credentials; only bounded, validated numeric transfer records and fixed phase names from the adapter are accepted.
 
 After migrations exist, changing the shared server URL is rejected. After a migration has bound its personal account, that account identity cannot be changed underneath it. Passwords can be refreshed for the same account.
 
 No public URL environment variable is needed. A reverse proxy must preserve the original public `Host` header (including port) and browser `Origin`. Mutations validate same-host Origin; authenticated mutations also require a session CSRF token. Forwarded host/proto headers do not establish trust. HTTPS Origin enables Secure cookies behind a TLS-terminating proxy. Cookies are HttpOnly and SameSite=Strict; sessions expire in 24 hours and logout revokes them.
+
+## Settings and invitations
+
+Settings save automatically and show a success or failure toast. Download concurrency defaults to three and has no fixed upper ceiling. Text edits are debounced; updates are serialized so an older response cannot overwrite a newer choice. Connection credentials save as a complete group after validation and verification; passwords/cookies are cleared from the editor after a successful save. Enter the password again when changing a saved Navidrome connection.
+
+In **Settings → Quality**, enable the formats you allow and move them into preference order. FLAC has one lossless option, alongside MP3 320 kbps and MP3 128 kbps. Keep at least one enabled. New requests snapshot this order; changing it does not rewrite existing requests.
+
+In **Settings → Users**, choose **Invite user**, enter a username, and share the generated link manually. It expires after seven days and can be used once. The recipient chooses their own password and then signs in. Invitation tokens are stored as hashes, and administrators can revoke pending invitations. Members begin with approval required for both acquisitions and deletions. Each member's **Permissions** button opens one dialog; its independent permission switches save automatically. The application does not send invitation emails.
 
 ## Make the first migration
 
@@ -80,9 +88,9 @@ Approved tracks waiting for a worker show **Queued**, not Blocked. **Checking** 
 
 Initial XML limits are 32 MiB, 20,000 tracks, 100,000 playlist occurrences, 32 nesting levels and one parser at a time. DTD/entity retrieval is disabled; XML locations are metadata and are never opened as host files. Changed XML is a separate migration. Repeated identical uploads return the owner's existing migration, including after restart.
 
-Downloads have a 15-minute attempt timeout, a 1 GiB per-quality staging cap and disk-headroom checks. Successful staging is removed once Navidrome availability is verified; failed staging is retained for retry. Monitor `/data/staging` on busy installations—automatic age-based failure retention is not implemented. Metadata calls are limited to four per second. Long libraries are processed incrementally with durable results and progress in Activity; acquisition concurrency defaults to three and is configurable in Settings → Downloads (admin only, 1–8). The limit is global across users and persists across restarts. Changes apply immediately to new work; lowering it does not cancel active transfers. Waiting-for-scan, deferred and blocked jobs do not hold idle transfer slots.
+Downloads have a 15-minute attempt timeout, a 1 GiB per-quality staging cap and disk-headroom checks. Successful staging is removed once Navidrome availability is verified; failed staging is retained for retry. Monitor `/data/staging` on busy installations—automatic age-based failure retention is not implemented. Metadata calls are limited to four per second. Long libraries are processed incrementally with durable results and progress in Activity; acquisition concurrency defaults to three and is configurable in Settings → Downloads (admin only, any positive whole number). The limit is global across users and persists across restarts. Changes apply immediately to new work; lowering it does not cancel active transfers. Waiting-for-scan, deferred and blocked jobs do not hold idle transfer slots.
 
-Request and Activity lists currently show the newest 200 records. The migration retains its complete source catalog and offers filtering and incremental display. Account password recovery, account disable/deletion/grant editing, API keys, SSE, Wavio compatibility, automated asset upgrades and artist notifications are not implemented. These are outside the first usable migration path; the broader phase-1 plan remains in [implementation-plan.md](implementation-plan.md).
+Request and Activity lists currently show the newest 200 records. The migration retains its complete source catalog and offers filtering and incremental display. Account password recovery, account disable/deletion, SSE, Wavio compatibility, automated asset upgrades and artist notifications are not implemented. These are outside the first usable migration path; the broader phase-1 plan remains in [implementation-plan.md](implementation-plan.md).
 
 ## Storage, health and backups
 
@@ -112,21 +120,33 @@ Restore the contents into an empty data volume using the same image version and 
 ## Development and verification
 
 ```sh
-npm --prefix web ci
-npm --prefix web run build
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web run build
 go test -race ./...
 go vet ./...
 go run ./cmd/zensync
 ```
 
-Go serves the built UI. For Vite development, `npm --prefix web run dev` proxies `/api` to Go. Local acquisition additionally needs d-fi 2.3.5, ffprobe and writable music storage; Docker bundles the tooling.
+Go serves the built UI. For Vite development, `pnpm --dir web run dev` proxies `/api` to Go. Local acquisition additionally needs d-fi 2.3.5, ffprobe and writable music storage; Docker bundles the tooling.
 
 ```sh
-npm --prefix web exec -- playwright install chromium
-npm --prefix web run test:e2e
+pnpm --dir web exec playwright install chromium
+pnpm --dir web run test:e2e
 docker build -t zensync:migration-test .
 docker pull deluan/navidrome:0.64.2
 python3 scripts/test-navidrome.py
 ```
 
 Go tests cover legacy relocation, restart recovery, collision protection, admin-only retry, first-setup races, approval/isolation, hostile XML, ingestion/idempotency, an acquisition fixture using real generated audio and ffprobe, playlist recovery, external edits, handover and filesystem safety. The browser test uses the real local Go backend for setup/import/review; only search/request metadata interactions use controlled browser fixtures. The disposable Docker test also exercises real Navidrome 0.64.2 relocation and confirms unchanged song identity, favorites and duplicate playlist references, alongside playlist/favorite writes and restart persistence with synthetic local music. These tests do **not** perform an authenticated live Deezer download: your ARL/account's availability and quality entitlement are verified during your first actual acquisition.
+
+## Removing shared music
+
+Use Library → Request deletion, or Delete song when you have the separate deletion permission. Administrators review pending deletions in Requests and manage the grant in Settings → Users. Settings → API keys creates scoped keys for external deletion clients. See the [deletion API and recovery guide](deletion-api.md) for endpoints, storage requirements and recovery instructions. Navidrome keeps its read-only music mount.
+
+## Download progress
+
+Activity and individual song requests show byte-based download percentage, transferred/total bytes, and transfer speed when the bundled downloader reports them. Album requests show these metrics on their individual tracks. Transfer percentage describes the network download only; decryption, tagging, validation, placement, and Navidrome indexing continue afterward with an animated running bar. All work with an unknown percentage uses the same animated bar, with a visible static fill when reduced motion is enabled.
+
+A custom stock d-fi executable remains supported, with indeterminate progress. Use the updated Docker image to enable the source adapter. Live transfer samples are in memory, reset per attempt/quality and cleared on phase changes; a resumed file's existing bytes do not inflate speed. Four seconds without samples reports zero speed. The UI polls updates every few seconds. Completion still requires validation and verified Navidrome availability.
+
+Native `/api/v2/activity` items, song `/api/v2/requests` items and album request tracks may include a `transfer` object while downloading: `percent` (omitted when total is unknown), `downloadedBytes`, `totalBytes` (0 if unknown), `bytesPerSecond` (omitted until two samples), and `updatedAt` (RFC 3339). Metrics follow the existing per-user authorization. No estimated percentages are invented for migration, scanning or processing.

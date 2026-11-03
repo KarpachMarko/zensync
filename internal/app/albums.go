@@ -18,10 +18,11 @@ type AlbumSnapshot struct {
 	Tracks []Track `json:"tracks"`
 }
 type AlbumItem struct {
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
-	State  string `json:"state"`
-	Detail string `json:"detail"`
+	Transfer *TransferProgress `json:"transfer,omitempty"`
+	Title    string            `json:"title"`
+	Artist   string            `json:"artist"`
+	State    string            `json:"state"`
+	Detail   string            `json:"detail"`
 }
 
 func (a *App) albumSnapshot(ctx context.Context, id string) (AlbumSnapshot, error) {
@@ -180,7 +181,7 @@ func (a *App) expandAlbum(tx *sql.Tx, parent string) error {
 	return nil
 }
 func (a *App) albumItems(parent string) ([]AlbumItem, error) {
-	rows, e := a.DB.Query("SELECT r.title,r.artist,j.state,j.stage FROM request_children c JOIN requests r ON r.id=c.child_id JOIN jobs j ON j.request_id=r.id WHERE c.parent_id=? ORDER BY c.position", parent)
+	rows, e := a.DB.Query("SELECT r.title,r.artist,j.state,j.stage,j.id FROM request_children c JOIN requests r ON r.id=c.child_id JOIN jobs j ON j.request_id=r.id WHERE c.parent_id=? ORDER BY c.position", parent)
 	if e != nil {
 		return nil, e
 	}
@@ -188,9 +189,11 @@ func (a *App) albumItems(parent string) ([]AlbumItem, error) {
 	out := []AlbumItem{}
 	for rows.Next() {
 		var i AlbumItem
-		if e = rows.Scan(&i.Title, &i.Artist, &i.State, &i.Detail); e != nil {
+		var jid string
+		if e = rows.Scan(&i.Title, &i.Artist, &i.State, &i.Detail, &jid); e != nil {
 			return nil, e
 		}
+		i.Transfer = a.transfer(jid, i.State)
 		out = append(out, i)
 	}
 	return out, rows.Err()
