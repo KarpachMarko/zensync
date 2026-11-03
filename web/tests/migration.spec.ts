@@ -123,6 +123,9 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("button", { name: /Outside playlists/ }),
   ).toBeVisible();
   const migrationURL = page.url();
+  await page.route("**/api/v2/imports/*/songs/*/candidates", (route) =>
+    route.fulfill({ json: { library: [], deezer: [] } }),
+  );
   await page.getByRole("button", { name: /Second song/ }).click();
   await expect(
     page.getByRole("heading", { name: "Second song", exact: true }),
@@ -130,7 +133,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(page.getByLabel("Search or Deezer song URL")).toBeVisible();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(
-    page.getByText("Skipped for now", { exact: true }),
+    page.getByRole("dialog").getByText("Skipped for now", { exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(
@@ -142,6 +145,12 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("heading", { name: "Ordered songs" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /First song/ })).toHaveCount(2);
+  const playlistURL = page.url();
+  await page.getByRole("button", { name: /First song/ }).first().click();
+  await expect(page.getByRole("dialog", { name: "First song", exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(new URL(playlistURL).pathname);
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page).toHaveURL(playlistURL);
   await page.goto("/requests");
   await expect(page.getByLabel("Deezer track ID")).toHaveCount(0);
   await page

@@ -42,6 +42,10 @@ export const uploadSchema = z.object({
     .nullable()
     .refine((file) => file !== null, "Choose an XML or TXT export.")
     .refine(
+      (file) => !file || /\.(xml|txt)$/i.test(file.name),
+      "Choose an XML or TXT export.",
+    )
+    .refine(
       (file) => !file || file.size <= 32 * 1024 * 1024,
       "Choose an export smaller than 32 MiB.",
     ),

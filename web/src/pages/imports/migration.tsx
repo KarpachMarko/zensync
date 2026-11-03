@@ -26,11 +26,16 @@ import { Progress } from "@/components/ui/progress";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
+import { parseAsString, useQueryState } from "nuqs";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 export function MigrationPage() {
   const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
+  const [recordingId, setRecordingId] = useQueryState(
+    "recording",
+    parseAsString.withOptions({ history: "push" }),
+  );
   const [actionError, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState<Set<string>>(new Set()),
@@ -89,7 +94,7 @@ export function MigrationPage() {
     );
   const { migration: m, songs, playlists, matchTask } = detail;
   const scanning = ["queued", "running"].includes(matchTask?.state ?? "");
-  const currentSource = songs.find((s) => s.id === sourceId),
+  const currentSource = songs.find((s) => s.id === (recordingId ?? sourceId)),
     currentPlaylist = playlists.find((p) => p.id === playlistId);
   const shownSongs = currentPlaylist
     ? currentPlaylist.entries
@@ -102,15 +107,6 @@ export function MigrationPage() {
       .includes(filter.toLowerCase()),
   );
   const available = songs.filter((s) => s.serverId).length;
-  if (currentSource)
-    return (
-      <Review
-        key={currentSource.id}
-        source={currentSource}
-        migration={m}
-        reload={load}
-      />
-    );
   return (
     <>
       <div className="flex gap-[15px] mb-[22px] text-[13px] text-muted-foreground">
@@ -419,7 +415,8 @@ export function MigrationPage() {
               )}
               <Button
                 className="block flex-1 min-w-0 text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm max-[700px]:basis-[65%]"
-                onClick={() => navigate("/imports/" + id + "/songs/" + s.id)}
+                aria-haspopup="dialog"
+                onClick={() => void setRecordingId(s.id)}
               >
                 <strong>
                   {s.metadata.title}
@@ -434,10 +431,12 @@ export function MigrationPage() {
                 </Caption>
               </Button>
               <StatusBadge state={status(s, scanning)} />
-              <Button asChild variant="outline">
-                <AppLink to={"/imports/" + id + "/songs/" + s.id}>
-                  {recordingAction(s)}
-                </AppLink>
+              <Button
+                variant="outline"
+                aria-haspopup="dialog"
+                onClick={() => void setRecordingId(s.id)}
+              >
+                {recordingAction(s)}
               </Button>
               {m.state === "open" && !s.serverId && (
                 <Button
@@ -461,6 +460,19 @@ export function MigrationPage() {
             </Button>
           )}
         </>
+      )}
+
+      {currentSource && (
+        <Review
+          key={currentSource.id}
+          source={currentSource}
+          migration={m}
+          reload={load}
+          onClose={() => {
+            if (sourceId) navigate("/imports/" + id, { replace: true });
+            else void setRecordingId(null, { history: "replace" });
+          }}
+        />
       )}
     </>
   );

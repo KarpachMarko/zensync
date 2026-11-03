@@ -7,6 +7,7 @@ import { Button } from "./ui/button";
 
 type SearchBoxProps = {
   value?: string;
+  className?: string;
   onSearch: (query: string) => void | Promise<void>;
   label: string;
   placeholder?: string;
@@ -18,6 +19,7 @@ type SearchBoxProps = {
 };
 export function SearchBox({
   value = "",
+  className,
   onSearch,
   label,
   placeholder,
@@ -77,7 +79,7 @@ export function SearchBox({
       {fields}
     </form>
   ) : (
-    <SearchForm noValidate onSubmit={submit}>
+    <SearchForm className={className} noValidate onSubmit={submit}>
       {fields}
       <Button disabled={disabled}>{buttonLabel}</Button>
     </SearchForm>

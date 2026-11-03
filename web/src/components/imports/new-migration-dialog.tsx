@@ -72,6 +72,12 @@ export function NewMigrationDialog({ onClose }: { onClose: () => void }) {
             {(field) => (
               <field.FileField
                 label="Apple Music or iTunes export (XML or TXT)"
+                disabled={busy}
+                description="One XML or TXT file, up to 32 MiB"
+                onFileValidate={(file) => {
+                  const result = uploadSchema.shape.file.safeParse(file);
+                  return result.success ? null : result.error.issues[0]?.message;
+                }}
                 accept=".xml,.txt,application/xml,text/xml,text/plain"
               />
             )}

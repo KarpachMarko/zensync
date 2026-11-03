@@ -60,6 +60,7 @@ export type Track = {
   artist: { name: string };
   album: { title: string };
   link: string;
+  preview?: string;
 };
 export type LibrarySong = {
   id: string;

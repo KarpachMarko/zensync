@@ -29,6 +29,8 @@ Imports use the `@/` alias for `src/`. Keep reusable controls and domain present
 
 Button, Input, AlertDialog, Sidebar, Tabs, Badge, Label, Separator, Progress, Collapsible, and Sonner are installed using the official shadcn CLI with the Radix Nova preset. Sidebar also uses the generated Sheet, Tooltip, and Skeleton dependencies. `components.json` records the aliases and theme location. The MIT license is in `licenses/shadcn-ui.txt`.
 
+The import file picker uses Dice UI's shadcn File Upload component and its generated hooks, installed with `pnpm dlx shadcn@latest add @diceui/file-upload`. The registry is recorded in `components.json`; its MIT license is in `licenses/dice-ui.txt`. The typed `FileField` connects file selection and drag-and-drop to TanStack Form and Zod validation. After selection, the official shadcn Attachment component displays the file icon, filename, type, size, readiness/upload state, and remove action. It is installed with `pnpm dlx shadcn@latest add attachment`. Selection does not submit the import.
+
 From `web/`, add future components with:
 
 ```sh

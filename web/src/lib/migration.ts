@@ -83,16 +83,16 @@ export function recordingAction(s: Source) {
 
 export function songGuidance(s: Source) {
   if (s.serverId)
-    return "Already available in Navidrome. Publish available songs to include it in your selected playlists.";
+    return "Already available in Navidrome. Publish available songs to add it to your playlists.";
   if (s.deferred)
-    return "New acquisition is paused for this song. Resume when you want to request it. Its playlist entry is retained; a running download is not cancelled.";
+    return "Acquisition is paused. Resume to request this song; its playlist entry is retained.";
   if (s.requestId)
-    return "A request exists for this song. Check Requests for approval and Activity for download progress.";
+    return "A request exists. Check Requests for approval or Activity for download progress.";
   if (s.candidate)
-    return "A recording was matched. Review it, then request missing audio here or select songs and use Request selected.";
+    return "Compare the selected recording, then request missing audio when you are ready.";
   if (s.metadata.missing)
-    return "The export references a song without its metadata. Search by title and artist or paste a Deezer song URL to choose the recording manually.";
+    return "The export has no metadata for this song. Search by title and artist or paste a Deezer song URL.";
   if (s.matchState === "ambiguous")
-    return "Search results need your review. Open Review match, compare the album, version and duration, then choose the intended recording.";
-  return "No recording has been selected. Use Find recording to search by title and artist or paste a Deezer song URL. You can skip it and return later.";
+    return "Compare the album, version and duration, then choose the intended recording.";
+  return "No recording has been selected. Edit the search or paste a Deezer song URL.";
 }

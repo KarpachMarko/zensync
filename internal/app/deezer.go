@@ -26,6 +26,7 @@ type Track struct {
 	Duration     float64  `json:"duration"`
 	ISRC         string   `json:"isrc"`
 	Link         string   `json:"link"`
+	Preview      string   `json:"preview"`
 	Readable     *bool    `json:"readable"`
 	Artist       struct {
 		Name string `json:"name"`
