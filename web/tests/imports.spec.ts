@@ -77,6 +77,13 @@ test("commit starts matching and each result has a clear next action", async ({ 
     if (path.endsWith("/candidates")) {
       const body: { query: string } = route.request().postDataJSON();
       candidateQueries.push(body.query);
+      if (body.query === "local only") return route.fulfill({ json: {
+        library: [{ id: "local", title: "Local recording", artist: "Artist", album: "Album", duration: 180 }],
+        deezer: [], deezerError: "Deezer unavailable", libraryError: "",
+      } });
+      if (body.query === "remote only") return route.fulfill({ json: {
+        library: [], deezer: [recording], libraryError: "Navidrome unavailable", deezerError: "",
+      } });
       if (body.query === "alternative" && failSearch)
         return route.fulfill({ status: 502, json: { error: "Search unavailable" } });
       return route.fulfill({ json: { library: [], deezer: [recording] } });
@@ -103,6 +110,9 @@ test("commit starts matching and each result has a clear next action", async ({ 
   const ready = page.locator('[data-slot="import-song"]').filter({ hasText: "Ready song" });
   const ambiguous = page.locator('[data-slot="import-song"]').filter({ hasText: "Ambiguous song" });
   const unresolved = page.locator('[data-slot="import-song"]').filter({ hasText: "Unresolved song" });
+  await expect(available).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Available (1)", exact: true }).check();
+  await expect(available).toBeVisible();
   await expect(available.getByRole("button", { name: "Skip for now" })).toHaveCount(0);
   await expect(available.getByRole("button", { name: "View song" })).toBeVisible();
   await expect(ready.getByRole("button", { name: "Review recording" })).toBeVisible();
@@ -139,6 +149,19 @@ test("commit starts matching and each result has a clear next action", async ({ 
   const unresolvedDialog = page.getByRole("dialog", { name: "Unresolved song", exact: true });
   await expect(unresolvedDialog.getByRole("button", { name: "Use this recording" })).toBeVisible();
   expect(candidateQueries).toContain("Artist Unresolved song");
+  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("local only");
+  await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
+  const localResults = unresolvedDialog.getByRole("region", { name: /^Already in Navidrome/ });
+  const deezerResults = unresolvedDialog.getByRole("region", { name: /^Deezer recordings/ });
+  await expect(localResults.getByText("Local recording", { exact: true })).toBeVisible();
+  await expect(localResults.getByRole("button", { name: "Use existing" })).toBeEnabled();
+  await expect(deezerResults.getByRole("alert")).toContainText("Deezer search failed");
+  await expect(deezerResults.getByText(/No results/)).toHaveCount(0);
+  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("remote only");
+  await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(localResults.getByRole("alert")).toContainText("Library search failed");
+  await expect(localResults.getByText("No local candidates.")).toHaveCount(0);
+  await expect(deezerResults.getByRole("button", { name: "Use this recording" })).toBeEnabled();
   await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("alternative");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   await expect(unresolvedDialog.getByRole("alert")).toContainText("Search unavailable");
@@ -154,6 +177,7 @@ test("commit starts matching and each result has a clear next action", async ({ 
   await expect(unresolvedDialog).toHaveCount(0);
 
   await page.goto("/imports/migration");
+  await page.getByRole("checkbox", { name: "Available (1)", exact: true }).check();
   await available.getByRole("button", { name: "View song" }).click();
   await expect(page.getByText(/Already available in Navidrome/)).toBeVisible();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Skip for now" })).toHaveCount(0);

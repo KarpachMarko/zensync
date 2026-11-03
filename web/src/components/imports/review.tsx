@@ -20,7 +20,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-type Candidates = { deezer: Track[]; library: LibrarySong[] };
+type Candidates = {
+  deezer: Track[];
+  library: LibrarySong[];
+  libraryError?: string;
+  deezerError?: string;
+};
 
 export function Review({
   source: s,
@@ -165,7 +170,13 @@ export function Review({
                 <h2 id="local-recordings-heading" className="m-0 border-0 border-b border-solid border-border pb-2 text-sm font-semibold">
                   Already in Navidrome <span className="text-xs font-normal text-muted-foreground">({candidates.data.library.length})</span>
                 </h2>
-                {candidates.data.library.length === 0 && <Text className="my-2 text-xs">No local candidates.</Text>}
+                {candidates.data.libraryError ? (
+                  <Text role="alert" className="my-2 text-xs">
+                    Library search failed: {candidates.data.libraryError} Search again to retry.
+                  </Text>
+                ) : candidates.data.library.length === 0 && (
+                  <Text className="my-2 text-xs">No local candidates.</Text>
+                )}
                 {candidates.data.library.map((t) => (
                   <Row key={t.id} className="gap-3 py-2">
                     <div className="min-w-0 break-words">
@@ -180,7 +191,13 @@ export function Review({
                 <h2 id="deezer-recordings-heading" className="m-0 border-0 border-b border-solid border-border pb-2 text-sm font-semibold">
                   Deezer recordings <span className="text-xs font-normal text-muted-foreground">({candidates.data.deezer.length})</span>
                 </h2>
-                {candidates.data.deezer.length === 0 && <Text className="my-2 text-xs">No results. Try a shorter title, another spelling, or a direct Deezer song URL.</Text>}
+                {candidates.data.deezerError ? (
+                  <Text role="alert" className="my-2 text-xs">
+                    Deezer search failed: {candidates.data.deezerError} Search again to retry.
+                  </Text>
+                ) : candidates.data.deezer.length === 0 && (
+                  <Text className="my-2 text-xs">No results. Try a shorter title, another spelling, or a direct Deezer song URL.</Text>
+                )}
                 {candidates.data.deezer.map((t) => (
                   <Row key={t.id} className="gap-3 py-2">
                     <div className="min-w-0 break-words">

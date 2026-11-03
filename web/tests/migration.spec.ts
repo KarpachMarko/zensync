@@ -112,6 +112,13 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByLabel("Apple Music or iTunes export (XML or TXT)")
     .setInputFiles(path.resolve("../internal/apple/testdata/library.xml"));
   await page.getByRole("button", { name: "Upload and preview" }).click();
+
+  await expect(page.getByText("All 4 songs are included", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Playlists to create in Navidrome" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Music/ })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Apple Music views and folders/ }).click();
+  await expect(page.getByText(/System view — songs already included/)).toBeVisible();
+  await expect(page.getByText(/Folders organise playlists/)).toBeVisible();
   await expect(page.getByText("1 unplaylisted songs")).toBeVisible();
   await expect(page.getByText("1 missing references")).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Roadtrip/ })).toBeChecked();

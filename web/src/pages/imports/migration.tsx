@@ -1,6 +1,7 @@
 import { DeleteMigration } from "@/components/imports/delete-migration";
 import { ExpandableSection } from "@/components/expandable-section";
 import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
+import { MigrationStatusFilter } from "@/components/imports/migration-status-filter";
 import { MigrationChoices } from "@/components/imports/migration-choices";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
@@ -26,7 +27,7 @@ import { Progress } from "@/components/ui/progress";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
-import { parseAsString, useQueryState } from "nuqs";
+import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 export function MigrationPage() {
@@ -35,6 +36,10 @@ export function MigrationPage() {
   const [recordingId, setRecordingId] = useQueryState(
     "recording",
     parseAsString.withOptions({ history: "push" }),
+  );
+  const [hiddenStatuses, setHiddenStatuses] = useQueryState(
+    "hideStatus",
+    parseAsArrayOf(parseAsString).withDefault(["Available"]),
   );
   const [actionError, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -71,7 +76,8 @@ export function MigrationPage() {
     setError("");
     let saved = 0;
     try {
-      for (const sid of selected) {
+      for (const song of selectedVisible) {
+        const sid = song.id;
         await api("/imports/" + id + "/songs/" + sid + "/acquire", "POST");
         saved++;
       }
@@ -96,16 +102,29 @@ export function MigrationPage() {
   const scanning = ["queued", "running"].includes(matchTask?.state ?? "");
   const currentSource = songs.find((s) => s.id === (recordingId ?? sourceId)),
     currentPlaylist = playlists.find((p) => p.id === playlistId);
+  const songsById = new Map<string, Source>(songs.map((song) => [song.id, song]));
   const shownSongs = currentPlaylist
     ? currentPlaylist.entries
-        .map((sid) => songs.find((s) => s.id === sid))
+        .map((sid) => songsById.get(sid))
         .filter((s): s is Source => !!s)
     : songs;
-  const shown = shownSongs.filter((s) =>
-    (s.metadata.title + " " + s.metadata.artist + " " + status(s, scanning))
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
+  const statusCounts = new Map<string, number>();
+  for (const song of shownSongs) {
+    const value = status(song, scanning);
+    statusCounts.set(value, (statusCounts.get(value) ?? 0) + 1);
+  }
+  const shownEntries = shownSongs
+    .map((song, index) => ({ song, position: index + 1 }))
+    .filter(({ song }) =>
+      !hiddenStatuses.includes(status(song, scanning)) &&
+      (song.metadata.title + " " + song.metadata.artist + " " + status(song, scanning))
+        .toLowerCase().includes(filter.toLowerCase()),
+    );
+  const shown = shownEntries.map(({ song }) => song);
+  const selectedVisible = [...new Map<string, Source>(shown
+    .filter((song) => selected.has(song.id) && song.candidate && !song.serverId && !song.deferred && !song.requestId)
+    .map((song) => [song.id, song]),
+  ).values()];
   const available = songs.filter((s) => s.serverId).length;
   return (
     <>
@@ -134,10 +153,11 @@ export function MigrationPage() {
       {m.state === "staged" ? (
         <>
           <Text>
-            Your snapshot is saved. Select the playlists you want to migrate;
-            all {m.report.songs} catalog entries will be retained. Committing
-            automatically starts a scan of Navidrome and Deezer. Downloads
-            require a separate request.
+            <strong className="text-foreground">All {m.report.songs} songs are included</strong>,
+            including {m.report.unplaylisted} songs outside playlists. You do not
+            need to select Library or Music to include them. Committing
+            automatically starts a scan of every song in Navidrome and Deezer.
+            Request missing audio after matching; downloads require a separate request.
           </Text>
           <div className="my-6 flex flex-wrap items-center gap-4 text-muted-foreground max-[700px]:gap-2">
             <span>{m.report.unplaylisted} unplaylisted songs</span>
@@ -315,6 +335,24 @@ export function MigrationPage() {
           <SectionHeading>
             {currentPlaylist ? "Ordered songs" : "Complete catalog"}
           </SectionHeading>
+          <MigrationStatusFilter
+            counts={statusCounts}
+            hidden={hiddenStatuses}
+            onChange={(values) => {
+              void setHiddenStatuses(values);
+              setSelected(new Set());
+              setLimit(100);
+            }}
+          />
+          <Text className="my-2 text-xs" role="status">
+            Showing {shown.length} of {shownSongs.length} songs.
+            {hiddenStatuses.includes("Available") && (statusCounts.get("Available") ?? 0) > 0
+              ? " Available songs are hidden."
+              : ""}
+          </Text>
+          {shown.length === 0 && (
+            <Text>No songs match these filters. Change the statuses or clear your search.</Text>
+          )}
           <SearchBar>
             <SearchField>
               Filter songs
@@ -328,10 +366,10 @@ export function MigrationPage() {
               />
             </SearchField>
             <Button
-              disabled={busy || selected.size === 0}
+              disabled={busy || selectedVisible.length === 0}
               onClick={() => void acquireSelected()}
             >
-              Request selected ({selected.size})
+              Request selected ({selectedVisible.length})
             </Button>
           </SearchBar>
           <Text className="text-[13px]">
@@ -390,7 +428,7 @@ export function MigrationPage() {
             </CheckboxField>
             <span>Status</span>
           </div>
-          {shown.slice(0, limit).map((s, index) => (
+          {shownEntries.slice(0, limit).map(({ song: s, position }, index) => (
             <div
               data-slot="import-song"
               className="flex min-h-[52px] items-center gap-3 border-b border-solid border-sidebar-border py-1.5 [&>input]:min-h-0 max-[700px]:flex-wrap"
@@ -409,8 +447,8 @@ export function MigrationPage() {
                 }}
               />
               {currentPlaylist && (
-                <span className="text-[12px] text-muted-foreground w-[22px]">
-                  {index + 1}
+                <span data-slot="playlist-position" className="text-[12px] text-muted-foreground w-[22px]">
+                  {position}
                 </span>
               )}
               <Button

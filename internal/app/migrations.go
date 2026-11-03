@@ -497,23 +497,34 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			fail(w, 400, "Search is too long")
 			return
 		}
-		var tracks []Track
-		if strings.HasPrefix(q, "http") {
-			t, err := a.track(r.Context(), q)
-			e = err
-			tracks = []Track{t}
-		} else {
-			tracks, e = a.searchDeezer(r.Context(), q)
-		}
-		if e != nil {
-			fail(w, 502, e.Error())
-			return
-		}
+		tracks := []Track{}
 		navSongs := []Song{}
-		if c, err := a.shared(); err == nil {
-			navSongs, _ = a.navSearch(r.Context(), c, source.Title, 0)
+		libraryQuery := q
+		if strings.HasPrefix(q, "http") {
+			// A Deezer URL identifies a recording; use the source metadata
+			// for the accompanying local search instead of the literal URL.
+			libraryQuery = strings.TrimSpace(source.Artist + " " + source.Title)
 		}
-		send(w, 200, map[string]any{"deezer": tracks, "library": navSongs})
+		var libraryError, deezerError string
+		if c, err := a.shared(); err != nil {
+			libraryError = err.Error()
+		} else if results, err := a.navSearch(r.Context(), c, libraryQuery, 0); err != nil {
+			libraryError = err.Error()
+		} else {
+			navSongs = results
+		}
+		if strings.HasPrefix(q, "http") {
+			if track, err := a.track(r.Context(), q); err != nil {
+				deezerError = err.Error()
+			} else {
+				tracks = append(tracks, track)
+			}
+		} else if results, err := a.searchDeezer(r.Context(), q); err != nil {
+			deezerError = err.Error()
+		} else {
+			tracks = results
+		}
+		send(w, 200, map[string]any{"deezer": tracks, "library": navSongs, "libraryError": libraryError, "deezerError": deezerError})
 		return
 	}
 	if m.State == "staged" {
