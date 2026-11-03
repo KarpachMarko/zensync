@@ -9,7 +9,6 @@ import (
 )
 
 const defaultDownloads = 3
-const maxDownloads = 8
 
 func (a *App) downloadLimit() int {
 	var value string
@@ -17,7 +16,7 @@ func (a *App) downloadLimit() int {
 		return defaultDownloads
 	}
 	n, e := strconv.Atoi(value)
-	if e != nil || n < 1 || n > maxDownloads {
+	if e != nil || n < 1 {
 		return defaultDownloads
 	}
 	return n
@@ -28,7 +27,7 @@ func (a *App) downloadSettings(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	if r.Method == "GET" {
-		send(w, 200, map[string]int{"parallelDownloads": a.downloadLimit(), "max": maxDownloads})
+		send(w, 200, map[string]int{"parallelDownloads": a.downloadLimit()})
 		return
 	}
 	if r.Method != "PUT" {
@@ -41,8 +40,8 @@ func (a *App) downloadSettings(w http.ResponseWriter, r *http.Request, u User) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.ParallelDownloads < 1 || in.ParallelDownloads > maxDownloads {
-		fail(w, 400, "Parallel downloads must be between 1 and 8")
+	if in.ParallelDownloads < 1 {
+		fail(w, 400, "Parallel downloads must be a positive whole number")
 		return
 	}
 	_, e := a.DB.Exec("INSERT INTO settings(name,value) VALUES('parallel_downloads',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value", strconv.Itoa(in.ParallelDownloads))

@@ -30,13 +30,21 @@ Compose runs as UID/GID 10001 with a read-only application filesystem, dropped c
 
 Open **Settings → Connections**:
 
-1. **Shared Navidrome server:** enter its base URL and a service account with shared-library access and scan permission. Use a hostname reachable from the container, such as `http://navidrome:4533` on a shared Docker network, or your server's LAN address. `localhost` inside ZenSync refers to the ZenSync container. Saving verifies the account through OpenSubsonic.
+1. **Shared Navidrome server:** enter its base URL and a service account with shared-library access and scan permission. Use a hostname reachable from the container, such as `http://navidrome:4533` on a shared Docker network, or your server's LAN address. `localhost` inside ZenSync refers to the ZenSync container. Complete credentials are verified through OpenSubsonic and saved automatically.
 2. **Your personal Navidrome account:** link the existing Navidrome account that should own imported playlists/favorites. ZenSync never falls back to the service account for those writes. It is fine to use the same account for both roles in a single-user installation, but enter both links explicitly.
 3. **Deezer acquisition:** save the ARL cookie from the Deezer account you use with d-fi. The cookie is verified by d-fi during acquisition. ZenSync uses encrypted storage and creates a mode-0600 per-job config while the downloader runs. It never puts the ARL in command-line arguments or returns it to the browser. Raw downloader output is discarded to avoid leaking credentials; only bounded, validated numeric transfer records and fixed phase names from the adapter are accepted.
 
 After migrations exist, changing the shared server URL is rejected. After a migration has bound its personal account, that account identity cannot be changed underneath it. Passwords can be refreshed for the same account.
 
 No public URL environment variable is needed. A reverse proxy must preserve the original public `Host` header (including port) and browser `Origin`. Mutations validate same-host Origin; authenticated mutations also require a session CSRF token. Forwarded host/proto headers do not establish trust. HTTPS Origin enables Secure cookies behind a TLS-terminating proxy. Cookies are HttpOnly and SameSite=Strict; sessions expire in 24 hours and logout revokes them.
+
+## Settings and invitations
+
+Settings save automatically and show a success or failure toast. Download concurrency defaults to three and has no fixed upper ceiling. Text edits are debounced; updates are serialized so an older response cannot overwrite a newer choice. Connection credentials save as a complete group after validation and verification; passwords/cookies are cleared from the editor after a successful save. Enter the password again when changing a saved Navidrome connection.
+
+In **Settings → Quality**, enable the formats you allow and move them into preference order. FLAC has one lossless option, alongside MP3 320 kbps and MP3 128 kbps. Keep at least one enabled. New requests snapshot this order; changing it does not rewrite existing requests.
+
+In **Settings → Users**, choose **Invite user**, enter a username, and share the generated link manually. It expires after seven days and can be used once. The recipient chooses their own password and then signs in. Invitation tokens are stored as hashes, and administrators can revoke pending invitations. Members begin with approval required for both acquisitions and deletions. Each member's **Permissions** button opens one dialog; its independent permission switches save automatically. The application does not send invitation emails.
 
 ## Make the first migration
 
@@ -80,9 +88,9 @@ Approved tracks waiting for a worker show **Queued**, not Blocked. **Checking** 
 
 Initial XML limits are 32 MiB, 20,000 tracks, 100,000 playlist occurrences, 32 nesting levels and one parser at a time. DTD/entity retrieval is disabled; XML locations are metadata and are never opened as host files. Changed XML is a separate migration. Repeated identical uploads return the owner's existing migration, including after restart.
 
-Downloads have a 15-minute attempt timeout, a 1 GiB per-quality staging cap and disk-headroom checks. Successful staging is removed once Navidrome availability is verified; failed staging is retained for retry. Monitor `/data/staging` on busy installations—automatic age-based failure retention is not implemented. Metadata calls are limited to four per second. Long libraries are processed incrementally with durable results and progress in Activity; acquisition concurrency defaults to three and is configurable in Settings → Downloads (admin only, 1–8). The limit is global across users and persists across restarts. Changes apply immediately to new work; lowering it does not cancel active transfers. Waiting-for-scan, deferred and blocked jobs do not hold idle transfer slots.
+Downloads have a 15-minute attempt timeout, a 1 GiB per-quality staging cap and disk-headroom checks. Successful staging is removed once Navidrome availability is verified; failed staging is retained for retry. Monitor `/data/staging` on busy installations—automatic age-based failure retention is not implemented. Metadata calls are limited to four per second. Long libraries are processed incrementally with durable results and progress in Activity; acquisition concurrency defaults to three and is configurable in Settings → Downloads (admin only, any positive whole number). The limit is global across users and persists across restarts. Changes apply immediately to new work; lowering it does not cancel active transfers. Waiting-for-scan, deferred and blocked jobs do not hold idle transfer slots.
 
-Request and Activity lists currently show the newest 200 records. The migration retains its complete source catalog and offers filtering and incremental display. Account password recovery, account disable/deletion/grant editing, API keys, SSE, Wavio compatibility, automated asset upgrades and artist notifications are not implemented. These are outside the first usable migration path; the broader phase-1 plan remains in [implementation-plan.md](implementation-plan.md).
+Request and Activity lists currently show the newest 200 records. The migration retains its complete source catalog and offers filtering and incremental display. Account password recovery, account disable/deletion, SSE, Wavio compatibility, automated asset upgrades and artist notifications are not implemented. These are outside the first usable migration path; the broader phase-1 plan remains in [implementation-plan.md](implementation-plan.md).
 
 ## Storage, health and backups
 

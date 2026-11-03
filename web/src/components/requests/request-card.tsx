@@ -3,8 +3,8 @@ import { Actions, Row } from "@/components/layout/content";
 import { ActiveProgress, StatusBadge } from "@/components/status";
 import { Caption, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { MusicRequest as Request, User } from "@/lib/types";
+import { DeclineForm } from "./decline-form";
 export function RequestCard({
   request: r,
   user,
@@ -105,28 +105,11 @@ export function RequestCard({
               >
                 Approve
               </Button>
-              <form
-                className="flex gap-2 max-[700px]:flex-wrap"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void decide(
-                    r,
-                    "declined",
-                    String(new FormData(e.currentTarget).get("reason")),
-                  );
-                }}
-              >
-                <Input
-                  name="reason"
-                  aria-label={"Reason for declining " + r.title}
-                  placeholder="Reason for declining"
-                  maxLength={1000}
-                  required
-                />
-                <Button variant="outline" disabled={busy}>
-                  Decline
-                </Button>
-              </form>
+              <DeclineForm
+                title={r.title}
+                busy={busy}
+                onDecline={(reason) => decide(r, "declined", reason)}
+              />
             </>
           )}
           {r.owner === user.id && (

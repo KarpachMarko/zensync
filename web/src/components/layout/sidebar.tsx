@@ -1,5 +1,6 @@
 import { Icon } from "@/components/icons";
 import { AppLink } from "@/components/navigation";
+import { SearchBox } from "@/components/search-box";
 import { Caption } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,7 +10,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
-  SidebarInput,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -21,7 +21,7 @@ import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
 import { searchHref } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Brand } from "./content";
 
@@ -48,7 +48,6 @@ export function WorkspaceSidebar({
   const location = useLocation();
   const { state, isMobile, setOpen, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
-  const [query, setQuery] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   return (
     <Sidebar
@@ -63,21 +62,10 @@ export function WorkspaceSidebar({
             collapsed && "justify-center",
           )}
         >
-          {!collapsed && (
-            <Brand>
-              <span aria-hidden="true">◉</span>
-              <span>ZenSync</span>
-            </Brand>
-          )}
+          {!collapsed && <Brand />}
           <SidebarTrigger
             className="flex size-8 min-h-8 shrink-0 items-center justify-center border-0 p-0"
-            title={
-              isMobile
-                ? "Close navigation"
-                : collapsed
-                  ? "Expand sidebar"
-                  : "Collapse sidebar"
-            }
+            title={collapsed ? "Expand sidebar" : undefined}
             aria-label={
               isMobile
                 ? "Close navigation"
@@ -102,29 +90,17 @@ export function WorkspaceSidebar({
             <Icon name="search" />
           </Button>
         ) : (
-          <form
-            className="flex h-[34px] min-w-0 items-center gap-2 rounded-[5px] border border-solid border-border px-2 text-muted-foreground focus-within:outline-2 focus-within:outline-solid focus-within:outline-primary"
-            role="search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (query.trim()) {
-                navigate(searchHref(query.trim()));
-                setQuery("");
-                setOpenMobile(false);
-              }
+          <SearchBox
+            compact
+            clearOnSubmit
+            inputRef={searchInput}
+            label="Search music"
+            placeholder="Search music…"
+            onSearch={(query) => {
+              navigate(searchHref(query));
+              setOpenMobile(false);
             }}
-          >
-            <Icon name="search" />
-            <SidebarInput
-              className="h-7 min-h-0 max-[700px]:min-h-0 border-0 bg-transparent p-0 text-[13px] focus-visible:outline-none"
-              ref={searchInput}
-              aria-label="Search music"
-              placeholder="Search music…"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              maxLength={500}
-            />
-          </form>
+          />
         )}
       </SidebarHeader>
       <SidebarContent className="px-2.5 pt-3">

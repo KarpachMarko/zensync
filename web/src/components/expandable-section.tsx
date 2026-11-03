@@ -33,7 +33,7 @@ export function ExpandableSection({
       {!compact && <Separator />}
       <CollapsibleTrigger
         className={cn(
-          "flex w-full items-center gap-1.5 border-0 bg-transparent px-0 text-left text-foreground cursor-pointer focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3",
+          "flex w-full items-center gap-1.5 border-0 [font-family:inherit] bg-transparent px-0 text-left text-foreground cursor-pointer focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3",
           compact ? "py-1.5 text-base" : "py-4 text-lg font-semibold",
         )}
       >

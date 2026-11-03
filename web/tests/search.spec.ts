@@ -486,26 +486,30 @@ test("settings tabs support keyboard navigation, URL state, and action toasts", 
   await expect(page.getByRole("tabpanel")).toContainText(
     "Your quality preference",
   );
-  await page.getByLabel("Allowed qualities, in order").selectOption("320");
   await page
-    .getByRole("button", { name: "Save preference", exact: true })
-    .click();
+    .getByRole("switch", { name: "Enable MP3 320 kbps", exact: true })
+    .check();
+  await page
+    .getByRole("switch", { name: "Enable MP3 128 kbps", exact: true })
+    .uncheck();
   const toasts = page.locator("[data-sonner-toast]");
+  await expect.poll(() => qualities.at(-1)).toEqual({ quality: ["320"] });
   await expect(
     toasts.filter({ hasText: "Quality preference saved." }),
   ).toBeVisible();
-  expect(qualities).toEqual([{ quality: ["320"] }]);
   failSave = true;
-  await page
-    .getByRole("button", { name: "Save preference", exact: true })
-    .click();
+  const before = qualities.length;
+  await page.getByRole("switch", { name: "Enable FLAC", exact: true }).check();
   await expect(
     toasts.filter({ hasText: "Cannot save quality right now" }),
   ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveText(
     "Cannot save quality right now",
   );
-  expect(qualities).toHaveLength(2);
+  await expect(
+    page.getByRole("switch", { name: "Enable FLAC", exact: true }),
+  ).not.toBeChecked();
+  expect(qualities).toHaveLength(before + 1);
   await page.reload();
   await expect(quality).toHaveAttribute("aria-selected", "true");
   await expect(toasts).toHaveCount(0);
@@ -532,4 +536,51 @@ test("collapsible sections work with the keyboard", async ({ page }) => {
     existing.getByText("Owned recording", { exact: true }),
   ).toBeVisible();
   await expect(trigger).toBeFocused();
+});
+
+test("sidebar tooltips exist only while collapsed", async ({ page }) => {
+  await musicFixture(page, true);
+  await page.goto("/search?q=Owned");
+  const library = page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Library", exact: true });
+  await library.hover();
+  await expect(library).not.toHaveAttribute("data-slot", "tooltip-trigger");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Collapse sidebar", exact: true })
+    .click();
+  await library.hover();
+  await expect(
+    page.getByRole("tooltip", { name: "Library", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Expand sidebar", exact: true })
+    .click();
+  await library.hover();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+});
+
+test("search form rejects blank input and submits a validated trimmed query", async ({
+  page,
+}) => {
+  const { searches } = await musicFixture(page, true);
+  await page.goto("/search");
+  const input = page.getByLabel("Song, artist, album or Deezer URL", {
+    exact: true,
+  });
+  await input.fill("   ");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Enter a search query.");
+  expect(searches).toHaveLength(0);
+  await input.fill("  Owned recording  ");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("q") === "Owned recording",
+  );
+  await expect(input).toHaveValue("Owned recording");
+  await expect(
+    page.getByText("Owned recording", { exact: true }),
+  ).toBeVisible();
+  expect(searches).toHaveLength(2);
 });

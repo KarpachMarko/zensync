@@ -28,10 +28,11 @@ export function useApiQuery<T>(
 
 // One mutation observer per owning feature. Response types follow the API contract,
 // just as in the transport helper, while request bodies remain unknown at this boundary.
-export function useApiMutation() {
+export function useApiMutation(options: { errorToastId?: string } = {}) {
   const client = useQueryClient();
   const mutation = useMutation({
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      toast.error(error.message, { id: options.errorToastId }),
     onSuccess: async (_data, input) => {
       const area = input.path.split("/")[1];
       if (["session", "setup"].includes(area)) return;

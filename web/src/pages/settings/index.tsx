@@ -78,10 +78,7 @@ export function Settings({
             {user.role === "admin" && (
               <>
                 <Route path="downloads" element={<DownloadSettings />} />
-                <Route
-                  path="users"
-                  element={<Users user={user} reload={reload} />}
-                />
+                <Route path="users" element={<Users />} />
                 <Route
                   path="people"
                   element={<Navigate to="../users" replace />}

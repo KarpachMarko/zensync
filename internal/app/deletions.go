@@ -20,12 +20,13 @@ func (a *App) deletePermission(w http.ResponseWriter, r *http.Request, actor Use
 	uid := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v2/users/"), "/permissions")
 	var in struct {
 		DirectDelete *bool `json:"directDelete"`
+		Direct       *bool `json:"direct"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.DirectDelete == nil {
-		fail(w, 400, "directDelete is required")
+	if in.DirectDelete == nil && in.Direct == nil {
+		fail(w, 400, "A permission is required")
 		return
 	}
 	tx, e := a.DB.Begin()
@@ -46,10 +47,15 @@ func (a *App) deletePermission(w http.ResponseWriter, r *http.Request, actor Use
 		fail(w, 400, "Administrators already have deletion permission")
 		return
 	}
-	if *in.DirectDelete {
-		_, e = tx.Exec("INSERT OR IGNORE INTO delete_permissions VALUES(?)", uid)
-	} else {
-		_, e = tx.Exec("DELETE FROM delete_permissions WHERE user_id=?", uid)
+	if in.Direct != nil {
+		_, e = tx.Exec("UPDATE users SET direct=? WHERE id=?", *in.Direct, uid)
+	}
+	if e == nil && in.DirectDelete != nil {
+		if *in.DirectDelete {
+			_, e = tx.Exec("INSERT OR IGNORE INTO delete_permissions VALUES(?)", uid)
+		} else {
+			_, e = tx.Exec("DELETE FROM delete_permissions WHERE user_id=?", uid)
+		}
 	}
 	if e == nil {
 		e = audit(tx, uid, actor.ID, "permission.delete.updated", mustJSON(in))

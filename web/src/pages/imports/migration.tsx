@@ -1,5 +1,6 @@
 import { ExpandableSection } from "@/components/expandable-section";
 import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
+import { MigrationChoices } from "@/components/imports/migration-choices";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
 import {
@@ -137,45 +138,12 @@ export function MigrationPage() {
             <span>{m.report.missing} missing references</span>
             <span>{m.report.excluded} non-music records excluded</span>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              void action("commit", {
-                playlists: f.getAll("playlist"),
-                favorites: f.get("favorites") === "on",
-              });
-            }}
-          >
-            {playlists.map((p) => (
-              <CheckboxField key={p.id}>
-                <Checkbox
-                  name="playlist"
-                  value={p.id}
-                  defaultChecked={p.selected}
-                  disabled={p.metadata.system || p.metadata.folder}
-                />
-                <span>
-                  {p.name}{" "}
-                  <Caption>
-                    {p.entries.length} entries
-                    {p.metadata.folder
-                      ? " / Folder"
-                      : p.metadata.system
-                        ? " / System playlist"
-                        : p.metadata.smart
-                          ? " / Smart playlist snapshot"
-                          : ""}
-                  </Caption>
-                </span>
-              </CheckboxField>
-            ))}
-            <CheckboxField>
-              <Checkbox name="favorites" defaultChecked /> Import positive
-              favorite/loved flags when songs become available
-            </CheckboxField>
-            <Button disabled={busy}>Commit migration</Button>
-          </form>
+          <MigrationChoices
+            playlists={playlists}
+            busy={busy}
+            onCommit={(values) => action("commit", values)}
+          />
+
           {m.report.warnings.length > 0 && (
             <ExpandableSection
               title={`Import warnings (${m.report.warnings.length})`}
@@ -368,9 +336,9 @@ export function MigrationPage() {
                     )
                     .every((s) => selected.has(s.id))
                 }
-                onChange={(e) =>
+                onCheckedChange={(checked) =>
                   setSelected(
-                    e.target.checked
+                    checked === true
                       ? new Set(
                           shown
                             .filter(
@@ -401,9 +369,9 @@ export function MigrationPage() {
                   !s.candidate || !!s.serverId || s.deferred || !!s.requestId
                 }
                 checked={selected.has(s.id)}
-                onChange={(e) => {
+                onCheckedChange={(checked) => {
                   const next = new Set(selected);
-                  e.target.checked ? next.add(s.id) : next.delete(s.id);
+                  checked === true ? next.add(s.id) : next.delete(s.id);
                   setSelected(next);
                 }}
               />

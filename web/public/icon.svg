@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <title>ZenSync</title>
+  <defs>
+    <linearGradient id="slate" x1="43" y1="32" x2="170" y2="183" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#41516c"/>
+      <stop offset="1" stop-color="#1c2940"/>
+    </linearGradient>
+    <linearGradient id="blush" x1="195" y1="48" x2="99" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f3f2f8"/>
+      <stop offset=".5" stop-color="#ecc7d9"/>
+      <stop offset="1" stop-color="#c995b2"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#slate)" d="M174 18C139 1 99 8 68 28C11 62-9 128 24 180C33 194 45 207 61 218C29 176 38 135 80 124C102 118 122 128 149 118C194 102 200 56 174 18Z"/>
+  <path fill="url(#blush)" d="M187 25C217 44 240 79 240 119C240 183 190 232 126 232C99 232 80 224 69 213C38 175 52 137 88 135C112 132 131 141 158 128C204 108 217 58 187 25Z"/>
+  <path fill="#f3f2f8" d="M112 48L146 41C149 40 152 42 152 45V91C152 99 145 105 137 105C130 105 126 101 126 96C126 88 135 82 145 84V61L115 67V100C115 108 108 114 100 114C93 114 89 110 89 105C89 97 98 91 108 93V53C108 50 109 49 112 48Z"/>
+  <path fill="#41516c" d="M92 160C116 145 138 161 165 153C187 147 204 133 217 115C210 142 191 160 169 167C141 176 117 159 92 160Z"/>
+  <path fill="#41516c" d="M100 183C121 172 140 189 165 183C184 179 199 169 210 160C201 179 186 191 167 195C141 201 121 182 100 183Z"/>
+</svg>

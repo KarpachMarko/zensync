@@ -1,7 +1,7 @@
 import { api, setCSRF } from "@/lib/api";
+import type { CredentialsInput } from "@/lib/form-schemas";
 import type { User } from "@/lib/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useApiMutation } from "./use-api";
@@ -29,9 +29,7 @@ export function useSession() {
   async function load() {
     await result.refetch({ throwOnError: true });
   }
-  async function login(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const credentials = Object.fromEntries(new FormData(event.currentTarget));
+  async function login(credentials: CredentialsInput) {
     setError("");
     toast.dismiss();
     try {

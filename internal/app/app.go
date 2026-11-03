@@ -98,7 +98,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 3 {
+		if e == nil && version > 4 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -197,6 +197,14 @@ func (a *App) Handler() http.Handler {
 			a.login(w, r)
 			return
 		}
+		if r.URL.Path == "/api/v2/invitations/accept" && r.Method == "POST" {
+			a.acceptInvitation(w, r)
+			return
+		}
+		if r.URL.Path == "/api/v2/invitations/preview" && r.Method == "GET" {
+			a.previewInvitation(w, r)
+			return
+		}
 		u, csrf, e := a.authenticate(r)
 		if e != nil {
 			fail(w, 401, "Sign in required")
@@ -234,6 +242,8 @@ func (a *App) Handler() http.Handler {
 			a.decide(w, r, u)
 		case r.URL.Path == "/api/v2/activity" && r.Method == "GET":
 			a.activity(w, u)
+		case r.URL.Path == "/api/v2/invitations" || strings.HasPrefix(r.URL.Path, "/api/v2/invitations/"):
+			a.invitations(w, r, u)
 		case r.URL.Path == "/api/v2/users" && u.Role == "admin" && r.Method == "GET":
 			a.users(w)
 		case r.URL.Path == "/api/v2/users" && u.Role == "admin" && r.Method == "POST":

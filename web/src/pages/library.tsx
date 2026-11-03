@@ -1,19 +1,15 @@
-import { SearchField } from "@/components/forms";
-import { SearchForm } from "@/components/layout/content";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { AppLink } from "@/components/navigation";
+import { SearchBox } from "@/components/search-box";
 import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { LibrarySong } from "@/lib/api";
 import { api } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 export function Library({ canDelete }: { canDelete: boolean }) {
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
   const result = useInfiniteQuery({
     queryKey: ["api", "library"],
     initialPageParam: 0,
@@ -43,18 +39,12 @@ export function Library({ canDelete }: { canDelete: boolean }) {
         Available music from your shared Navidrome library. Deleting a song
         removes it for everyone.
       </Text>
-      <SearchForm
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (query.trim()) navigate(searchHref(query.trim()));
-        }}
-      >
-        <SearchField>
-          Search music
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} />
-        </SearchField>
-        <Button disabled={busy}>Search</Button>
-      </SearchForm>
+      <SearchBox
+        label="Search music"
+        disabled={busy}
+        onSearch={(query) => navigate(searchHref(query))}
+      />
+
       {error && (
         <Text role="alert">
           {error}{" "}

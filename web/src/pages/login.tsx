@@ -1,9 +1,9 @@
-import { FieldLabel } from "@/components/forms";
 import { AuthLayout, Brand } from "@/components/layout/content";
 import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import React from "react";
+import { useAppForm } from "@/hooks/use-app-form";
+import { credentialsSchema, type CredentialsInput } from "@/lib/form-schemas";
+
 export function Login({
   setup,
   error,
@@ -11,11 +11,17 @@ export function Login({
 }: {
   setup: boolean;
   error: string;
-  onSubmit: React.FormEventHandler<HTMLFormElement>;
+  onSubmit: (credentials: CredentialsInput) => Promise<void>;
 }) {
+  const form = useAppForm({
+    defaultValues: { username: "", password: "" },
+    validators: { onSubmit: credentialsSchema(setup) },
+    onSubmit: async ({ value }) =>
+      onSubmit({ ...value, username: value.username.trim() }),
+  });
   return (
     <AuthLayout>
-      <Brand>◉ ZenSync</Brand>
+      <Brand />
       <PageHeading className="mt-10">
         {setup ? "Welcome to ZenSync" : "Your music, together."}
       </PageHeading>
@@ -24,26 +30,36 @@ export function Login({
           ? "Create the administrator account to start migrating your music."
           : "Sign in to your shared music workspace."}
       </Text>
-      <form className="mt-[30px]" onSubmit={onSubmit}>
-        <FieldLabel>
-          Username
-          <Input name="username" autoComplete="username" required />
-        </FieldLabel>
-        <FieldLabel>
-          Password
-          <Input
-            name="password"
-            type="password"
-            autoComplete={setup ? "new-password" : "current-password"}
-            minLength={setup ? 12 : undefined}
-            maxLength={72}
-            required
-          />
-        </FieldLabel>
+      <form
+        className="mt-[30px]"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit();
+        }}
+      >
+        <form.AppField name="username">
+          {(field) => (
+            <field.TextField label="Username" autoComplete="username" />
+          )}
+        </form.AppField>
+        <form.AppField name="password">
+          {(field) => (
+            <field.TextField
+              label="Password"
+              type="password"
+              autoComplete={setup ? "new-password" : "current-password"}
+            />
+          )}
+        </form.AppField>
         {error && <Text role="alert">{error}</Text>}
-        <Button className="w-full">
-          {setup ? "Create administrator" : "Sign in"}
-        </Button>
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+          {(submitting) => (
+            <Button className="w-full" disabled={submitting}>
+              {setup ? "Create administrator" : "Sign in"}
+            </Button>
+          )}
+        </form.Subscribe>
       </form>
     </AuthLayout>
   );

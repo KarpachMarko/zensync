@@ -14,36 +14,7 @@ export function FieldLabel({ className, ...props }: ComponentProps<"label">) {
   );
 }
 
-export function Checkbox({
-  className,
-  ...props
-}: Omit<ComponentProps<"input">, "type">) {
-  return (
-    <input
-      type="checkbox"
-      className={cn(
-        "min-w-0 max-w-full rounded-[5px] border border-solid border-[#526079] bg-background px-2.5 py-2 text-foreground accent-primary [font:inherit] focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3 max-[700px]:min-h-11",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
-export function NativeSelect({
-  className,
-  ...props
-}: ComponentProps<"select">) {
-  return (
-    <select
-      className={cn(
-        "w-80 min-w-0 max-w-full rounded-[5px] border border-solid border-[#526079] bg-background px-2.5 py-2 text-foreground [font:inherit] focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3 max-[700px]:min-h-11",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+export { Checkbox } from "@/components/ui/checkbox";
 
 export function CheckboxField({
   className,

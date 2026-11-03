@@ -6,6 +6,7 @@ import { Activity } from "@/pages/activity";
 import { Imports } from "@/pages/imports";
 import { MigrationPage } from "@/pages/imports/migration";
 import { NewImport } from "@/pages/imports/new-import";
+import { AcceptInvite } from "@/pages/invite";
 import { Library } from "@/pages/library";
 import { Login } from "@/pages/login";
 import { Requests } from "@/pages/requests";
@@ -29,6 +30,8 @@ export function App() {
         <Text>Opening your workspace…</Text>
       </AuthLayout>
     );
+  if (location.pathname === "/invite")
+    return <AcceptInvite signedIn={!!user} onSignOut={signOut} />;
   if (!user) return <Login setup={setup} error={error} onSubmit={login} />;
   return (
     <AppShell user={user} onSignOut={signOut} onError={setError}>

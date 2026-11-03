@@ -6,6 +6,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import "sonner/dist/styles.css";
 
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
@@ -32,7 +33,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           success: "text-[#a2d5bd]",
           error: "text-[#ffb5bb]",
           closeButton:
-            "absolute top-2 right-2 border-0 bg-transparent p-1 text-muted-foreground cursor-pointer",
+            "absolute top-2 right-2 rounded-md border-0 bg-transparent! p-1 text-muted-foreground cursor-pointer hover:bg-muted! focus-visible:outline-2 focus-visible:outline-primary",
           actionButton:
             "ml-auto rounded-md border-0 bg-primary px-3 py-1 text-primary-foreground cursor-pointer",
           cancelButton:

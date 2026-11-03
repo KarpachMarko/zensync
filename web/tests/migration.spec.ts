@@ -1,5 +1,41 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
+
+async function inviteMember(page: Page, username: string, password: string) {
+  await page.getByRole("button", { name: "Invite user", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite user", exact: true });
+  await dialog.getByLabel("Username", { exact: true }).fill(username);
+  await dialog
+    .getByRole("button", { name: "Create invitation", exact: true })
+    .click();
+  const link = await page
+    .getByLabel("Invitation link", { exact: true })
+    .inputValue();
+  const browser = page.context().browser();
+  if (!browser) throw new Error("Browser required for invitation acceptance");
+  const context = await browser.newContext();
+  try {
+    const recipient = await context.newPage();
+    await recipient.goto(link);
+    await recipient.getByLabel("Your password", { exact: true }).fill(password);
+    await recipient
+      .getByRole("button", { name: "Accept invitation", exact: true })
+      .click();
+    await expect(
+      recipient.getByRole("heading", {
+        name: "Your account is ready",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await context.close();
+  }
+  await page
+    .getByRole("dialog", { name: "Invitation ready", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await page.reload();
+}
 
 test("first-access setup, real XML preview, review and reload-safe migration", async ({
   page,
@@ -270,10 +306,8 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByLabel("Parallel downloads", { exact: true }),
   ).toHaveValue("3");
-  await page.getByLabel("Parallel downloads", { exact: true }).fill("5");
-  await page
-    .getByRole("button", { name: "Save download limit", exact: true })
-    .click();
+  await page.getByLabel("Parallel downloads", { exact: true }).fill("12");
+  await page.getByLabel("Parallel downloads", { exact: true }).blur();
   await expect(
     page
       .locator("[data-sonner-toast]")
@@ -282,7 +316,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.reload();
   await expect(
     page.getByLabel("Parallel downloads", { exact: true }),
-  ).toHaveValue("5");
+  ).toHaveValue("12");
   await page.goto("/settings/connections");
   await expect(
     page.getByRole("heading", { name: "Your personal Navidrome account" }),
@@ -501,15 +535,24 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(page).toHaveURL(/settings\/downloads$/);
 
   await page.getByRole("tab", { name: "Users", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("ui-member");
-  await page.getByLabel("Initial password").fill("local-ui-test-password");
-  await page.getByRole("button", { name: "Create user" }).click();
+  await inviteMember(page, "ui-member", "local-ui-test-password");
   const member = page
     .locator("[data-slot=list-row]")
     .filter({ hasText: "ui-member" });
   await expect(member).toBeVisible();
+  await expect(member.getByRole("switch")).toHaveCount(0);
   await member
-    .getByRole("checkbox", { name: "Allow adding music without approval" })
+    .getByRole("button", {
+      name: "Manage permissions for ui-member",
+      exact: true,
+    })
+    .click();
+  let permissions = page.getByRole("dialog", {
+    name: "Permissions for ui-member",
+    exact: true,
+  });
+  await permissions
+    .getByRole("switch", { name: "Add music without approval", exact: true })
     .check();
   await expect(
     page
@@ -517,19 +560,31 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
       .filter({ hasText: "Permissions saved for ui-member." }),
   ).toBeVisible();
   await page.reload();
+  await member
+    .getByRole("button", {
+      name: "Manage permissions for ui-member",
+      exact: true,
+    })
+    .click();
+  permissions = page.getByRole("dialog", {
+    name: "Permissions for ui-member",
+    exact: true,
+  });
   await expect(
-    member.getByRole("checkbox", {
-      name: "Allow adding music without approval",
+    permissions.getByRole("switch", {
+      name: "Add music without approval",
+      exact: true,
     }),
   ).toBeChecked();
-  await member
-    .getByRole("checkbox", { name: "Allow adding music without approval" })
+  await permissions
+    .getByRole("switch", { name: "Add music without approval", exact: true })
     .uncheck();
   await expect(
     page
       .locator("[data-sonner-toast]")
       .filter({ hasText: "Permissions saved for ui-member." }),
   ).toBeVisible();
+  await permissions.getByRole("button", { name: "Close", exact: true }).click();
   // Deletion uses a distinct request, explicit shared-library confirmation,
   // and the same approval inbox. Backend deletion is exercised in Go tests.
   await page.route("**/api/v2/library?**", (route) =>
@@ -614,36 +669,71 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   ).toBeVisible();
 
   await page.goto("/settings/people");
-  await page.getByLabel("Username", { exact: true }).fill("delete-member");
-  await page.getByLabel("Initial password").fill("local-member-password");
-  await page
-    .getByLabel("Allow deleting music without approval", { exact: true })
-    .last()
-    .check();
-  await page.getByRole("button", { name: "Create user" }).click();
+  await inviteMember(page, "delete-member", "local-member-password");
   const memberRow = page
     .locator("[data-slot=list-row]")
     .filter({ hasText: "delete-member" });
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
+  let deletePermissions = page.getByRole("dialog", {
+    name: "Permissions for delete-member",
+    exact: true,
+  });
+  await deletePermissions
+    .getByRole("switch", { name: "Delete music without approval", exact: true })
+    .check();
   await expect(
-    memberRow.getByRole("checkbox", {
-      name: "Allow deleting music without approval",
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for delete-member." }),
+  ).toBeVisible();
+  await page.reload();
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
+  deletePermissions = page.getByRole("dialog", {
+    name: "Permissions for delete-member",
+    exact: true,
+  });
+  await expect(
+    deletePermissions.getByRole("switch", {
+      name: "Delete music without approval",
+      exact: true,
     }),
   ).toBeChecked();
-  await memberRow
-    .getByRole("checkbox", { name: "Allow deleting music without approval" })
+  await deletePermissions
+    .getByRole("switch", { name: "Delete music without approval", exact: true })
     .uncheck();
   await expect(
     page
       .locator("[data-sonner-toast]")
-      .filter({ hasText: "Deletion permission updated." }),
+      .filter({ hasText: "Permissions saved for delete-member." }),
   ).toBeVisible();
   await page.reload();
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
   await expect(
-    memberRow.getByRole("checkbox", {
-      name: "Allow deleting music without approval",
-    }),
+    page
+      .getByRole("dialog", {
+        name: "Permissions for delete-member",
+        exact: true,
+      })
+      .getByRole("switch", {
+        name: "Delete music without approval",
+        exact: true,
+      }),
   ).not.toBeChecked();
-
   await page.goto("/settings/api");
   await page.getByRole("button", { name: "Create deletion API key" }).click();
   await expect(

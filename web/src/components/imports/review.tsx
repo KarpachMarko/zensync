@@ -1,6 +1,6 @@
-import { SearchField } from "@/components/forms";
-import { Actions, Row, SearchForm } from "@/components/layout/content";
+import { Actions, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
+import { SearchBox } from "@/components/search-box";
 import { ActiveProgress, StatusBadge } from "@/components/status";
 import {
   Caption,
@@ -10,12 +10,11 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
 import { label, time } from "@/lib/api";
 import { status, type Migration, type Source } from "@/lib/migration";
-import React, { useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 export function Review({
   source: s,
@@ -27,18 +26,14 @@ export function Review({
   reload: () => Promise<void>;
 }) {
   const { api } = useApiMutation();
-  const [query, setQuery] = useState(
-      s.metadata.artist + " " + s.metadata.title,
-    ),
-    [candidates, setCandidates] = useState<{
+  const [candidates, setCandidates] = useState<{
       deezer: Track[];
       library: LibrarySong[];
     }>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const prefix = "/imports/" + m.id + "/songs/" + s.id;
-  async function find(e: React.FormEvent) {
-    e.preventDefault();
+  async function find(query: string) {
     setBusy(true);
     setError("");
     try {
@@ -135,18 +130,14 @@ export function Review({
         Compare album, version and duration. Resolving a match does not request
         a new download. You can also paste a Deezer song or share URL.
       </Text>
-      <SearchForm onSubmit={find}>
-        <SearchField>
-          Search or Deezer song URL
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            maxLength={500}
-            required
-          />
-        </SearchField>
-        <Button disabled={busy}>Find candidates</Button>
-      </SearchForm>
+      <SearchBox
+        label="Search or Deezer song URL"
+        value={s.metadata.artist + " " + s.metadata.title}
+        disabled={busy}
+        buttonLabel="Find candidates"
+        onSearch={find}
+      />
+
       {candidates && (
         <>
           <Subheading>Already in Navidrome</Subheading>

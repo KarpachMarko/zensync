@@ -1,3 +1,4 @@
+import { AppIcon } from "@/components/app-icon";
 import { PageTitle, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { StatusBadge } from "@/components/status";
@@ -31,12 +32,7 @@ export function Imports() {
         <Text>Loading migrations…</Text>
       ) : rows.length === 0 ? (
         <section className="max-w-[700px] px-5 py-[60px] max-[700px]:px-0 max-[700px]:py-[35px] [&_h2]:text-[25px]">
-          <div
-            className="text-[86px] text-primary leading-[1]"
-            aria-hidden="true"
-          >
-            ◉
-          </div>
+          <AppIcon className="size-20" />
           <SectionHeading>Your collection has a new home.</SectionHeading>
           <Text>
             Export your library from Apple Music as XML. ZenSync keeps every

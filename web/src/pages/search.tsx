@@ -1,8 +1,8 @@
-import { SearchField } from "@/components/forms";
-import { Actions, Row, SearchForm } from "@/components/layout/content";
+import { Actions, Row } from "@/components/layout/content";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { SearchSection } from "@/components/music/search-section";
 import { AppLink } from "@/components/navigation";
+import { SearchBox } from "@/components/search-box";
 import {
   Caption,
   PageHeading,
@@ -10,14 +10,13 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
 import { api, label, requestKey, time } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 type FoundAlbum = {
   id: number;
@@ -36,8 +35,6 @@ export function Search({ canDelete }: { canDelete: boolean }) {
   );
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
-  const [query, setQuery] = useState(urlQuery);
-  useEffect(() => setQuery(urlQuery), [urlQuery]);
   const searched = !!urlQuery.trim();
   const [albumRequested, setAlbumRequested] = useState<Set<number>>(new Set());
   const [requested, setRequested] = useState<Set<number>>(new Set());
@@ -90,7 +87,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
   async function loadMoreLibrary() {
     await libraryQuery.fetchNextPage();
   }
-  async function search() {
+  async function search(query: string) {
     setError("");
     if (urlQuery === query.trim()) {
       await Promise.all([libraryQuery.refetch(), candidateQuery.refetch()]);
@@ -138,24 +135,14 @@ export function Search({ canDelete }: { canDelete: boolean }) {
       <Text>
         Find music in your library and on Deezer, or paste a song or album link.
       </Text>
-      <SearchForm
-        onSubmit={(e) => {
-          e.preventDefault();
-          void search();
-        }}
-      >
-        <SearchField>
-          Song, artist, album or Deezer URL
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Song, artist, album name or Deezer link"
-            maxLength={500}
-            required
-          />
-        </SearchField>
-        <Button disabled={busy}>Search</Button>
-      </SearchForm>
+      <SearchBox
+        label="Song, artist, album or Deezer URL"
+        placeholder="Song, artist, album name or Deezer link"
+        value={urlQuery}
+        disabled={busy}
+        onSearch={search}
+      />
+
       <div
         className="mb-5 flex w-fit rounded-md border border-solid border-border"
         role="group"

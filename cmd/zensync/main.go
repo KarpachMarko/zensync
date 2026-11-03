@@ -69,6 +69,10 @@ func main() {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
+		if r.URL.Path == "/icon.svg" {
+			files.ServeHTTP(w, r)
+			return
+		}
 		http.ServeFile(w, r, filepath.Join(assets, "index.html"))
 	})
 	workerCtx, workerStop := context.WithCancel(context.Background())

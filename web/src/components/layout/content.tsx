@@ -1,3 +1,4 @@
+import { AppIcon } from "@/components/app-icon";
 import { cn } from "@/lib/utils";
 import { Slot } from "radix-ui";
 import type { ComponentProps } from "react";
@@ -75,7 +76,11 @@ export function Notice({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-export function Brand({ className, ...props }: ComponentProps<"div">) {
+export function Brand({
+  className,
+  children = "ZenSync",
+  ...props
+}: ComponentProps<"div">) {
   return (
     <div
       className={cn(
@@ -83,7 +88,10 @@ export function Brand({ className, ...props }: ComponentProps<"div">) {
         className,
       )}
       {...props}
-    />
+    >
+      <AppIcon />
+      {children}
+    </div>
   );
 }
 
