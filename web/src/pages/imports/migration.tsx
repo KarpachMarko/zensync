@@ -1,18 +1,11 @@
-import { DeleteMigration } from "@/components/imports/delete-migration";
 import { ExpandableSection } from "@/components/expandable-section";
-import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
-import { MigrationStatusFilter } from "@/components/imports/migration-status-filter";
+import { Checkbox, CheckboxField } from "@/components/forms";
+import { MigrationFilters } from "@/components/imports/migration-filters";
+import { MigrationHeader } from "@/components/imports/migration-header";
 import { MigrationChoices } from "@/components/imports/migration-choices";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
-import {
-  Actions,
-  FieldGrid,
-  Notice,
-  PageTitle,
-  Row,
-  SearchBar,
-} from "@/components/layout/content";
+import { Actions, FieldGrid } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { StatusBadge } from "@/components/status";
 import {
@@ -22,8 +15,6 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
@@ -125,31 +116,20 @@ export function MigrationPage() {
     .filter((song) => selected.has(song.id) && song.candidate && !song.serverId && !song.deferred && !song.requestId)
     .map((song) => [song.id, song]),
   ).values()];
-  const available = songs.filter((s) => s.serverId).length;
   return (
     <>
       <div className="flex gap-[15px] mb-[22px] text-[13px] text-muted-foreground">
         <AppLink to="/imports">Imports</AppLink>
         {playlistId && <AppLink to={"/imports/" + id}>{m.name}</AppLink>}
       </div>
-      <PageTitle>
-        <PageHeading tabIndex={-1}>
-          {currentPlaylist?.name || m.name}
-        </PageHeading>
-        <Actions>
-          <StatusBadge state={m.state} />
-          <DeleteMigration
-            migration={m}
-            onDeleted={() => navigate("/imports", { replace: true })}
-          />
-        </Actions>
-      </PageTitle>
-      {error && <Text role="alert">{error}</Text>}
-      {m.error && (
-        <Notice>
-          {m.error} <AppLink to="/activity">Open Activity</AppLink>
-        </Notice>
-      )}
+      <MigrationHeader
+        detail={detail}
+        currentPlaylist={currentPlaylist}
+        errors={[actionError, result.error?.message]}
+        busy={busy}
+        onAction={action}
+        onDeleted={() => navigate("/imports", { replace: true })}
+      />
       {m.state === "staged" ? (
         <>
           <Text>
@@ -184,89 +164,6 @@ export function MigrationPage() {
         </>
       ) : (
         <>
-          <div className="my-7 flex items-center gap-5 max-[700px]:flex-wrap [&_strong]:text-[25px] [&_span]:text-sm [&_span]:font-normal [&_span]:text-muted-foreground">
-            <strong>
-              {available} <span>of {songs.length} songs available</span>
-            </strong>
-            <Progress
-              aria-label="Migration availability"
-              max={Math.max(1, songs.length)}
-              value={available}
-              className="h-[7px] w-[200px]"
-              indicatorClassName="bg-[#a2d5bd]"
-            />
-          </div>
-          {m.state === "open" && matchTask?.state === "failed" && (
-            <Notice role="alert">
-              Match scan failed. Check your connections, then use Scan again.
-            </Notice>
-          )}
-          {m.state === "open" && scanning && (
-            <Notice role="status">
-              {matchTask?.state === "queued"
-                ? "Match scan queued. It will start automatically."
-                : matchTask?.message || "Scanning Navidrome and Deezer…"}
-            </Notice>
-          )}
-          {m.state === "open" ? (
-            <Actions className="my-[22px] mx-0">
-              <Button
-                disabled={busy || scanning}
-                onClick={() => void action("match")}
-              >
-                {scanning ? "Scanning…" : "Scan again"}
-              </Button>
-              <Button disabled={busy} onClick={() => void action("publish")}>
-                {m.targetUser
-                  ? "Publish available songs"
-                  : "Publish to Navidrome"}
-              </Button>
-              <AppLink to="/settings/connections">Connections</AppLink>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Finish this migration? ZenSync will stop all playlist and favorite updates. Pending acquisitions will continue and unresolved entries will remain in the report. This cannot be undone.",
-                    )
-                  )
-                    void action("handover");
-                }}
-              >
-                Finish migration
-              </Button>
-            </Actions>
-          ) : (
-            <Notice>
-              Navidrome now owns these collections. Pending acquisitions
-              continue, but will not change your playlists or favorites.
-            </Notice>
-          )}
-          {!currentPlaylist && (
-            <section className="mb-8">
-              <SectionHeading>Migration playlists</SectionHeading>
-              {playlists
-                .filter((p) => p.selected)
-                .map((p) => (
-                  <Row asChild key={p.id}>
-                    <AppLink
-                      className="max-[700px]:items-start no-underline"
-                      to={"/imports/" + id + "/playlists/" + p.id}
-                    >
-                      <div>
-                        <strong>{p.name}</strong>
-                        <Caption>
-                          {p.entries.length} ordered entries
-                          {p.remoteId ? " / Published" : " / Not published yet"}
-                        </Caption>
-                      </div>
-                      <StatusBadge state={p.state} />
-                    </AppLink>
-                  </Row>
-                ))}
-            </section>
-          )}
           {currentPlaylist && (
             <>
               <Text>
@@ -274,9 +171,6 @@ export function MigrationPage() {
                 retain their positions. Unavailable entries are kept here until
                 they can be filled.
               </Text>
-              {currentPlaylist.error && (
-                <Notice>{currentPlaylist.error}</Notice>
-              )}
               {currentPlaylist.state === "paused" && (
                 <section className="my-6 rounded-lg border border-solid border-[#526079] p-5">
                   <SectionHeading>Review external changes</SectionHeading>
@@ -335,58 +229,27 @@ export function MigrationPage() {
           <SectionHeading>
             {currentPlaylist ? "Ordered songs" : "Complete catalog"}
           </SectionHeading>
-          <MigrationStatusFilter
+          <MigrationFilters
             counts={statusCounts}
             hidden={hiddenStatuses}
-            onChange={(values) => {
+            onStatusesChange={(values) => {
               void setHiddenStatuses(values);
               setSelected(new Set());
               setLimit(100);
             }}
+            query={filter}
+            onQueryChange={(value) => {
+              setFilter(value);
+              setLimit(100);
+            }}
+            shown={shown.length}
+            total={shownSongs.length}
+            selected={selectedVisible.length}
+            busy={busy}
+            onRequest={() => void acquireSelected()}
           />
-          <Text className="my-2 text-xs" role="status">
-            Showing {shown.length} of {shownSongs.length} songs.
-            {hiddenStatuses.includes("Available") && (statusCounts.get("Available") ?? 0) > 0
-              ? " Available songs are hidden."
-              : ""}
-          </Text>
           {shown.length === 0 && (
             <Text>No songs match these filters. Change the statuses or clear your search.</Text>
-          )}
-          <SearchBar>
-            <SearchField>
-              Filter songs
-              <Input
-                value={filter}
-                onChange={(e) => {
-                  setFilter(e.target.value);
-                  setLimit(100);
-                }}
-                placeholder="Title, artist or status"
-              />
-            </SearchField>
-            <Button
-              disabled={busy || selectedVisible.length === 0}
-              onClick={() => void acquireSelected()}
-            >
-              Request selected ({selectedVisible.length})
-            </Button>
-          </SearchBar>
-          <Text className="text-[13px]">
-            Matching runs automatically after commit. Available songs already
-            exist in Navidrome. Ready to request songs have a matched recording;
-            select them and use Request selected. For Review match, compare
-            recordings before choosing one. For Unresolved, use Find recording
-            to search or paste a Deezer song URL. Publish available songs to
-            create or update your selected playlists. Downloads require an
-            explicit request and any required approval.
-          </Text>
-          {m.state === "open" && (
-            <Text className="text-[13px]">
-              Skip for now pauses new acquisition for a song and keeps its
-              playlist entry. Resume it when you are ready. Skipping does not
-              cancel a running download.
-            </Text>
           )}
           <div className="flex min-h-[52px] items-center justify-between gap-5 border-b border-solid border-sidebar-border py-2.5 text-xs text-muted-foreground [&_label]:m-0">
             <CheckboxField>

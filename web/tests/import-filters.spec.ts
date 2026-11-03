@@ -8,7 +8,8 @@ const source = (id: string, extra: Partial<Source> = {}): Source => ({
 
 test("migration status filters hide available by default, persist and preserve playlist positions", async ({ page }) => {
   const detail: Detail = {
-    migration: { id: "migration", name: "Migration", state: "open", favorites: false, targetUser: "", error: "", report: { songs: 5, playlists: 1, unplaylisted: 0, missing: 0, excluded: 0, warnings: [] } },
+    migration: { id: "migration", name: "Migration", state: "open", favorites: false, targetUser: "", error: "Navidrome unavailable", report: { songs: 5, playlists: 1, unplaylisted: 0, missing: 0, excluded: 0, warnings: [] } },
+    matchTask: { state: "failed", message: "Navidrome unavailable" },
     songs: [
       source("Available song", { serverId: "nav" }),
       source("Ready song", { candidate: { id: 42, title: "Recording", title_version: "", artist: { name: "Artist" }, album: { title: "Album" }, duration: 180, link: "https://www.deezer.com/track/42" } }),
@@ -30,7 +31,30 @@ test("migration status filters hide available by default, persist and preserve p
     }
     throw new Error("Unexpected API: " + path);
   });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/imports/migration");
+  const header = page.locator('[data-slot="migration-header"]');
+  const playlistCard = header.getByRole("region", { name: "Playlists (1)", exact: true });
+  await expect(playlistCard.getByRole("link", { name: /Playlist/ })).toBeVisible();
+  await expect(header.getByRole("alert")).toHaveCount(1);
+  await expect(header.getByText("Navidrome unavailable", { exact: true })).toHaveCount(1);
+  await expect(header.getByRole("alert")).toContainText("Check your connections, then use Scan again.");
+  const headingBounds = await header.getByRole("heading", { name: "Migration", exact: true }).boundingBox();
+  const cardBounds = await playlistCard.boundingBox();
+  expect(cardBounds?.x).toBeGreaterThan((headingBounds?.x ?? 0) + (headingBounds?.width ?? 0));
+  const filterGroup = page.getByRole("region", { name: "Song filters", exact: true });
+  await expect(filterGroup.getByLabel("Filter songs", { exact: true })).toBeVisible();
+  const inputBounds = await filterGroup.getByLabel("Filter songs", { exact: true }).boundingBox();
+  const togglesBounds = await filterGroup.getByRole("group", { name: "Show statuses", exact: true }).boundingBox();
+  expect((togglesBounds?.y ?? 0) - ((inputBounds?.y ?? 0) + (inputBounds?.height ?? 0))).toBeLessThan(30);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  const info = filterGroup.getByRole("button", { name: "About migration statuses", exact: true });
+  await info.hover();
+  await expect(page.getByRole("tooltip")).toContainText("Matching scans every imported song.");
+  await expect(page.getByRole("tooltip")).toContainText("Skipping does not cancel a running download.");
+  await info.focus();
+  await info.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   const rows = page.locator('[data-slot="import-song"]');
   const filters = page.getByRole("group", { name: "Show statuses", exact: true });
   await expect(filters.getByRole("checkbox", { name: "Available (1)", exact: true })).not.toBeChecked();
@@ -74,4 +98,12 @@ test("migration status filters hide available by default, persist and preserve p
   await page.getByRole("checkbox", { name: "Select ready songs", exact: true }).check();
   await page.getByRole("button", { name: "Request selected (1)", exact: true }).click();
   expect(requested).toEqual(["/api/v2/imports/migration/songs/Ready song/acquire"]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => {
+    const card = await playlistCard.boundingBox();
+    const title = await header.getByRole("heading", { name: "Playlist", exact: true }).boundingBox();
+    return !!card && !!title && card.y > title.y + title.height;
+  }).toBe(true);
+  await expect(playlistCard).toBeVisible();
+
 });

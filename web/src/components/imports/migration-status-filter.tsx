@@ -1,13 +1,16 @@
+import { cn } from "@/lib/utils";
 import { CheckboxField } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export function MigrationStatusFilter({
   counts,
+  className,
   hidden,
   onChange,
 }: {
   counts: Map<string, number>;
+  className?: string;
   hidden: string[];
   onChange: (hidden: string[]) => void;
 }) {
@@ -16,7 +19,7 @@ export function MigrationStatusFilter({
     "Skipped for now", ...counts.keys(), "Available",
   ])].filter((value) => counts.has(value) || value === "Available" || hidden.includes(value));
   return (
-    <fieldset className="m-0 min-w-0 rounded-md border border-solid border-border px-3 py-2">
+    <fieldset className={cn("m-0 min-w-0 rounded-md border border-solid border-border px-3 py-2", className)}>
       <legend className="px-1 text-xs text-muted-foreground">Show statuses</legend>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         {statuses.map((value) => (
