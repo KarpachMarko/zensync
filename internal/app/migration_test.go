@@ -246,7 +246,12 @@ func TestMigrationAcquisitionAndPublication(t *testing.T) {
 	pid := pls[2].ID
 	prefix := "/api/v2/imports/" + mid
 	expect(t, alice.call("POST", prefix+"/commit", mustJSON(map[string]any{"playlists": []string{pid}, "favorites": true}), ""), 200)
-	expect(t, alice.call("POST", prefix+"/match", "", ""), 202)
+	// Committing queues the first scan, including across a repeated commit.
+	expect(t, alice.call("POST", prefix+"/commit", `{}`, ""), 200)
+	var queued int
+	if err := a.DB.QueryRow("SELECT count(*) FROM migration_tasks WHERE migration_id=? AND action='match' AND state='queued'", mid).Scan(&queued); err != nil || queued != 1 {
+		t.Fatalf("initial scan not queued exactly once: %d, %v", queued, err)
+	}
 	a.runMigrationTask(context.Background())
 	songs, _ := a.sources(mid)
 	var second Source
@@ -641,5 +646,23 @@ func TestTextPlaylistUpload(t *testing.T) {
 	}
 	prefix := "/api/v2/imports/" + mid
 	expect(t, c.call("POST", prefix+"/commit", mustJSON(map[string]any{"playlists": []string{playlists[0].ID}, "favorites": false}), ""), 200)
-	expect(t, c.call("GET", prefix, "", ""), 200)
+	w = c.call("GET", prefix, "", "")
+	expect(t, w, 200)
+	var detail struct {
+		MatchTask struct {
+			State   string `json:"state"`
+			Message string `json:"message"`
+		} `json:"matchTask"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil || detail.MatchTask.State != "queued" {
+		t.Fatalf("missing initial scan status: %s, %v", w.Body.String(), err)
+	}
+	// A missing connection is a visible, retryable scan failure.
+	a.runMigrationTask(context.Background())
+	w = c.call("GET", prefix, "", "")
+	expect(t, w, 200)
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil || detail.MatchTask.State != "failed" || detail.MatchTask.Message == "" {
+		t.Fatalf("missing scan failure: %s, %v", w.Body.String(), err)
+	}
+	expect(t, c.call("POST", prefix+"/match", "", ""), 202)
 }

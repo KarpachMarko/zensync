@@ -248,7 +248,16 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 			a.internal(w, e)
 			return
 		}
-		send(w, 200, map[string]any{"migration": m, "songs": songs, "playlists": pls})
+		var matchTask struct {
+			State   string `json:"state"`
+			Message string `json:"message"`
+		}
+		e = a.DB.QueryRow("SELECT state,message FROM migration_tasks WHERE migration_id=? AND action='match' ORDER BY created DESC,rowid DESC LIMIT 1", mid).Scan(&matchTask.State, &matchTask.Message)
+		if e != nil && e != sql.ErrNoRows {
+			a.internal(w, e)
+			return
+		}
+		send(w, 200, map[string]any{"migration": m, "songs": songs, "playlists": pls, "matchTask": matchTask})
 		return
 	}
 	if r.Method != "POST" || len(parts) < 2 {
@@ -307,6 +316,11 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 			}
 		}
 		_, e = tx.Exec("UPDATE migrations SET state='open',favorites=? WHERE id=?", in.Favorites, mid)
+		if e == nil {
+			// Commit and the initial scan are atomic: retries cannot leave an
+			// open migration without its first matching task.
+			_, e = tx.Exec("INSERT INTO migration_tasks(id,owner,migration_id,action) VALUES(?,?,?,'match')", id(), u.ID, mid)
+		}
 		if e == nil {
 			e = audit(tx, u.ID, u.ID, "migration.committed", mid)
 		}

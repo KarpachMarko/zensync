@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
-import { status, type Detail, type Source } from "@/lib/migration";
+import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -86,7 +86,8 @@ export function MigrationPage() {
         <Text>{error || "Loading your migration…"}</Text>
       </>
     );
-  const { migration: m, songs, playlists } = detail;
+  const { migration: m, songs, playlists, matchTask } = detail;
+  const scanning = ["queued", "running"].includes(matchTask?.state ?? "");
   const currentSource = songs.find((s) => s.id === sourceId),
     currentPlaylist = playlists.find((p) => p.id === playlistId);
   const shownSongs = currentPlaylist
@@ -95,7 +96,7 @@ export function MigrationPage() {
         .filter((s): s is Source => !!s)
     : songs;
   const shown = shownSongs.filter((s) =>
-    (s.metadata.title + " " + s.metadata.artist + " " + status(s))
+    (s.metadata.title + " " + s.metadata.artist + " " + status(s, scanning))
       .toLowerCase()
       .includes(filter.toLowerCase()),
   );
@@ -131,7 +132,9 @@ export function MigrationPage() {
         <>
           <Text>
             Your snapshot is saved. Select the playlists you want to migrate;
-            all {m.report.songs} catalog entries will be retained.
+            all {m.report.songs} catalog entries will be retained. Committing
+            automatically starts a scan of Navidrome and Deezer. Downloads
+            require a separate request.
           </Text>
           <div className="my-6 flex flex-wrap items-center gap-4 text-muted-foreground max-[700px]:gap-2">
             <span>{m.report.unplaylisted} unplaylisted songs</span>
@@ -170,10 +173,25 @@ export function MigrationPage() {
               indicatorClassName="bg-[#a2d5bd]"
             />
           </div>
+          {m.state === "open" && matchTask?.state === "failed" && (
+            <Notice role="alert">
+              Match scan failed. Check your connections, then use Scan again.
+            </Notice>
+          )}
+          {m.state === "open" && scanning && (
+            <Notice role="status">
+              {matchTask?.state === "queued"
+                ? "Match scan queued. It will start automatically."
+                : matchTask?.message || "Scanning Navidrome and Deezer…"}
+            </Notice>
+          )}
           {m.state === "open" ? (
             <Actions className="my-[22px] mx-0">
-              <Button disabled={busy} onClick={() => void action("match")}>
-                Find matches
+              <Button
+                disabled={busy || scanning}
+                onClick={() => void action("match")}
+              >
+                {scanning ? "Scanning…" : "Scan again"}
               </Button>
               <Button disabled={busy} onClick={() => void action("publish")}>
                 {m.targetUser
@@ -314,10 +332,21 @@ export function MigrationPage() {
             </Button>
           </SearchBar>
           <Text className="text-[13px]">
-            Find matches identifies exact album/title/artist/duration matches.
-            Review other recordings before requesting. Missing audio downloads
-            only after an explicit request and any required approval.
+            Matching runs automatically after commit. Available songs already
+            exist in Navidrome. Ready to request songs have a matched recording;
+            select them and use Request selected. For Review match, compare
+            recordings before choosing one. For Unresolved, use Find recording
+            to search or paste a Deezer song URL. Publish available songs to
+            create or update your selected playlists. Downloads require an
+            explicit request and any required approval.
           </Text>
+          {m.state === "open" && (
+            <Text className="text-[13px]">
+              Skip for now pauses new acquisition for a song and keeps its
+              playlist entry. Resume it when you are ready. Skipping does not
+              cancel a running download.
+            </Text>
+          )}
           <div className="flex min-h-[52px] items-center justify-between gap-5 border-b border-solid border-sidebar-border py-2.5 text-xs text-muted-foreground [&_label]:m-0">
             <CheckboxField>
               <Checkbox
@@ -360,6 +389,7 @@ export function MigrationPage() {
           </div>
           {shown.slice(0, limit).map((s, index) => (
             <div
+              data-slot="import-song"
               className="flex min-h-[52px] items-center gap-3 border-b border-solid border-sidebar-border py-1.5 [&>input]:min-h-0 max-[700px]:flex-wrap"
               key={s.id + "-" + index}
             >
@@ -396,18 +426,26 @@ export function MigrationPage() {
                     : ""}
                 </Caption>
               </Button>
-              <StatusBadge state={status(s)} />
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void action(
-                    "songs/" + s.id + "/" + (s.deferred ? "resume" : "defer"),
-                  )
-                }
-              >
-                {s.deferred ? "Resume" : "Skip for now"}
+              <StatusBadge state={status(s, scanning)} />
+              <Button asChild variant="outline">
+                <AppLink to={"/imports/" + id + "/songs/" + s.id}>
+                  {recordingAction(s)}
+                </AppLink>
               </Button>
+              {m.state === "open" && !s.serverId && (
+                <Button
+                  title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(
+                      "songs/" + s.id + "/" + (s.deferred ? "resume" : "defer"),
+                    )
+                  }
+                >
+                  {s.deferred ? "Resume" : "Skip for now"}
+                </Button>
+              )}
             </div>
           ))}
           {shown.length > limit && (

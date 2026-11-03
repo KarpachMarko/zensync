@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
 import { label, time } from "@/lib/api";
-import { status, type Migration, type Source } from "@/lib/migration";
+import { songGuidance, status, type Migration, type Source } from "@/lib/migration";
 import { useState } from "react";
 import { toast } from "sonner";
 export function Review({
@@ -67,6 +67,7 @@ export function Review({
         {s.metadata.artist} / {s.metadata.album} / {time(s.metadata.duration)}
       </Text>
       <StatusBadge state={status(s)} />
+      <Text>{songGuidance(s)}</Text>
       <ActiveProgress state={s.jobState} title={s.metadata.title} />
       {error && <Text role="alert">{error}</Text>}
       {s.candidate && (
@@ -97,13 +98,16 @@ export function Review({
           <AppLink to="/activity">View acquisition progress</AppLink>
         </Text>
       )}
-      <Button
-        variant="outline"
-        disabled={busy}
-        onClick={() => void act(s.deferred ? "resume" : "defer")}
-      >
-        {s.deferred ? "Resume" : "Skip for now"}
-      </Button>
+      {m.state === "open" && !s.serverId && (
+        <Button
+          title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."
+          variant="outline"
+          disabled={busy}
+          onClick={() => void act(s.deferred ? "resume" : "defer")}
+        >
+          {s.deferred ? "Resume" : "Skip for now"}
+        </Button>
+      )}
       {s.favoriteState === "review" && m.state === "open" && (
         <section className="bg-[#29384f] border-l-3 border-solid border-l-primary py-[13px] px-[18px] my-6 mx-0 text-[14px] max-w-[850px]">
           <Text>
@@ -128,7 +132,11 @@ export function Review({
       <SectionHeading>Find the intended recording</SectionHeading>
       <Text>
         Compare album, version and duration. Resolving a match does not request
-        a new download. You can also paste a Deezer song or share URL.
+        a new download. Use existing selects a song already in Navidrome.
+        Use this recording selects a Deezer result; then Request missing audio
+        starts a request. If there are no results, try a shorter title, another
+        spelling, or a direct Deezer song URL. You can skip the song and return
+        later.
       </Text>
       <SearchBox
         label="Search or Deezer song URL"
