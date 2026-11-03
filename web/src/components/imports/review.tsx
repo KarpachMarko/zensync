@@ -27,7 +27,7 @@ type Candidates = {
   library: LibrarySong[];
   libraryError?: string;
   deezerError?: string;
-  deezerMatches?: Record<string, { confident: boolean; reasons: string[] }>;
+  deezerMatches?: Record<string, { confident: boolean; reasons: string[]; warnings?: string[] }>;
   deezerAmbiguous?: boolean;
 };
 
@@ -225,6 +225,9 @@ export function Review({
                             : candidates.data.deezerMatches[t.id].reasons.join(" · ")}
                         </p>
                       )}
+                      {candidates.data.deezerMatches?.[t.id]?.warnings?.map((warning) => (
+                        <p key={warning} className="m-0 mt-1 text-xs leading-5 text-muted-foreground">{warning}</p>
+                      ))}
                       <DeezerRecordingTools
                         track={t}
                         playing={preview.playing && preview.active?.id === t.id}

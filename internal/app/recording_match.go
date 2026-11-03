@@ -16,6 +16,7 @@ import (
 type RecordingMatch struct {
 	Confident bool     `json:"confident"`
 	Reasons   []string `json:"reasons"`
+	Warnings  []string `json:"warnings,omitempty"`
 	score     int
 	title     bool
 	primary   bool
@@ -221,12 +222,13 @@ func assessRecording(source apple.Song, track Track) RecordingMatch {
 	} else {
 		match.Reasons = append(match.Reasons, fmt.Sprintf("Duration differs (%s vs %s)", recordingDuration(source.Duration), recordingDuration(track.Duration)))
 	}
-	readable := track.Readable == nil || *track.Readable
-	if !readable {
-		match.score -= 25
-		match.Reasons = append(match.Reasons, "Unavailable from Deezer")
+	// Public API readability reflects that request's context, not playback or
+	// acquisition rights for the configured Deezer account. It is not evidence
+	// that a recording's identity differs from the imported song.
+	if track.Readable != nil && !*track.Readable {
+		match.Warnings = append(match.Warnings, "The public Deezer API reports limited availability. Playback and acquisition may differ by account or region.")
 	}
-	match.Confident = !source.Missing && source.Artist != "" && match.title && match.version && match.credits && album && duration && readable
+	match.Confident = !source.Missing && source.Artist != "" && match.title && match.version && match.credits && album && duration
 	return match
 }
 
