@@ -9,7 +9,7 @@ import (
 )
 
 func (a *App) users(w http.ResponseWriter) {
-	rows, e := a.DB.Query("SELECT id,username,role,direct,quality FROM users ORDER BY username")
+	rows, e := a.DB.Query("SELECT id,username,role,direct,quality,EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=users.id) FROM users ORDER BY username")
 	if e != nil {
 		a.internal(w, e)
 		return
@@ -19,7 +19,7 @@ func (a *App) users(w http.ResponseWriter) {
 	for rows.Next() {
 		var u User
 		var q string
-		if e = rows.Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q); e != nil {
+		if e = rows.Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &u.DirectDelete); e != nil {
 			a.internal(w, e)
 			return
 		}
@@ -34,9 +34,10 @@ func (a *App) users(w http.ResponseWriter) {
 }
 func (a *App) createUser(w http.ResponseWriter, r *http.Request, actor User) {
 	var in struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Direct   bool   `json:"direct"`
+		Username     string `json:"username"`
+		Password     string `json:"password"`
+		Direct       bool   `json:"direct"`
+		DirectDelete bool   `json:"directDelete"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -68,6 +69,9 @@ func (a *App) createUser(w http.ResponseWriter, r *http.Request, actor User) {
 	}
 	uid := id()
 	_, e = tx.Exec("INSERT INTO users(id,username,password,role,direct) VALUES(?,?,?,'member',?)", uid, in.Username, hash, in.Direct)
+	if e == nil && in.DirectDelete {
+		_, e = tx.Exec("INSERT INTO delete_permissions(user_id) VALUES(?)", uid)
+	}
 	if e == nil {
 		e = audit(tx, uid, actor.ID, "user.created", uid)
 	}

@@ -24,6 +24,9 @@ import (
 var schema string
 
 type App struct {
+	transferMu sync.Mutex
+	transfers  map[string]TransferProgress
+
 	albumMu          sync.Mutex
 	activeOwners     map[string]int
 	scanRequestedAt  time.Time
@@ -49,27 +52,30 @@ type App struct {
 	deezerURL        string
 }
 type User struct {
-	ID       string          `json:"id"`
-	Username string          `json:"username"`
-	Role     string          `json:"role"`
-	Direct   bool            `json:"direct"`
-	Quality  json.RawMessage `json:"quality"`
+	ID           string          `json:"id"`
+	Username     string          `json:"username"`
+	Role         string          `json:"role"`
+	DirectDelete bool            `json:"directDelete"`
+	Direct       bool            `json:"direct"`
+	Quality      json.RawMessage `json:"quality"`
 }
 type Request struct {
-	State      string          `json:"state"`
-	Kind       string          `json:"kind"`
-	TrackCount int             `json:"trackCount,omitempty"`
-	Items      []AlbumItem     `json:"items,omitempty"`
-	ID         string          `json:"id"`
-	Owner      string          `json:"owner"`
-	Target     string          `json:"target"`
-	Title      string          `json:"title"`
-	Artist     string          `json:"artist"`
-	Upgrade    bool            `json:"upgrade"`
-	Quality    json.RawMessage `json:"quality"`
-	Decision   string          `json:"decision"`
-	Reason     string          `json:"reason"`
-	Created    string          `json:"created"`
+	Transfer   *TransferProgress `json:"transfer,omitempty"`
+	State      string            `json:"state"`
+	Detail     string            `json:"detail,omitempty"`
+	Kind       string            `json:"kind"`
+	TrackCount int               `json:"trackCount,omitempty"`
+	Items      []AlbumItem       `json:"items,omitempty"`
+	ID         string            `json:"id"`
+	Owner      string            `json:"owner"`
+	Target     string            `json:"target"`
+	Title      string            `json:"title"`
+	Artist     string            `json:"artist"`
+	Upgrade    bool              `json:"upgrade"`
+	Quality    json.RawMessage   `json:"quality"`
+	Decision   string            `json:"decision"`
+	Reason     string            `json:"reason"`
+	Created    string            `json:"created"`
 }
 
 func Open(path string) (*App, error) {
@@ -92,7 +98,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 2 {
+		if e == nil && version > 4 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -175,6 +181,10 @@ func (a *App) Handler() http.Handler {
 			}
 			return
 		}
+		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			a.deletionBearer(w, r)
+			return
+		}
 		if r.Method != "GET" && !sameHostOrigin(r) {
 			fail(w, 403, "Origin rejected")
 			return
@@ -185,6 +195,14 @@ func (a *App) Handler() http.Handler {
 		}
 		if r.URL.Path == "/api/v2/session" && r.Method == "POST" {
 			a.login(w, r)
+			return
+		}
+		if r.URL.Path == "/api/v2/invitations/accept" && r.Method == "POST" {
+			a.acceptInvitation(w, r)
+			return
+		}
+		if r.URL.Path == "/api/v2/invitations/preview" && r.Method == "GET" {
+			a.previewInvitation(w, r)
 			return
 		}
 		u, csrf, e := a.authenticate(r)
@@ -210,6 +228,12 @@ func (a *App) Handler() http.Handler {
 			}
 			http.SetCookie(w, &http.Cookie{Name: "zensync_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 			send(w, 200, map[string]bool{"ok": true})
+		case (r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/")):
+			a.deletionKeyRoutes(w, r, u)
+		case r.URL.Path == "/api/v2/deletion-requests" && r.Method == "POST":
+			a.createDeletionRequest(w, r, u)
+		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && strings.HasSuffix(r.URL.Path, "/permissions") && r.Method == "PUT":
+			a.deletePermission(w, r, u)
 		case r.URL.Path == "/api/v2/requests" && r.Method == "GET":
 			a.listRequests(w, u)
 		case r.URL.Path == "/api/v2/requests" && r.Method == "POST":
@@ -218,6 +242,8 @@ func (a *App) Handler() http.Handler {
 			a.decide(w, r, u)
 		case r.URL.Path == "/api/v2/activity" && r.Method == "GET":
 			a.activity(w, u)
+		case r.URL.Path == "/api/v2/invitations" || strings.HasPrefix(r.URL.Path, "/api/v2/invitations/"):
+			a.invitations(w, r, u)
 		case r.URL.Path == "/api/v2/users" && u.Role == "admin" && r.Method == "GET":
 			a.users(w)
 		case r.URL.Path == "/api/v2/users" && u.Role == "admin" && r.Method == "POST":
@@ -239,7 +265,7 @@ func (a *App) authenticate(r *http.Request) (User, string, error) {
 	if e != nil {
 		return u, "", e
 	}
-	e = a.DB.QueryRow("SELECT u.id,u.username,u.role,u.direct,u.quality,s.csrf FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?", digest(c.Value), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &csrf)
+	e = a.DB.QueryRow("SELECT u.id,u.username,u.role,u.direct,u.quality,s.csrf,EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=u.id) FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?", digest(c.Value), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &q, &csrf, &u.DirectDelete)
 	u.Quality = json.RawMessage(q)
 	return u, csrf, e
 }

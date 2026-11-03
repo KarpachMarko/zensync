@@ -112,6 +112,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 	if json.Unmarshal([]byte(profile), &qualities) != nil || len(qualities) == 0 {
 		return "", "", errors.New("Invalid quality snapshot")
 	}
+	defer a.clearTransfer(jid)
 	failures := []string{}
 	for _, quality := range qualities {
 		if quality != "lossless" && quality != "320" && quality != "128" {
@@ -145,6 +146,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 				return "", "", errors.New("Cannot remove invalid staged output before retry")
 			}
 		}
+		a.clearTransfer(jid)
 		a.jobState(jid, "downloading", "Acquiring "+quality+" audio with d-fi 2.3.5")
 		config := map[string]any{"concurrency": 1, "trackNumber": false, "fallbackTrack": false, "fallbackQuality": false, "cookies": map[string]string{"arl": arl}, "cover": map[string]string{"mode": "embed"}}
 		cfg := filepath.Join(stage, "d-fi.config.json")
@@ -159,8 +161,8 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 		cmd := exec.CommandContext(runCtx, a.dfiPath, "--headless", "--quality", dfiQuality, "--url", fmt.Sprintf("https://www.deezer.com/track/%d", t.ID), "--output", "audio", "--config-file", cfg)
 		protectChild(cmd)
 		cmd.Dir = stage
-		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + stage, "TMPDIR=" + stage, "DFI_NO_PAUSE=1"}
-		cmd.Stdout = io.Discard
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + stage, "TMPDIR=" + stage, "DFI_NO_PAUSE=1", "ZENSYNC_PROGRESS=1"}
+		cmd.Stdout = &transferOutput{app: a, job: jid}
 		cmd.Stderr = io.Discard
 		cmd.WaitDelay = 5 * time.Second
 		started := time.Now()
@@ -322,12 +324,13 @@ func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata strin
 	}
 	songs := []Song{}
 	for offset := 0; offset < 10000; offset += 100 {
-		page, err := a.navSearch(ctx, c, t.Title, offset)
+		var count int
+		page, err := a.navSearch(ctx, c, t.Title, offset, &count)
 		if err != nil {
 			return "", err
 		}
 		songs = append(songs, page...)
-		if len(page) < 100 {
+		if count < 100 {
 			break
 		}
 	}

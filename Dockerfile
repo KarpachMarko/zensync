@@ -1,16 +1,22 @@
 # syntax=docker/dockerfile:1
 FROM node:24.13.0-alpine AS web
 WORKDIR /src/web
-COPY web/package*.json ./
-RUN npm ci
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 FROM golang:1.26.0-alpine AS downloader
 RUN apk add --no-cache git
 WORKDIR /src/gofi
 # d-fi v2.3.5, pinned to the release commit rather than a moving tag.
 RUN git init && git remote add origin https://github.com/d-fi/GoFi.git && git fetch --depth=1 origin fa5612209bccf3ec64aae518c76bf86dcc63c7b8 && git checkout FETCH_HEAD
+COPY integrations/gofi/zensync_progress.go.txt ./internal/dfi/zensync_progress.go
+COPY integrations/gofi/zensync_progress_test.go.txt ./internal/dfi/zensync_progress_test.go
+# Fail the build if the pinned hook integration point ever changes.
+RUN test "$(grep -c 'options.Hooks = terminalDownloadHooks(options.Message)' internal/dfi/download_track.go)" = 1 && sed -i 's/options.Hooks = terminalDownloadHooks(options.Message)/options.Hooks = zenSyncDownloadHooks(options.Message)/' internal/dfi/download_track.go
+RUN go test ./internal/dfi -run TestZenSyncProgress -count=1
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/d-fi ./cmd/d-fi
 
 FROM golang:1.26.0-alpine AS backend

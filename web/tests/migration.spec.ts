@@ -1,5 +1,41 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
+
+async function inviteMember(page: Page, username: string, password: string) {
+  await page.getByRole("button", { name: "Invite user", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite user", exact: true });
+  await dialog.getByLabel("Username", { exact: true }).fill(username);
+  await dialog
+    .getByRole("button", { name: "Create invitation", exact: true })
+    .click();
+  const link = await page
+    .getByLabel("Invitation link", { exact: true })
+    .inputValue();
+  const browser = page.context().browser();
+  if (!browser) throw new Error("Browser required for invitation acceptance");
+  const context = await browser.newContext();
+  try {
+    const recipient = await context.newPage();
+    await recipient.goto(link);
+    await recipient.getByLabel("Your password", { exact: true }).fill(password);
+    await recipient
+      .getByRole("button", { name: "Accept invitation", exact: true })
+      .click();
+    await expect(
+      recipient.getByRole("heading", {
+        name: "Your account is ready",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await context.close();
+  }
+  await page
+    .getByRole("dialog", { name: "Invitation ready", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await page.reload();
+}
 
 test("first-access setup, real XML preview, review and reload-safe migration", async ({
   page,
@@ -20,14 +56,16 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Collapse sidebar" }),
-  ).toHaveText("");
+  ).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
-  const icons = await page.locator("aside nav .symbol").evaluateAll((nodes) =>
-    nodes.map((n) => {
-      const r = n.getBoundingClientRect();
-      return r.x + r.width / 2;
-    }),
-  );
+  const icons = await page
+    .locator("[data-sidebar=sidebar] nav [data-slot=nav-icon]")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => {
+        const r = n.getBoundingClientRect();
+        return r.x + r.width / 2;
+      }),
+    );
   expect(Math.max(...icons) - Math.min(...icons)).toBeLessThan(1);
   await page.getByRole("button", { name: "Open sidebar search" }).click();
   await page.route("**/api/v2/search?q=album%20query*", (route) =>
@@ -41,7 +79,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByRole("search")
     .getByRole("textbox", { name: "Search music" })
     .press("Enter");
-  await expect(page).toHaveURL(/search\?q=album%20query/);
+  await expect(page).toHaveURL(/search\?q=album(?:%20|\+)query/);
   await expect(page.getByRole("search").getByRole("textbox")).toHaveValue("");
   await expect(
     page.getByLabel("Song, artist, album or Deezer URL"),
@@ -50,7 +88,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByRole("navigation", { name: "Main navigation" })
     .getByRole("link", { name: "Imports" })
     .click();
-  await page.getByRole("link", { name: "New migration" }).click();
+  await page.getByRole("button", { name: "New migration" }).click();
   await page
     .getByLabel("Apple Music or iTunes XML export")
     .setInputFiles(path.resolve("../internal/apple/testdata/library.xml"));
@@ -253,7 +291,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     await route.fulfill({ json: { ok: true } });
   });
   await page.goto("/requests");
-  await expect(page.locator("article.request")).toHaveCount(1);
+  await expect(page.locator("article[data-slot=request]")).toHaveCount(1);
   await page.getByText("2 tracks · 0 available").click();
   await expect(page.getByText("1. Album song one")).toBeVisible();
   await page.getByRole("button", { name: "Approve", exact: true }).click();
@@ -268,15 +306,17 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByLabel("Parallel downloads", { exact: true }),
   ).toHaveValue("3");
-  await page.getByLabel("Parallel downloads", { exact: true }).fill("5");
-  await page
-    .getByRole("button", { name: "Save download limit", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText("Download limit saved.");
+  await page.getByLabel("Parallel downloads", { exact: true }).fill("12");
+  await page.getByLabel("Parallel downloads", { exact: true }).blur();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Download limit saved." }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByLabel("Parallel downloads", { exact: true }),
-  ).toHaveValue("5");
+  ).toHaveValue("12");
   await page.goto("/settings/connections");
   await expect(
     page.getByRole("heading", { name: "Your personal Navidrome account" }),
@@ -352,7 +392,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .getByLabel("Search music", { exact: true })
     .fill("Shared artist");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page).toHaveURL(/search\?q=Shared%20artist/);
+  await expect(page).toHaveURL(/search\?q=Shared(?:%20|\+)artist/);
   const existing = page.getByRole("region", {
     name: "Existing library",
     exact: true,
@@ -378,18 +418,24 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
       .getByText("Multi-track release", { exact: true }),
   ).toBeVisible();
   expect(
-    await page.locator(".status-section > summary").allTextContents(),
+    await page
+      .locator("[data-slot=status-section] > [data-slot=collapsible-trigger]")
+      .allTextContents(),
   ).toEqual(["Existing library1", "Candidates for import2"]);
-  await existing.locator("summary").click();
+  await existing.getByRole("button", { name: /^Existing library/ }).click();
   await expect(
     existing.getByText("Existing recording", { exact: true }),
   ).not.toBeVisible();
-  await candidates.locator("summary").first().click();
+  await candidates
+    .getByRole("button", { name: /^Candidates for import/ })
+    .click();
   await expect(
     candidates.getByText("Import recording", { exact: true }),
   ).not.toBeVisible();
-  await candidates.locator("summary").first().click();
-  await existing.locator("summary").click();
+  await candidates
+    .getByRole("button", { name: /^Candidates for import/ })
+    .click();
+  await existing.getByRole("button", { name: /^Existing library/ }).click();
   await page
     .getByLabel("Song, artist, album or Deezer URL")
     .fill("library-down");
@@ -401,6 +447,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     candidates.getByText("Import recording", { exact: true }),
   ).toBeVisible();
 
+  let showTransfer = false;
   await page.route("**/api/v2/activity", (route) =>
     route.fulfill({
       json: [
@@ -409,6 +456,15 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
           title: "Downloading song",
           state: "downloading",
           stage: "Downloading audio",
+          transfer: showTransfer
+            ? {
+                percent: 37.5,
+                downloadedBytes: 3145728,
+                totalBytes: 8388608,
+                bytesPerSecond: 2097152,
+                updatedAt: new Date().toISOString(),
+              }
+            : undefined,
         },
         {
           id: "queue",
@@ -433,34 +489,263 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   );
   await page.goto("/activity");
   await expect(page.getByRole("progressbar")).toHaveCount(1);
+  const running = page.getByRole("progressbar", {
+    name: "Downloading song: downloading",
+  });
+  await expect(running).not.toHaveAttribute("aria-valuenow");
+  const fill = running.locator("[data-slot=progress-indicator]");
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("active-progress");
+  expect(
+    await fill.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeGreaterThan(0);
+  showTransfer = true;
+  await page.reload();
+  await expect(running).toHaveAttribute("aria-valuenow", "37.5");
+  await expect(
+    page.getByText("37% · 3.0 MiB / 8.0 MiB · 2.0 MiB/s"),
+  ).toBeVisible();
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("none");
+  showTransfer = false;
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(running).not.toHaveAttribute("aria-valuenow");
+  expect(
+    await fill.evaluate((element) => getComputedStyle(element).animationName),
+  ).toBe("none");
+  expect(
+    await fill.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
   await expect(page.getByText("Queued song", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Finished song", { exact: true }),
   ).not.toBeVisible();
-  await page.locator("summary").filter({ hasText: "Completed" }).click();
+  await page.getByRole("button", { name: /^Completed/ }).click();
   await expect(page.getByText("Finished song", { exact: true })).toBeVisible();
-  await page.locator("summary").filter({ hasText: "Blocked" }).click();
+  await page.getByRole("button", { name: /^Blocked/ }).click();
   await expect(
     page.getByText("Blocked song", { exact: true }),
   ).not.toBeVisible();
   await page.getByRole("link", { name: "Manage parallel downloads" }).click();
   await expect(page).toHaveURL(/settings\/downloads$/);
 
-  await page.getByRole("link", { name: "Users", exact: true }).click();
-  await page.getByLabel("Username", { exact: true }).fill("ui-member");
-  await page.getByLabel("Initial password").fill("local-ui-test-password");
-  await page.getByRole("button", { name: "Create user" }).click();
-  const member = page.locator(".row").filter({ hasText: "ui-member" });
+  await page.getByRole("tab", { name: "Users", exact: true }).click();
+  await inviteMember(page, "ui-member", "local-ui-test-password");
+  const member = page
+    .locator("[data-slot=list-row]")
+    .filter({ hasText: "ui-member" });
   await expect(member).toBeVisible();
-  await member.getByRole("checkbox").check();
-  await expect(page.getByRole("status")).toHaveText(
-    "Permissions saved for ui-member.",
-  );
+  await expect(member.getByRole("switch")).toHaveCount(0);
+  await member
+    .getByRole("button", {
+      name: "Manage permissions for ui-member",
+      exact: true,
+    })
+    .click();
+  let permissions = page.getByRole("dialog", {
+    name: "Permissions for ui-member",
+    exact: true,
+  });
+  await permissions
+    .getByRole("switch", { name: "Add music without approval", exact: true })
+    .check();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for ui-member." }),
+  ).toBeVisible();
   await page.reload();
-  await expect(member.getByRole("checkbox")).toBeChecked();
-  await member.getByRole("checkbox").uncheck();
-  await expect(page.getByRole("status")).toHaveText(
-    "Permissions saved for ui-member.",
+  await member
+    .getByRole("button", {
+      name: "Manage permissions for ui-member",
+      exact: true,
+    })
+    .click();
+  permissions = page.getByRole("dialog", {
+    name: "Permissions for ui-member",
+    exact: true,
+  });
+  await expect(
+    permissions.getByRole("switch", {
+      name: "Add music without approval",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await permissions
+    .getByRole("switch", { name: "Add music without approval", exact: true })
+    .uncheck();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for ui-member." }),
+  ).toBeVisible();
+  await permissions.getByRole("button", { name: "Close", exact: true }).click();
+  // Deletion uses a distinct request, explicit shared-library confirmation,
+  // and the same approval inbox. Backend deletion is exercised in Go tests.
+  await page.route("**/api/v2/library?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "delete-song",
+          title: "Shared deletion song",
+          artist: "Artist",
+          album: "Album",
+          duration: 90,
+        },
+      ],
+    }),
   );
+  let deletionSubmissions = 0;
+  await page.route("**/api/v2/deletion-requests", async (route) => {
+    deletionSubmissions++;
+    expect(route.request().postDataJSON()).toEqual({ songId: "delete-song" });
+    expect(
+      route.request().headers()["idempotency-key"].length,
+    ).toBeGreaterThanOrEqual(8);
+    await route.fulfill({ status: 201, json: { id: "fixture-delete" } });
+  });
+  await page.goto("/library/songs");
+  await page
+    .getByRole("button", { name: "Delete song: Shared deletion song" })
+    .click();
+  const deletionDialog = page.getByRole("alertdialog", {
+    name: "Delete this song?",
+  });
+  await expect(deletionDialog).toContainText("Shared deletion song");
+  await deletionDialog
+    .getByRole("button", { name: "Delete song", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Deletion approved and queued",
+  );
+  expect(deletionSubmissions).toBe(1);
+  let deleteDecision = "awaiting_approval";
+  await page.route("**/api/v2/requests", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "fixture-delete",
+          kind: "delete",
+          title: "Shared deletion song",
+          artist: "Artist",
+          target: "navidrome:song:delete-song",
+          decision: deleteDecision,
+          quality: [],
+          reason: "",
+          state: deleteDecision === "approved" ? "queued" : "",
+          detail: "Queued for library removal",
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/v2/requests/fixture-delete", async (route) => {
+    expect(route.request().postDataJSON().decision).toBe("approved");
+    deleteDecision = "approved";
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/requests");
+  await expect(
+    page.getByText("Shared deletion song (Delete song)"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  const approvalDialog = page.getByRole("alertdialog", {
+    name: "Approve song deletion?",
+  });
+  await expect(approvalDialog).toContainText("Shared deletion song");
+  await approvalDialog
+    .getByRole("button", { name: "Approve deletion", exact: true })
+    .click();
+  await expect(approvalDialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Approve", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/queued: Queued for library removal/),
+  ).toBeVisible();
+
+  await page.goto("/settings/people");
+  await inviteMember(page, "delete-member", "local-member-password");
+  const memberRow = page
+    .locator("[data-slot=list-row]")
+    .filter({ hasText: "delete-member" });
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
+  let deletePermissions = page.getByRole("dialog", {
+    name: "Permissions for delete-member",
+    exact: true,
+  });
+  await deletePermissions
+    .getByRole("switch", { name: "Delete music without approval", exact: true })
+    .check();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for delete-member." }),
+  ).toBeVisible();
+  await page.reload();
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
+  deletePermissions = page.getByRole("dialog", {
+    name: "Permissions for delete-member",
+    exact: true,
+  });
+  await expect(
+    deletePermissions.getByRole("switch", {
+      name: "Delete music without approval",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await deletePermissions
+    .getByRole("switch", { name: "Delete music without approval", exact: true })
+    .uncheck();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for delete-member." }),
+  ).toBeVisible();
+  await page.reload();
+  await memberRow
+    .getByRole("button", {
+      name: "Manage permissions for delete-member",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", {
+        name: "Permissions for delete-member",
+        exact: true,
+      })
+      .getByRole("switch", {
+        name: "Delete music without approval",
+        exact: true,
+      }),
+  ).not.toBeChecked();
+  await page.goto("/settings/api");
+  await page.getByRole("button", { name: "Create deletion API key" }).click();
+  await expect(
+    page.getByLabel("Copy this key now. It is shown only once."),
+  ).toHaveValue(/^[0-9a-f]{64}$/);
+  await page.reload();
+  await expect(
+    page.getByLabel("Copy this key now. It is shown only once."),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Revoke", exact: true }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -57,7 +57,14 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 				return
 			}
 		}
-		if strings.HasPrefix(out[index].Target, "deezer:album:") {
+		if strings.HasPrefix(out[index].Target, "navidrome:song:") {
+			out[index].Kind = "delete"
+			err := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE request_id=?", out[index].ID).Scan(&out[index].State, &out[index].Detail)
+			if err != nil && err != sql.ErrNoRows {
+				a.internal(w, err)
+				return
+			}
+		} else if strings.HasPrefix(out[index].Target, "deezer:album:") {
 			out[index].Kind = "album"
 			out[index].Items, e = a.albumItems(out[index].ID)
 			if e != nil {
@@ -79,6 +86,14 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 			}
 		} else {
 			out[index].Kind = "track"
+			if out[index].State == "downloading" {
+				var job string
+				if err := a.DB.QueryRow("SELECT id FROM jobs WHERE request_id=?", out[index].ID).Scan(&job); err != nil && err != sql.ErrNoRows {
+					a.internal(w, err)
+					return
+				}
+				out[index].Transfer = a.transfer(job, out[index].State)
+			}
 		}
 	}
 	send(w, 200, out)
@@ -214,6 +229,11 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
+	var deletion int
+	if e = tx.QueryRow("SELECT count(*) FROM song_deletions WHERE request_id=?", rid).Scan(&deletion); e != nil {
+		a.internal(w, e)
+		return
+	}
 	var children, parentAlbum int
 	if e = tx.QueryRow("SELECT count(*) FROM request_children WHERE child_id=?", rid).Scan(&children); e != nil {
 		a.internal(w, e)
@@ -237,11 +257,16 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	_, e = tx.Exec("UPDATE requests SET decision=?,reason=?,actor=? WHERE id=?", in.Decision, in.Reason, u.ID, rid)
 	if e == nil && in.Decision == "approved" {
-		if parentAlbum > 0 {
+		if deletion > 0 {
+			_, e = tx.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for library removal') ON CONFLICT(request_id) DO UPDATE SET state='queued',stage='Queued for library removal'", id(), rid)
+		} else if parentAlbum > 0 {
 			e = a.expandAlbum(tx, rid)
 		} else {
 			_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
 		}
+	}
+	if e == nil && deletion > 0 && in.Decision != "approved" {
+		_, e = tx.Exec("UPDATE jobs SET state='cancelled',stage=? WHERE request_id=?", in.Decision, rid)
 	}
 	if e == nil && parentAlbum > 0 && in.Decision != "approved" {
 		_, e = tx.Exec("UPDATE requests SET decision=?,reason=?,actor=? WHERE id IN (SELECT child_id FROM request_children WHERE parent_id=?)", in.Decision, in.Reason, u.ID, rid)
@@ -282,14 +307,18 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		return
 	}
 	defer rows.Close()
-	out := []map[string]string{}
+	out := []map[string]any{}
 	for rows.Next() {
 		var id, title, state, stage, created string
 		if e = rows.Scan(&id, &title, &state, &stage, &created); e != nil {
 			a.internal(w, e)
 			return
 		}
-		out = append(out, map[string]string{"id": id, "title": title, "state": state, "stage": stage, "created": created})
+		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
+		if transfer := a.transfer(id, state); transfer != nil {
+			item["transfer"] = transfer
+		}
+		out = append(out, item)
 	}
 	if e = rows.Err(); e != nil {
 		a.internal(w, e)

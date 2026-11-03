@@ -1,0 +1,95 @@
+function responseError(data: unknown, fallback: string): string {
+  return typeof data === "object" &&
+    data !== null &&
+    "error" in data &&
+    typeof data.error === "string"
+    ? data.error
+    : fallback;
+}
+
+let csrf = "";
+export function setCSRF(value: string) {
+  csrf = value;
+}
+export async function api<T = unknown>(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  key?: string,
+): Promise<T> {
+  const res = await fetch("/api/v2" + path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrf,
+      ...(key ? { "Idempotency-Key": key } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data: unknown = await res.json();
+  if (!res.ok) throw new Error(responseError(data, "Request failed"));
+  return data as T;
+}
+export async function upload(file: File): Promise<{ id: string }> {
+  const res = await fetch("/api/v2/imports", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/xml",
+      "X-CSRF-Token": csrf,
+      "X-Import-Name": encodeURIComponent(file.name),
+    },
+    body: file,
+  });
+  const data: unknown = await res.json();
+  if (!res.ok) throw new Error(responseError(data, "Upload failed"));
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("id" in data) ||
+    typeof data.id !== "string"
+  ) {
+    throw new Error("Invalid upload response");
+  }
+  return { id: data.id };
+}
+export type Track = {
+  id: number;
+  title: string;
+  title_version: string;
+  duration: number;
+  artist: { name: string };
+  album: { title: string };
+  link: string;
+};
+export type LibrarySong = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+};
+export function label(t: Track) {
+  return t.title_version &&
+    !t.title.toLowerCase().includes(t.title_version.toLowerCase())
+    ? t.title + " " + t.title_version
+    : t.title;
+}
+export function time(n: number) {
+  return `${Math.floor(n / 60)}:${Math.round(n % 60)
+    .toString()
+    .padStart(2, "0")}`;
+}
+// UUID support is not exposed by every browser on plain HTTP LAN deployments.
+export function requestKey() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export type TransferProgress = {
+  percent?: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  bytesPerSecond?: number;
+  updatedAt: string;
+};
