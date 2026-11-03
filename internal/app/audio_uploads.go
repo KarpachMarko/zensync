@@ -124,6 +124,10 @@ func (a *App) prepareAudioUpload(ctx context.Context, input, output, format stri
 	// Copy the audio stream without re-encoding and fill missing tags from the
 	// import. Uploaded versions keep their own title, artist, album and duration.
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-f", format, "-i", input, "-map", "0:a:0", "-map_metadata", "0", "-c:a", "copy", "-metadata", "title=" + track.Title, "-metadata", "artist=" + track.Artist.Name, "-metadata", "album=" + track.Album.Title}
+	cover := uploadedCoverStream(p)
+	if cover >= 0 && (format == "mp3" || format == "flac") {
+		args = append(args, "-map", "0:"+strconv.Itoa(cover), "-c:v", "copy", "-disposition:v:0", "attached_pic")
+	}
 	if format == "aiff" {
 		args = append(args, "-write_id3v2", "1")
 	}
@@ -133,7 +137,53 @@ func (a *App) prepareAudioUpload(ctx context.Context, input, output, format stri
 	if command.Run() != nil {
 		return track, errors.New("Could not prepare this audio file; try FLAC, MP3 or M4A")
 	}
+	if cover >= 0 && (format == "mp3" || format == "flac") {
+		a.extractUploadedCover(runCtx, output, format)
+	}
 	return track, a.validateUploadedAudio(output, track, format)
+}
+
+func uploadedCoverStream(p probe) int {
+	selected := -1
+	for _, stream := range p.Streams {
+		if stream.Type != "video" || stream.Disposition.AttachedPic != 1 {
+			continue
+		}
+		if selected < 0 {
+			selected = stream.Index
+		}
+		for key, value := range stream.Tags {
+			if strings.EqualFold(key, "comment") && strings.Contains(strings.ToLower(value), "front") {
+				return stream.Index
+			}
+		}
+	}
+	return selected
+}
+
+// The embedded original remains in the audio. This bounded JPEG thumbnail is
+// only a preview; unreadable artwork must not reject otherwise valid audio.
+func (a *App) extractUploadedCover(ctx context.Context, audio, format string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	output := audio + ".jpg"
+	command := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-nostdin", "-max_alloc", "67108864", "-protocol_whitelist", "file,pipe", "-f", format, "-i", audio, "-map", "0:v:0", "-frames:v", "1", "-vf", "scale=512:512:force_original_aspect_ratio=decrease", "-c:v", "mjpeg", "-threads", "1", "-fs", "1048576", output)
+	protectChild(command)
+	if command.Run() != nil {
+		_ = os.Remove(output)
+	}
+}
+
+func (a *App) uploadedCover(w http.ResponseWriter, r *http.Request, u User) {
+	rid := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v2/requests/"), "/cover")
+	var target string
+	if a.DB.QueryRow("SELECT r.target FROM requests r JOIN audio_uploads a ON a.target=r.target WHERE r.id=? AND (r.owner=? OR ?='admin')", rid, u.ID, u.Role).Scan(&target) != nil {
+		fail(w, 404, "Cover not found")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, filepath.Join(a.dataDir, "covers", digest(target)+".jpg"))
 }
 
 func (a *App) validateUploadedAudio(path string, track Track, format string) error {
@@ -363,6 +413,13 @@ func (a *App) uploadSourceAudio(w http.ResponseWriter, r *http.Request, u User, 
 		return
 	}
 	keep = storedPath == output
+	// Covers stay available after staging is cleaned following indexing.
+	if _, err := os.Stat(output + ".jpg"); err == nil {
+		if os.MkdirAll(filepath.Join(a.dataDir, "covers"), 0700) == nil {
+			_ = os.Chmod(output+".jpg", 0600)
+			_ = os.Rename(output+".jpg", filepath.Join(a.dataDir, "covers", digest(target)+".jpg"))
+		}
+	}
 	send(w, 201, map[string]string{"id": rid, "decision": decision})
 }
 

@@ -27,6 +27,10 @@ func trackMatches(t Track, s Song) bool {
 
 type probe struct {
 	Streams []struct {
+		Index       int `json:"index"`
+		Disposition struct {
+			AttachedPic int `json:"attached_pic"`
+		} `json:"disposition"`
 		Codec   string            `json:"codec_name"`
 		Type    string            `json:"codec_type"`
 		BitRate string            `json:"bit_rate"`

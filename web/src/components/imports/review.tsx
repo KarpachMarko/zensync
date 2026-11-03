@@ -1,4 +1,5 @@
 import { AudioUpload } from "@/components/imports/audio-upload";
+import { PreviewPlayer } from "@/components/imports/preview-player";
 import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
 import { useDeezerPreview } from "@/hooks/use-deezer-preview";
 import { Actions, Row } from "@/components/layout/content";
@@ -82,6 +83,7 @@ export function Review({
   const selectedRecording = s.candidate ? {
     ...s.candidate,
     preview: freshCandidate?.preview || s.candidate.preview,
+    album: { ...s.candidate.album, cover_medium: freshCandidate?.album.cover_medium || s.candidate.album.cover_medium },
   } : null;
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
@@ -237,23 +239,7 @@ export function Review({
           )}
         </div>
         <footer className="flex shrink-0 flex-col gap-2 border-0 border-t border-solid border-border px-5 py-3">
-          <div className={preview.active ? "flex flex-wrap items-center gap-2" : "hidden"}>
-            <span className="min-w-0 flex-1 truncate text-xs">30s preview: {preview.active ? label(preview.active) : ""}</span>
-            <audio
-              ref={preview.attachAudio}
-              controls
-              preload="none"
-              aria-label="Deezer 30-second preview player"
-              className="h-8 w-[260px] max-w-full"
-              onPlay={preview.started}
-              onPause={() => preview.setPlaying(false)}
-              onEnded={() => preview.setPlaying(false)}
-              onError={preview.failed}
-              onTimeUpdate={(event) => {
-                if (event.currentTarget.currentTime >= 30) event.currentTarget.pause();
-              }}
-            />
-          </div>
+          <PreviewPlayer preview={preview} />
           {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
           <div className="flex items-center justify-between gap-3">
             <Text className="m-0 text-xs">Selecting a recording does not start a download.</Text>

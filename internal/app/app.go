@@ -243,6 +243,8 @@ func (a *App) Handler() http.Handler {
 			a.createRequest(w, r, u)
 		case strings.HasPrefix(r.URL.Path, "/api/v2/requests/") && r.Method == "POST":
 			a.decide(w, r, u)
+		case strings.HasPrefix(r.URL.Path, "/api/v2/requests/") && strings.HasSuffix(r.URL.Path, "/cover") && r.Method == "GET":
+			a.uploadedCover(w, r, u)
 		case r.URL.Path == "/api/v2/activity" && r.Method == "GET":
 			a.activity(w, u)
 		case r.URL.Path == "/api/v2/invitations" || strings.HasPrefix(r.URL.Path, "/api/v2/invitations/"):

@@ -78,7 +78,7 @@ export type Track = {
   title_version: string;
   duration: number;
   artist: { name: string };
-  album: { title: string };
+  album: { title: string; cover_medium?: string };
   link: string;
   preview?: string;
 };

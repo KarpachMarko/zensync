@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +17,91 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestUploadedMP3AndFLACPreserveAndExtractFrontCover(t *testing.T) {
+	for _, ext := range []string{".mp3", ".flac"} {
+		t.Run(ext, func(t *testing.T) {
+			a, admin, member := albumFixture(t)
+			mid, sid := stageAudioMigration(t, member)
+			expect(t, member.call("POST", "/api/v2/imports/"+mid+"/commit", `{"playlists":[]}`, ""), 200)
+			dir := t.TempDir()
+			codec := "flac"
+			if ext == ".mp3" {
+				codec = "libmp3lame"
+			}
+			_ = audioFixture(t, dir, ext, codec, true)
+			for name, paint := range map[string]color.RGBA{"back": {0, 0, 255, 255}, "front": {255, 0, 0, 255}} {
+				picture := image.NewRGBA(image.Rect(0, 0, 32, 32))
+				for y := 0; y < 32; y++ {
+					for x := 0; x < 32; x++ {
+						picture.SetRGBA(x, y, paint)
+					}
+				}
+				file, err := os.Create(filepath.Join(dir, name+".png"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = png.Encode(file, picture); err != nil {
+					t.Fatal(err)
+				}
+				file.Close()
+			}
+			input := filepath.Join(dir, "with-covers"+ext)
+			args := []string{"-v", "error", "-i", filepath.Join(dir, "fixture"+ext), "-i", filepath.Join(dir, "back.png"), "-i", filepath.Join(dir, "front.png"), "-map", "0:a", "-map", "1:v", "-map", "2:v", "-c", "copy", "-disposition:v", "attached_pic", "-metadata:s:v:0", "comment=Cover (back)", "-metadata:s:v:1", "comment=Cover (front)", input}
+			if output, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+				t.Fatalf("cover fixture: %v %s", err, output)
+			}
+			data, err := os.ReadFile(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := uploadAudioForTest(member, "/api/v2/imports/"+mid+"/songs/"+sid+"/upload", "recording"+ext, "covered-audio-key", data)
+			expect(t, response, 201)
+			var result struct {
+				ID string `json:"id"`
+			}
+			if err = json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var staged string
+			if err = a.DB.QueryRow("SELECT a.file_path FROM audio_uploads a JOIN requests r ON r.target=a.target WHERE r.id=?", result.ID).Scan(&staged); err != nil {
+				t.Fatal(err)
+			}
+			probe, err := a.probeUpload(staged, uploadFormat(ext))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if uploadedCoverStream(probe) < 0 {
+				t.Fatal("embedded artwork was stripped")
+			}
+			endpoint := "/api/v2/requests/" + result.ID + "/cover"
+			cover := member.call("GET", endpoint, "", "")
+			expect(t, cover, 200)
+			if !strings.Contains(cover.Header().Get("Cache-Control"), "no-store") {
+				t.Fatal("private covers may be cached across sign-ins")
+			}
+			picture, err := jpeg.Decode(bytes.NewReader(cover.Body.Bytes()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			red, _, blue, _ := picture.At(0, 0).RGBA()
+			if red <= blue {
+				t.Fatal("back cover was selected instead of front")
+			}
+			if picture.Bounds().Dx() > 512 || picture.Bounds().Dy() > 512 {
+				t.Fatal("unbounded thumbnail")
+			}
+			expect(t, admin.call("GET", endpoint, "", ""), 200)
+			expect(t, admin.call("POST", "/api/v2/users", `{"username":"other","password":"test-password-long"}`, ""), 201)
+			other := login(t, a, "other")
+			expect(t, other.call("GET", endpoint, "", ""), 404)
+			if err = os.RemoveAll(filepath.Dir(staged)); err != nil {
+				t.Fatal(err)
+			}
+			expect(t, member.call("GET", endpoint, "", ""), 200)
+		})
+	}
+}
 
 func audioFixture(t *testing.T, directory, ext, codec string, tags bool) []byte {
 	t.Helper()

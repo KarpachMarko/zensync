@@ -18,6 +18,11 @@ export function useDeezerPreview() {
   const [active, setActive] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(30);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // A callback ref also handles audio mounted through the dialog's portal.
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
@@ -43,12 +48,16 @@ export function useDeezerPreview() {
     if (audio.src !== url) {
       audio.pause();
       audio.src = url;
+      setPosition(0);
+      setDuration(30);
+      setLoading(true);
     }
     if (audio.ended || audio.currentTime >= 30) audio.currentTime = 0;
     // Start during the click so browser autoplay restrictions are respected.
     void audio.play().catch((cause: unknown) => {
       if (audio.src !== url || (cause instanceof DOMException && cause.name === "AbortError")) return;
       setPlaying(false);
+      setLoading(false);
       setError("Preview could not be played. Try again or open the song in Deezer.");
     });
   }
@@ -56,13 +65,44 @@ export function useDeezerPreview() {
   function started() {
     setPlaying(true);
     setError("");
+    setLoading(false);
   }
 
   function failed() {
     audioRef.current?.pause();
     setPlaying(false);
+    setLoading(false);
     setError("Preview unavailable. Open the song in Deezer to listen.");
   }
 
-  return { attachAudio, active, playing, error, setPlaying, toggle, started, failed };
+  function syncTime() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const limit = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(30, audio.duration) : 30;
+    setDuration(limit);
+    setPosition(Math.min(limit, audio.currentTime));
+    if (audio.currentTime >= limit) audio.pause();
+  }
+  function seek(seconds: number) {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    audio.currentTime = Math.max(0, Math.min(duration, seconds));
+    syncTime();
+  }
+  function changeVolume(value: number) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = value;
+    audio.muted = value === 0;
+    setVolume(value);
+    setMuted(audio.muted);
+  }
+  function toggleMute() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.muted = !audio.muted;
+    setMuted(audio.muted);
+  }
+  return { attachAudio, active, playing, error, setPlaying, toggle, started, failed,
+    position, duration, volume, muted, loading, setLoading, syncTime, seek, changeVolume, toggleMute };
 }

@@ -5,6 +5,7 @@ import { Caption, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import type { MusicRequest as Request, User } from "@/lib/types";
 import { DeclineForm } from "./decline-form";
+import { useState } from "react";
 export function RequestCard({
   request: r,
   user,
@@ -22,13 +23,16 @@ export function RequestCard({
   ) => Promise<void>;
   onApproveDeletion: (request: Request) => void;
 }) {
+  const [coverFailed, setCoverFailed] = useState(false);
   return (
     <article
       data-slot="request"
       className="border-b border-solid border-sidebar-border pb-2.5"
     >
       <Row>
-        <div>
+        <div className="flex min-w-0 items-center gap-3">
+          {r.kind === "upload" && !coverFailed && <img src={`/api/v2/requests/${encodeURIComponent(r.id)}/cover`} alt="Uploaded album cover" loading="lazy" className="size-12 shrink-0 rounded-md object-cover" onError={() => setCoverFailed(true)} />}
+          <div>
           <strong>
             {r.title}
             {r.kind === "delete"
@@ -43,6 +47,7 @@ export function RequestCard({
             {r.artist || "Artist not specified"} / {r.target}
             {r.upgrade ? " / Upgrade" : ""}
           </Caption>
+          </div>
         </div>
         <StatusBadge state={r.state || r.decision} />
       </Row>
