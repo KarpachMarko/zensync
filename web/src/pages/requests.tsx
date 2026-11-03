@@ -1,13 +1,14 @@
-import { Button } from "@/components/ui/button";
 import { Actions } from "@/components/layout/content";
 import { DeletionDialog } from "@/components/music/deletion-dialog";
 import { AppLink } from "@/components/navigation";
 import { RequestCard } from "@/components/requests/request-card";
 import { StatusSection, finished } from "@/components/status";
 import { PageHeading, Text } from "@/components/typography";
+import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { MusicRequest as Request, User } from "@/lib/types";
 import { useState } from "react";
+import { toast } from "sonner";
 export function Requests({ user }: { user: User }) {
   const { api } = useApiMutation();
   const [deletionToApprove, setDeletionToApprove] = useState<Request | null>(
@@ -26,6 +27,13 @@ export function Requests({ user }: { user: User }) {
     try {
       await api("/requests/" + r.id, "POST", { decision, reason });
       await load();
+      toast.success(
+        decision === "approved"
+          ? "Request approved."
+          : decision === "declined"
+            ? "Request declined."
+            : "Request withdrawn.",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {

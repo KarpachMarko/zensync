@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import React, { useState } from "react";
+import { toast } from "sonner";
 type ConnectionsData = {
   url: string;
   configured: boolean;
@@ -19,7 +20,6 @@ type ConnectionsData = {
 export function Connections({ admin }: { admin: boolean }) {
   const { api } = useApiMutation();
   const [actionError, setError] = useState(""),
-    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   const result = useApiQuery<ConnectionsData>("/connections");
   const data = result.data;
@@ -31,12 +31,12 @@ export function Connections({ admin }: { admin: boolean }) {
     const input = Object.fromEntries(new FormData(form));
     setBusy(true);
     setError("");
-    setNotice("");
+
     try {
       await api("/connections", "PUT", { kind, ...input });
       form.reset();
       await load();
-      setNotice(
+      toast.success(
         kind === "deezer"
           ? "Deezer credentials saved. They will be verified during the first acquisition."
           : "Navidrome account verified and saved.",
@@ -51,7 +51,6 @@ export function Connections({ admin }: { admin: boolean }) {
     <>
       <SectionHeading>Connections</SectionHeading>
       {error && <Text role="alert">{error}</Text>}
-      {notice && <Text role="status">{notice}</Text>}
       {data && (
         <>
           <div className="flex flex-wrap items-center gap-4">

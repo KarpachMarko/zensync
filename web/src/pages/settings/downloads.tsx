@@ -4,12 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useState } from "react";
+import { toast } from "sonner";
 export function DownloadSettings() {
   const { api } = useApiMutation();
   const [draftLimit, setLimit] = useState<number>(),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState("");
+    [error, setError] = useState("");
   const result = useApiQuery<{ parallelDownloads: number }>(
     "/settings/downloads",
   );
@@ -24,18 +24,16 @@ export function DownloadSettings() {
       {(error || result.error) && (
         <Text role="alert">{error || result.error?.message}</Text>
       )}
-      {message && <Text role="status">{message}</Text>}
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
           setError("");
-          setMessage("");
           try {
             await api("/settings/downloads", "PUT", {
               parallelDownloads: limit,
             });
-            setMessage("Download limit saved.");
+            toast.success("Download limit saved.");
           } catch (e) {
             setError((e as Error).message);
           } finally {

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { TransferProgress } from "@/lib/api";
 import { useState } from "react";
+import { toast } from "sonner";
 export function Activity({ admin }: { admin: boolean }) {
   const { api } = useApiMutation();
   const result = useApiQuery<
@@ -32,6 +33,7 @@ export function Activity({ admin }: { admin: boolean }) {
     try {
       await api("/tasks/" + id, "POST");
       await load();
+      toast.success("Task queued for retry.");
     } catch (e) {
       setError((e as Error).message);
     }

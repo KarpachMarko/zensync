@@ -3,6 +3,7 @@ import type { User } from "@/lib/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type React from "react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useApiMutation } from "./use-api";
 
 type Session = { setup: boolean; user: User | null };
@@ -32,6 +33,7 @@ export function useSession() {
     event.preventDefault();
     const credentials = Object.fromEntries(new FormData(event.currentTarget));
     setError("");
+    toast.dismiss();
     try {
       if (result.data?.setup) await mutate("/setup", "POST", credentials);
       const session = await mutate<{ csrf: string }>(
@@ -52,6 +54,7 @@ export function useSession() {
     }
   }
   function signOut() {
+    toast.dismiss();
     setCSRF("");
     void client.cancelQueries();
     client.removeQueries({ predicate: (query) => query.queryKey[0] === "api" });

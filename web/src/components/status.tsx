@@ -1,7 +1,9 @@
 import { Caption, Text } from "@/components/typography";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
-import { type CSSProperties, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ExpandableSection } from "./expandable-section";
 
 import type { TransferProgress } from "@/lib/api";
@@ -56,9 +58,9 @@ const stateColors: Record<string, string> = {
 
 export function StatusPill({ className, ...props }: ComponentProps<"span">) {
   return (
-    <span
+    <Badge
       className={cn(
-        "rounded-[20px] bg-[#29384f] px-2.5 py-1 text-xs whitespace-nowrap text-[#c5cde0] max-[700px]:whitespace-normal",
+        "h-auto rounded-[20px] border-0 font-normal bg-[#29384f] px-2.5 py-1 text-xs whitespace-nowrap text-[#c5cde0] max-[700px]:whitespace-normal",
         className,
       )}
       {...props}
@@ -116,34 +118,15 @@ export function ActiveProgress({
   }
   return (
     <div className="mt-1.5 mb-3.5">
-      <div
-        className="relative block h-1.5 w-full overflow-hidden rounded-[3px] bg-[#29384f]"
-        role="progressbar"
+      <Progress
+        value={known ? percent : null}
         aria-label={title + ": " + state.replaceAll("_", " ")}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={known ? percent : undefined}
         aria-valuetext={
           known
             ? `${percent.toFixed(1)}% downloaded`
             : "Running; progress unknown"
         }
-      >
-        <span
-          data-slot="transfer-fill"
-          className={cn(
-            "block h-full rounded-[inherit] bg-[#b5c9e3] transition-[width] duration-250 ease-[ease]",
-            known
-              ? "w-[var(--transfer-percent)]"
-              : "w-[38%] animate-transfer motion-reduce:animate-none motion-reduce:translate-x-[80%]",
-          )}
-          style={
-            known
-              ? ({ "--transfer-percent": `${percent}%` } as CSSProperties)
-              : undefined
-          }
-        />
-      </div>
+      />
       {current && (
         <Caption className="mt-[5px] tabular-nums">
           {known && `${Math.floor(percent)}% · `}

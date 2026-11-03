@@ -16,6 +16,7 @@ import type { LibrarySong, Track } from "@/lib/api";
 import { label, time } from "@/lib/api";
 import { status, type Migration, type Source } from "@/lib/migration";
 import React, { useState } from "react";
+import { toast } from "sonner";
 export function Review({
   source: s,
   migration: m,
@@ -34,8 +35,7 @@ export function Review({
       library: LibrarySong[];
     }>(),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState("");
+    [busy, setBusy] = useState(false);
   const prefix = "/imports/" + m.id + "/songs/" + s.id;
   async function find(e: React.FormEvent) {
     e.preventDefault();
@@ -55,7 +55,7 @@ export function Review({
     try {
       await api(prefix + "/" + action, "POST", body);
       await reload();
-      setNotice(
+      toast.success(
         action === "acquire" ? "Acquisition request saved." : "Song updated.",
       );
     } catch (e) {
@@ -74,7 +74,6 @@ export function Review({
       <StatusBadge state={status(s)} />
       <ActiveProgress state={s.jobState} title={s.metadata.title} />
       {error && <Text role="alert">{error}</Text>}
-      {notice && <Text role="status">{notice}</Text>}
       {s.candidate && (
         <section className="my-6 rounded-lg border border-solid border-[#526079] p-5 [&_h2]:mt-0">
           <SectionHeading>Selected recording</SectionHeading>

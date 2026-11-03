@@ -1,3 +1,4 @@
+import { ExpandableSection } from "@/components/expandable-section";
 import { Actions, Row } from "@/components/layout/content";
 import { ActiveProgress, StatusBadge } from "@/components/status";
 import { Caption, Text } from "@/components/typography";
@@ -45,12 +46,18 @@ export function RequestCard({
       </Row>
       <ActiveProgress state={r.state} title={r.title} transfer={r.transfer} />
       {r.kind === "album" && (
-        <details>
-          <summary className="focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3">
-            {r.trackCount} tracks ·{" "}
-            {r.items?.filter((i) => i.state === "available").length || 0}{" "}
-            available
-          </summary>
+        <ExpandableSection
+          compact
+          defaultOpen={false}
+          title={
+            <>
+              {r.trackCount} tracks ·{" "}
+              {r.items?.filter((item) => item.state === "available").length ??
+                0}{" "}
+              available
+            </>
+          }
+        >
           <Text className="text-[13px]">
             One approval covers this saved recording list and quality
             preference.
@@ -76,7 +83,7 @@ export function RequestCard({
               />
             </div>
           ))}
-        </details>
+        </ExpandableSection>
       )}
       {r.kind === "delete" && (
         <Text className="text-[13px]">

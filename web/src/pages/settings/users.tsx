@@ -7,6 +7,7 @@ import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
+import { toast } from "sonner";
 export function Users({
   user,
   reload,
@@ -42,7 +43,8 @@ export function Users({
       });
       form.reset();
       await loadUsers();
-      setMessage("User created.");
+      setMessage("");
+      toast.success("User created.");
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -52,7 +54,7 @@ export function Users({
   return (
     <>
       {result.error && <Text role="alert">{result.error.message}</Text>}
-      {message && <Text role="status">{message}</Text>}
+      {message && <Text role="alert">{message}</Text>}
       <SectionHeading>Users & permissions</SectionHeading>
       {users.map((u) => (
         <Row className="max-[700px]:flex-wrap max-[700px]:gap-2" key={u.id}>
@@ -79,7 +81,11 @@ export function Users({
                     try {
                       await api("/users/" + u.id, "PUT", { direct });
                       await loadUsers();
-                      setMessage("Permissions saved for " + u.username + ".");
+                      setMessage("");
+                      toast.success(
+                        "Permissions saved for " + u.username + ".",
+                        { id: "permissions-" + u.id },
+                      );
                     } catch (e) {
                       setUsers((users) =>
                         users.map((current) =>
@@ -116,7 +122,10 @@ export function Users({
                       });
                       await loadUsers();
                       if (u.id === user.id) await reload();
-                      setMessage("Deletion permission updated.");
+                      setMessage("");
+                      toast.success("Deletion permission updated.", {
+                        id: "permissions-" + u.id,
+                      });
                     } catch (err) {
                       setUsers((current) =>
                         current.map((person) =>

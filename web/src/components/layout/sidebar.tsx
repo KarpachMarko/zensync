@@ -1,14 +1,28 @@
 import { Icon } from "@/components/icons";
-import { NavigationLink } from "@/components/navigation";
+import { AppLink } from "@/components/navigation";
 import { Caption } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInput,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
 import { searchHref } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Brand } from "./content";
 
 const navigation = [
@@ -20,143 +34,170 @@ const navigation = [
   { to: "/settings/connections", label: "Settings", icon: "settings" },
 ];
 
-export function Sidebar({
+export function WorkspaceSidebar({
   user,
-  collapsed,
-  onCollapsedChange,
   onSignOut,
   onError,
 }: {
   user: User;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
   onSignOut: () => void;
   onError: (error: string) => void;
 }) {
   const { api } = useApiMutation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { state, isMobile, setOpen, setOpenMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
   const [query, setQuery] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
-  const labelClassName = collapsed ? "hidden max-[700px]:inline" : undefined;
   return (
-    <aside className="sticky top-0 flex h-screen min-w-0 flex-col gap-3 border-r border-solid border-sidebar-border bg-card px-2.5 py-3 max-[700px]:static max-[700px]:h-auto max-[700px]:gap-2 max-[700px]:px-3.5 max-[700px]:py-2.5">
-      <div
-        className={cn(
-          "flex min-h-8 items-center justify-between",
-          collapsed && "justify-center max-[700px]:justify-between",
-        )}
-      >
-        <Brand className={cn(collapsed && "hidden max-[700px]:flex")}>
-          <span aria-hidden="true">◉</span>
-          <span>ZenSync</span>
-        </Brand>
-        <Button
-          variant="ghost"
-          className="flex size-8 shrink-0 items-center justify-center border-0 p-0 max-[700px]:hidden"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          onClick={() => onCollapsedChange(!collapsed)}
-        >
-          <Icon name={collapsed ? "expand" : "collapse"} />
-        </Button>
-      </div>
-      {collapsed ? (
-        <Button
-          variant="ghost"
-          className="flex h-[34px] w-[38px] items-center justify-center border-0 p-0 max-[700px]:hidden"
-          aria-label="Open sidebar search"
-          title="Search music"
-          onClick={() => {
-            onCollapsedChange(false);
-            requestAnimationFrame(() => searchInput.current?.focus());
-          }}
-        >
-          <Icon name="search" />
-        </Button>
-      ) : (
-        <form
-          className="flex h-[34px] min-w-0 items-center gap-2 rounded-[5px] border border-solid border-border px-2 py-0 text-muted-foreground focus-within:outline-2 focus-within:outline-solid focus-within:outline-primary"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (query.trim()) {
-              navigate(searchHref(query.trim()));
-              setQuery("");
-            }
-          }}
-        >
-          <Icon name="search" />
-          <Input
-            className="h-7 min-h-0 max-[700px]:min-h-0 w-full min-w-0 border-0 bg-transparent p-0 text-[13px] focus-visible:outline-none"
-            ref={searchInput}
-            aria-label="Search music"
-            placeholder="Search music…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            maxLength={500}
-          />
-        </form>
-      )}
-      <nav
-        className="flex flex-col gap-0.5 max-[700px]:flex-row max-[700px]:gap-1 max-[700px]:overflow-auto"
-        aria-label="Main navigation"
-      >
-        {navigation.map(({ to, label, icon }) => (
-          <NavigationLink
-            key={to}
-            to={to}
-            title={label}
-            aria-label={label}
-            className={cn(
-              collapsed &&
-                "min-[701px]:justify-center min-[701px]:px-0 min-[701px]:py-2",
-            )}
-          >
-            <span
-              data-slot="nav-icon"
-              className="flex size-5 shrink-0 items-center justify-center"
-            >
-              <Icon name={icon} />
-            </span>
-            <span className={labelClassName}>{label}</span>
-          </NavigationLink>
-        ))}
-      </nav>
-      <div className="mt-auto border-t border-solid border-sidebar-border pt-3 max-[700px]:flex max-[700px]:items-center max-[700px]:pt-1.5">
-        <strong
-          className={cn("px-2", collapsed && "hidden max-[700px]:inline")}
-        >
-          {user.username}
-        </strong>
-        <Caption
-          className={cn("mb-2 px-2 max-[700px]:hidden", collapsed && "hidden")}
-        >
-          {user.role}
-        </Caption>
-        <Button
-          variant="ghost"
+    <Sidebar
+      collapsible="icon"
+      className="border-sidebar-border"
+      role="complementary"
+    >
+      <SidebarHeader className="gap-3 px-2.5 pt-3 pb-0">
+        <div
           className={cn(
-            "flex min-h-9 w-full items-center gap-2.5 border-0 px-2 py-1.5 text-[13px] max-[700px]:ml-auto max-[700px]:w-auto",
-            collapsed && "justify-center px-0",
+            "flex min-h-8 items-center justify-between",
+            collapsed && "justify-center",
           )}
-          aria-label="Sign out"
-          title="Sign out"
-          onClick={async () => {
-            try {
-              await api("/session", "DELETE");
-              onSignOut();
-            } catch (error) {
-              onError(
-                error instanceof Error ? error.message : "Sign out failed",
-              );
-            }
-          }}
         >
-          <Icon name="logout" />
-          <span className={labelClassName}>Sign out</span>
-        </Button>
-      </div>
-    </aside>
+          {!collapsed && (
+            <Brand>
+              <span aria-hidden="true">◉</span>
+              <span>ZenSync</span>
+            </Brand>
+          )}
+          <SidebarTrigger
+            className="flex size-8 min-h-8 shrink-0 items-center justify-center border-0 p-0"
+            title={
+              isMobile
+                ? "Close navigation"
+                : collapsed
+                  ? "Expand sidebar"
+                  : "Collapse sidebar"
+            }
+            aria-label={
+              isMobile
+                ? "Close navigation"
+                : collapsed
+                  ? "Expand sidebar"
+                  : "Collapse sidebar"
+            }
+            aria-expanded={!collapsed}
+          />
+        </div>
+        {collapsed ? (
+          <Button
+            variant="ghost"
+            className="flex h-[34px] w-[38px] items-center justify-center border-0 p-0"
+            aria-label="Open sidebar search"
+            title="Search music"
+            onClick={() => {
+              setOpen(true);
+              requestAnimationFrame(() => searchInput.current?.focus());
+            }}
+          >
+            <Icon name="search" />
+          </Button>
+        ) : (
+          <form
+            className="flex h-[34px] min-w-0 items-center gap-2 rounded-[5px] border border-solid border-border px-2 text-muted-foreground focus-within:outline-2 focus-within:outline-solid focus-within:outline-primary"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (query.trim()) {
+                navigate(searchHref(query.trim()));
+                setQuery("");
+                setOpenMobile(false);
+              }
+            }}
+          >
+            <Icon name="search" />
+            <SidebarInput
+              className="h-7 min-h-0 max-[700px]:min-h-0 border-0 bg-transparent p-0 text-[13px] focus-visible:outline-none"
+              ref={searchInput}
+              aria-label="Search music"
+              placeholder="Search music…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              maxLength={500}
+            />
+          </form>
+        )}
+      </SidebarHeader>
+      <SidebarContent className="px-2.5 pt-3">
+        <SidebarGroup className="p-0">
+          <SidebarGroupContent>
+            <nav aria-label="Main navigation">
+              <SidebarMenu>
+                {navigation.map(({ to, label, icon }) => (
+                  <SidebarMenuItem key={to}>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip={label}
+                      isActive={location.pathname.startsWith(
+                        "/" + to.split("/")[1],
+                      )}
+                      className="h-auto min-h-9 gap-2.5 px-2 py-1.5 font-normal text-muted-foreground no-underline max-[700px]:min-h-11 data-active:text-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
+                    >
+                      <AppLink
+                        to={to}
+                        aria-label={label}
+                        onClick={() => setOpenMobile(false)}
+                      >
+                        <span
+                          data-slot="nav-icon"
+                          className="flex size-5 shrink-0 items-center justify-center"
+                        >
+                          <Icon name={icon} />
+                        </span>
+                        <span className={cn(collapsed && "hidden")}>
+                          {label}
+                        </span>
+                      </AppLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </nav>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarSeparator />
+      <SidebarFooter className="gap-0 px-2.5 py-3">
+        {!collapsed && (
+          <>
+            <strong className="px-2">{user.username}</strong>
+            <Caption className="mb-2 px-2">{user.role}</Caption>
+          </>
+        )}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="Sign out"
+              className="h-auto min-h-9 gap-2.5 border-0 bg-transparent px-2 py-1.5 text-[13px] text-muted-foreground cursor-pointer"
+              aria-label="Sign out"
+              onClick={async () => {
+                try {
+                  await api("/session", "DELETE");
+                  onSignOut();
+                } catch (error) {
+                  onError(
+                    error instanceof Error ? error.message : "Sign out failed",
+                  );
+                }
+              }}
+            >
+              <span className="flex size-5 shrink-0 items-center justify-center">
+                <Icon name="logout" />
+              </span>
+              {!collapsed && <span>Sign out</span>}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
   );
 }

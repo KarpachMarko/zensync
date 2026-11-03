@@ -7,6 +7,7 @@ import { upload } from "@/lib/api";
 import { useMutation } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 export function NewImport() {
   const { mutateAsync: uploadFile } = useMutation({ mutationFn: upload });
   const [error, setError] = useState(""),
@@ -24,6 +25,9 @@ export function NewImport() {
     try {
       const m = await uploadFile(file);
       navigate("/imports/" + m.id);
+      toast.success(
+        "XML uploaded. Review the migration preview before committing.",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {

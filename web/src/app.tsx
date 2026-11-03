@@ -19,7 +19,9 @@ export function App() {
   const location = useLocation();
   useEffect(() => {
     setError("");
-    document.querySelector<HTMLElement>("main h1")?.focus();
+    if (!document.activeElement?.matches('[role="tab"]')) {
+      document.querySelector<HTMLElement>("main h1")?.focus();
+    }
   }, [location.pathname]);
   if (loading)
     return (

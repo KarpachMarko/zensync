@@ -135,9 +135,9 @@ for (const directDelete of [true, false]) {
     await expect(
       candidates.getByText("Candidate album", { exact: true }),
     ).toBeVisible();
-    await expect(candidates.locator("summary").first()).toHaveText(
-      "Candidates for import1",
-    );
+    await expect(
+      candidates.getByRole("button", { name: /^Candidates for import/ }),
+    ).toHaveText("Candidates for import1");
     await toggles.getByRole("button", { name: "Song", exact: true }).click();
     await expect(button).toBeVisible();
     await expect(
@@ -232,9 +232,9 @@ test("direct album results respect the type toggle without refetching", async ({
     name: "Candidates for import",
     exact: true,
   });
-  await expect(candidates.locator("summary").first()).toHaveText(
-    "Candidates for import1",
-  );
+  await expect(
+    candidates.getByRole("button", { name: /^Candidates for import/ }),
+  ).toHaveText("Candidates for import1");
   expect(searches).toHaveLength(before);
 });
 
@@ -379,7 +379,7 @@ test("collapsed sidebar stays usable on a narrow screen", async ({
   await expect(
     page
       .getByRole("region", { name: "Existing library", exact: true })
-      .locator("details"),
+      .locator("[data-slot=status-section]"),
   ).toHaveCSS("border-left-width", "0px");
   await page.screenshot({
     animations: "disabled",
@@ -387,7 +387,27 @@ test("collapsed sidebar stays usable on a narrow screen", async ({
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(navigation.getByText("Library", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Open navigation", exact: true })
+    .click();
+  const mobileNavigation = page.getByRole("dialog", {
+    name: "Navigation",
+    exact: true,
+  });
+  await expect(
+    mobileNavigation.getByRole("link", { name: "Library", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("mobile-navigation.png"),
+  });
+  await mobileNavigation
+    .getByRole("button", { name: "Close navigation", exact: true })
+    .click();
+  await expect(mobileNavigation).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open navigation", exact: true }),
+  ).toBeFocused();
   await expect(
     page.getByRole("button", { name: "Expand sidebar" }),
   ).not.toBeVisible();
@@ -419,4 +439,97 @@ test("collapsed sidebar stays usable on a narrow screen", async ({
     path: testInfo.outputPath("mobile-dialog.png"),
     fullPage: true,
   });
+});
+
+test("settings tabs support keyboard navigation, URL state, and action toasts", async ({
+  page,
+}) => {
+  await musicFixture(page, true);
+  await page.route("**/api/v2/connections", (route) =>
+    route.fulfill({
+      json: {
+        url: "",
+        configured: false,
+        personalUsername: "",
+        deezerConfigured: false,
+        downloaderReady: true,
+        musicMounted: true,
+        downloaderVersion: "2.3.5",
+      },
+    }),
+  );
+  let failSave = false;
+  const qualities: unknown[] = [];
+  await page.route("**/api/v2/quality", (route) => {
+    const body: unknown = route.request().postDataJSON();
+    qualities.push(body);
+    return route.fulfill({
+      status: failSave ? 503 : 200,
+      json: failSave ? { error: "Cannot save quality right now" } : {},
+    });
+  });
+  await page.goto("/settings/connections");
+  const connections = page.getByRole("tab", {
+    name: "Connections",
+    exact: true,
+  });
+  const quality = page.getByRole("tab", { name: "Quality", exact: true });
+  await expect(connections).toHaveAttribute("aria-selected", "true");
+  await connections.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(quality).toBeFocused();
+  await expect(page).toHaveURL(/settings\/connections$/);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/settings\/quality$/);
+  await expect(quality).toHaveAttribute("aria-selected", "true");
+  await expect(quality).toBeFocused();
+  await expect(page.getByRole("tabpanel")).toContainText(
+    "Your quality preference",
+  );
+  await page.getByLabel("Allowed qualities, in order").selectOption("320");
+  await page
+    .getByRole("button", { name: "Save preference", exact: true })
+    .click();
+  const toasts = page.locator("[data-sonner-toast]");
+  await expect(
+    toasts.filter({ hasText: "Quality preference saved." }),
+  ).toBeVisible();
+  expect(qualities).toEqual([{ quality: ["320"] }]);
+  failSave = true;
+  await page
+    .getByRole("button", { name: "Save preference", exact: true })
+    .click();
+  await expect(
+    toasts.filter({ hasText: "Cannot save quality right now" }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Cannot save quality right now",
+  );
+  expect(qualities).toHaveLength(2);
+  await page.reload();
+  await expect(quality).toHaveAttribute("aria-selected", "true");
+  await expect(toasts).toHaveCount(0);
+});
+
+test("collapsible sections work with the keyboard", async ({ page }) => {
+  await musicFixture(page, true);
+  await page.goto("/search?q=Owned");
+  const existing = page.getByRole("region", {
+    name: "Existing library",
+    exact: true,
+  });
+  const trigger = existing.getByRole("button", { name: /^Existing library/ });
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    existing.getByText("Owned recording", { exact: true }),
+  ).not.toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    existing.getByText("Owned recording", { exact: true }),
+  ).toBeVisible();
+  await expect(trigger).toBeFocused();
 });

@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 type MutationInput = {
   path: string;
@@ -30,6 +31,7 @@ export function useApiQuery<T>(
 export function useApiMutation() {
   const client = useQueryClient();
   const mutation = useMutation({
+    onError: (error) => toast.error(error.message),
     onSuccess: async (_data, input) => {
       const area = input.path.split("/")[1];
       if (["session", "setup"].includes(area)) return;

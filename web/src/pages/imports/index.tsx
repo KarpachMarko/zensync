@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { PageTitle, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { StatusBadge } from "@/components/status";
@@ -8,6 +7,7 @@ import {
   SectionHeading,
   Text,
 } from "@/components/typography";
+import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
 import { type Migration } from "@/lib/migration";
 export function Imports() {

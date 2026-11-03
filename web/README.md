@@ -27,7 +27,7 @@ Imports use the `@/` alias for `src/`. Keep reusable controls and domain present
 
 ## UI components
 
-Button, Input and AlertDialog are installed using the official shadcn CLI with the Radix Nova preset. `components.json` records the aliases and theme location. The MIT license is in `licenses/shadcn-ui.txt`.
+Button, Input, AlertDialog, Sidebar, Tabs, Badge, Label, Separator, Progress, Collapsible, and Sonner are installed using the official shadcn CLI with the Radix Nova preset. Sidebar also uses the generated Sheet, Tooltip, and Skeleton dependencies. `components.json` records the aliases and theme location. The MIT license is in `licenses/shadcn-ui.txt`.
 
 From `web/`, add future components with:
 
@@ -38,6 +38,10 @@ pnpm dlx shadcn@latest add <component>
 Tailwind v4 is integrated through the Vite plugin. The generated theme in `src/styles/shadcn.css` uses ZenSync's navy/pink palette and Avenir typography. Tailwind Preflight is omitted to preserve browser defaults. All component styling is inline Tailwind in React; there is no `app.css`. Shared typography, field controls, navigation, and content layouts own their styles, while the sidebar owns its collapsed and responsive states. Review customizations before overwriting installed components.
 
 Use `Button` and `Input` throughout the app. `Button` preserves native HTML submit behavior; use `type="button"` for non-submit actions inside forms. Use `variant="outline"` or `variant="destructive"` for new controls. `DeletionDialog` owns the asynchronous deletion workflow; the shared AlertDialog owns modal accessibility, focus trapping and scroll locking.
+
+`WorkspaceSidebar` composes the shadcn Sidebar primitives, retains the saved desktop collapse preference, and uses a navigation drawer on mobile. Settings Tabs follow the existing routes and support manual keyboard activation. Status badges retain the app's state colors. Progress handles both known percentages and indeterminate transfers, including reduced motion. Shared field labels and expandable sections use Label and Collapsible.
+
+Use Sonner success toasts after completed user actions. Mutation failures produce error toasts; keep persistent form errors inline so users can correct them. Query/polling errors stay inline without repeated notifications. Keep durable request state, progress, and actionable request links on their owning pages. API keys and credentials must never appear in a toast. Toasts are dismissed at authentication boundaries.
 
 Historical static mockups were removed. Git history retains them; the running app is the current UI reference.
 

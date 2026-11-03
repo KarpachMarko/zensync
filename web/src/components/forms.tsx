@@ -1,11 +1,12 @@
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
 
 export function FieldLabel({ className, ...props }: ComponentProps<"label">) {
   return (
-    <label
+    <Label
       className={cn(
-        "mt-0 mb-[18px] flex flex-col gap-[7px] text-sm",
+        "mt-0 mb-[18px] flex flex-col items-stretch gap-[7px] text-sm leading-normal font-normal",
         className,
       )}
       {...props}

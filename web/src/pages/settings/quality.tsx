@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { User } from "@/lib/types";
 import { useState } from "react";
+import { toast } from "sonner";
 export function Quality({
   user,
   reload,
@@ -16,7 +17,7 @@ export function Quality({
   const [message, setMessage] = useState("");
   return (
     <>
-      {message && <Text role="status">{message}</Text>}
+      {message && <Text role="alert">{message}</Text>}
       <SectionHeading>Your quality preference</SectionHeading>
       <Text>
         Requests preserve a snapshot of this preference when submitted.
@@ -25,6 +26,7 @@ export function Quality({
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
+          setMessage("");
           try {
             await api("/quality", "PUT", {
               quality: String(
@@ -32,7 +34,8 @@ export function Quality({
               ).split(","),
             });
             await reload();
-            setMessage("Quality preference saved.");
+            setMessage("");
+            toast.success("Quality preference saved.");
           } catch (e) {
             setMessage((e as Error).message);
           } finally {

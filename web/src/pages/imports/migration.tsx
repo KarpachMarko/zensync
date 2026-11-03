@@ -1,3 +1,4 @@
+import { ExpandableSection } from "@/components/expandable-section";
 import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
@@ -19,15 +20,16 @@ import {
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { status, type Detail, type Source } from "@/lib/migration";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 export function MigrationPage() {
   const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
   const [actionError, setError] = useState(""),
-    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [filter, setFilter] = useState(""),
@@ -43,12 +45,12 @@ export function MigrationPage() {
   async function action(path: string, body?: unknown) {
     setBusy(true);
     setError("");
-    setNotice("");
+
     try {
       await api("/imports/" + id + "/" + path, "POST", body);
       await load();
       if (path === "match" || path === "publish")
-        setNotice(
+        toast.success(
           "Task queued. Progress is shown in Activity and updates here.",
         );
     } catch (e) {
@@ -68,7 +70,7 @@ export function MigrationPage() {
       }
       setSelected(new Set());
       await load();
-      setNotice(`${saved} acquisition requests saved.`);
+      toast.success(`${saved} acquisition requests saved.`);
     } catch (e) {
       setError(`${saved} requests saved. ${(e as Error).message}`);
       await load();
@@ -119,7 +121,6 @@ export function MigrationPage() {
         <StatusBadge state={m.state} />
       </PageTitle>
       {error && <Text role="alert">{error}</Text>}
-      {notice && <Text role="status">{notice}</Text>}
       {m.error && (
         <Notice>
           {m.error} <AppLink to="/activity">Open Activity</AppLink>
@@ -176,23 +177,30 @@ export function MigrationPage() {
             <Button disabled={busy}>Commit migration</Button>
           </form>
           {m.report.warnings.length > 0 && (
-            <details>
-              <summary className="focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-primary focus-visible:outline-offset-3">
-                Import warnings ({m.report.warnings.length})
-              </summary>
+            <ExpandableSection
+              title={`Import warnings (${m.report.warnings.length})`}
+              compact
+              defaultOpen={false}
+            >
               {m.report.warnings.slice(0, 100).map((w, i) => (
                 <Text key={i}>{w}</Text>
               ))}
-            </details>
+            </ExpandableSection>
           )}
         </>
       ) : (
         <>
-          <div className="my-7 flex items-center gap-5 max-[700px]:flex-wrap [&_strong]:text-[25px] [&_span]:text-sm [&_span]:font-normal [&_span]:text-muted-foreground [&_progress]:w-[200px] [&_progress]:h-[7px] [&_progress]:accent-[#a2d5bd]">
+          <div className="my-7 flex items-center gap-5 max-[700px]:flex-wrap [&_strong]:text-[25px] [&_span]:text-sm [&_span]:font-normal [&_span]:text-muted-foreground">
             <strong>
               {available} <span>of {songs.length} songs available</span>
             </strong>
-            <progress max={Math.max(1, songs.length)} value={available} />
+            <Progress
+              aria-label="Migration availability"
+              max={Math.max(1, songs.length)}
+              value={available}
+              className="h-[7px] w-[200px]"
+              indicatorClassName="bg-[#a2d5bd]"
+            />
           </div>
           {m.state === "open" ? (
             <Actions className="my-[22px] mx-0">

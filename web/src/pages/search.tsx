@@ -18,6 +18,7 @@ import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 type FoundAlbum = {
   id: number;
   title: string;
@@ -106,6 +107,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
         (keys.current[t.id] ||= requestKey()),
       );
       setRequested(new Set([...requested, t.id]));
+      toast.success("Song request saved.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -123,6 +125,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
         (albumKeys.current[chosen.id] ||= requestKey()),
       );
       setAlbumRequested(new Set([...albumRequested, chosen.id]));
+      toast.success("Album request saved.");
     } catch (e) {
       setError((e as Error).message);
     } finally {

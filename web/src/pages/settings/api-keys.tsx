@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useState } from "react";
+import { toast } from "sonner";
 
 type Key = { id: string; created: string };
 export function DeletionKeys() {
@@ -31,6 +32,11 @@ export function DeletionKeys() {
         setToken(result.token);
       }
       await load();
+      toast.success(
+        id
+          ? "Deletion API key revoked."
+          : "Deletion API key created. Copy it now.",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {

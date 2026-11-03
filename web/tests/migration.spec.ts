@@ -20,10 +20,10 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Collapse sidebar" }),
-  ).toHaveText("");
+  ).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   const icons = await page
-    .locator("aside nav [data-slot=nav-icon]")
+    .locator("[data-sidebar=sidebar] nav [data-slot=nav-icon]")
     .evaluateAll((nodes) =>
       nodes.map((n) => {
         const r = n.getBoundingClientRect();
@@ -274,7 +274,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page
     .getByRole("button", { name: "Save download limit", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("Download limit saved.");
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Download limit saved." }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByLabel("Parallel downloads", { exact: true }),
@@ -381,19 +385,23 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   ).toBeVisible();
   expect(
     await page
-      .locator("[data-slot=status-section] > summary")
+      .locator("[data-slot=status-section] > [data-slot=collapsible-trigger]")
       .allTextContents(),
   ).toEqual(["Existing library1", "Candidates for import2"]);
-  await existing.locator("summary").click();
+  await existing.getByRole("button", { name: /^Existing library/ }).click();
   await expect(
     existing.getByText("Existing recording", { exact: true }),
   ).not.toBeVisible();
-  await candidates.locator("summary").first().click();
+  await candidates
+    .getByRole("button", { name: /^Candidates for import/ })
+    .click();
   await expect(
     candidates.getByText("Import recording", { exact: true }),
   ).not.toBeVisible();
-  await candidates.locator("summary").first().click();
-  await existing.locator("summary").click();
+  await candidates
+    .getByRole("button", { name: /^Candidates for import/ })
+    .click();
+  await existing.getByRole("button", { name: /^Existing library/ }).click();
   await page
     .getByLabel("Song, artist, album or Deezer URL")
     .fill("library-down");
@@ -451,7 +459,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     name: "Downloading song: downloading",
   });
   await expect(running).not.toHaveAttribute("aria-valuenow");
-  const fill = running.locator("[data-slot=transfer-fill]");
+  const fill = running.locator("[data-slot=progress-indicator]");
   expect(
     await fill.evaluate((element) => getComputedStyle(element).animationName),
   ).toBe("active-progress");
@@ -483,16 +491,16 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByText("Finished song", { exact: true }),
   ).not.toBeVisible();
-  await page.locator("summary").filter({ hasText: "Completed" }).click();
+  await page.getByRole("button", { name: /^Completed/ }).click();
   await expect(page.getByText("Finished song", { exact: true })).toBeVisible();
-  await page.locator("summary").filter({ hasText: "Blocked" }).click();
+  await page.getByRole("button", { name: /^Blocked/ }).click();
   await expect(
     page.getByText("Blocked song", { exact: true }),
   ).not.toBeVisible();
   await page.getByRole("link", { name: "Manage parallel downloads" }).click();
   await expect(page).toHaveURL(/settings\/downloads$/);
 
-  await page.getByRole("link", { name: "Users", exact: true }).click();
+  await page.getByRole("tab", { name: "Users", exact: true }).click();
   await page.getByLabel("Username", { exact: true }).fill("ui-member");
   await page.getByLabel("Initial password").fill("local-ui-test-password");
   await page.getByRole("button", { name: "Create user" }).click();
@@ -503,9 +511,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await member
     .getByRole("checkbox", { name: "Allow adding music without approval" })
     .check();
-  await expect(page.getByRole("status")).toHaveText(
-    "Permissions saved for ui-member.",
-  );
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for ui-member." }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     member.getByRole("checkbox", {
@@ -515,9 +525,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await member
     .getByRole("checkbox", { name: "Allow adding music without approval" })
     .uncheck();
-  await expect(page.getByRole("status")).toHaveText(
-    "Permissions saved for ui-member.",
-  );
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Permissions saved for ui-member." }),
+  ).toBeVisible();
   // Deletion uses a distinct request, explicit shared-library confirmation,
   // and the same approval inbox. Backend deletion is exercised in Go tests.
   await page.route("**/api/v2/library?**", (route) =>
@@ -620,9 +632,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await memberRow
     .getByRole("checkbox", { name: "Allow deleting music without approval" })
     .uncheck();
-  await expect(page.getByRole("status")).toHaveText(
-    "Deletion permission updated.",
-  );
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Deletion permission updated." }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     memberRow.getByRole("checkbox", {
