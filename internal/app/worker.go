@@ -110,9 +110,12 @@ func (a *App) runMigrationTask(ctx context.Context) {
 		a.opMu.Unlock()
 		return
 	}
-	_, e = a.DB.Exec("UPDATE migration_tasks SET state='running',message=? WHERE id=?", map[string]string{"match": "Matching existing library and Deezer recordings", "publish": "Verifying and publishing personal collections"}[action], tid)
+	claim, e := a.DB.Exec("UPDATE migration_tasks SET state='running',message=? WHERE id=? AND state='queued'", map[string]string{"match": "Matching existing library and Deezer recordings", "publish": "Verifying and publishing personal collections"}[action], tid)
 	a.opMu.Unlock()
 	if e != nil {
+		return
+	}
+	if count, err := claim.RowsAffected(); err != nil || count != 1 {
 		return
 	}
 	if action == "match" {

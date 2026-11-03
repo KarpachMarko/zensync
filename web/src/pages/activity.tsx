@@ -21,21 +21,28 @@ export function Activity({ admin }: { admin: boolean }) {
       title: string;
       state: string;
       stage: string;
+      canCancel?: boolean;
       transfer?: TransferProgress;
     }[]
   >("/activity", { refetchInterval: 3000 });
   const rows = result.data ?? [];
   const [actionError, setError] = useState("");
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
   const error = actionError || result.error?.message;
   const loading = result.isPending;
   const load = result.reload;
-  async function retry(id: string) {
+  async function taskAction(id: string, cancel = false) {
+    if (pendingTask) return;
+    setPendingTask(id);
+    setError("");
     try {
-      await api("/tasks/" + id, "POST");
+      await api("/tasks/" + id + (cancel ? "/cancel" : ""), "POST");
       await load();
-      toast.success("Task queued for retry.");
+      toast.success(cancel ? "Migration task cancelled." : "Task queued for retry.");
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setPendingTask(null);
     }
   }
   return (
@@ -54,15 +61,17 @@ export function Activity({ admin }: { admin: boolean }) {
           transfer slot.
         </Text>
       ) : (
-        ["In progress", "Blocked", "Completed"].map((title) => {
+        ["In progress", "Blocked", "Completed", "Queued"].map((title) => {
           const group = rows.filter(
             (r) =>
               title ===
-              (finished(r.state)
-                ? "Completed"
-                : blocked(r.state)
-                  ? "Blocked"
-                  : "In progress"),
+              (r.state === "queued"
+                ? "Queued"
+                : finished(r.state)
+                  ? "Completed"
+                  : blocked(r.state)
+                    ? "Blocked"
+                    : "In progress"),
           );
           return (
             <StatusSection key={title} title={title} count={group.length}>
@@ -81,10 +90,16 @@ export function Activity({ admin }: { admin: boolean }) {
                       {(r.state === "failed" || r.state === "blocked") && (
                         <Button
                           variant="outline"
-                          onClick={() => void retry(r.id)}
+                          disabled={pendingTask !== null}
+                          onClick={() => void taskAction(r.id)}
                         >
                           Retry
                         </Button>
+                      )}
+                      {r.canCancel && (
+                        <Button variant="outline" disabled={pendingTask !== null}
+                          title="Cancel this migration task. Imported songs and playlists are kept."
+                          onClick={() => void taskAction(r.id, true)}>Cancel</Button>
                       )}
                     </Actions>
                   </Row>

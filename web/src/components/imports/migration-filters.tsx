@@ -44,7 +44,7 @@ export function MigrationFilters({
           </div>
           <Input id={inputId} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Title, artist or status" />
         </div>
-        <Button disabled={busy || selected === 0} onClick={onRequest}>Request selected ({selected})</Button>
+        <Button className="max-sm:w-full" disabled={busy || selected === 0} onClick={onRequest}>Request selected ({selected})</Button>
       </div>
       <MigrationStatusFilter counts={counts} hidden={hidden} onChange={onStatusesChange} className="border-0 p-0" />
       <p className="m-0 text-xs text-muted-foreground" role="status">

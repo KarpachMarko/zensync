@@ -320,17 +320,24 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	send(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) activity(w http.ResponseWriter, u User) {
-	query := `SELECT id,title,state,stage,created FROM (
- SELECT j.id,r.title,j.state,j.stage,j.created,r.owner FROM jobs j JOIN requests r ON r.id=j.request_id
- UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
- UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner FROM asset_relocations
+	query := `SELECT id,title,state,stage,created,kind,owner FROM (
+ SELECT j.id,r.title,j.state,j.stage,j.created,r.owner,'acquisition' AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+ UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
+ UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  )`
 	args := []any{}
 	if u.Role != "admin" {
 		query += " WHERE owner=?"
 		args = append(args, u.ID)
 	}
-	query += " ORDER BY created DESC LIMIT 200"
+	query += ` ORDER BY CASE
+ WHEN state='downloading' THEN 0
+ WHEN state IN ('awaiting_scan','scanning') THEN 1
+ WHEN state='importing' THEN 2
+ WHEN state IN ('blocked','failed','deferred') THEN 4
+ WHEN state='queued' THEN 5
+ WHEN state IN ('available','completed','cancelled','declined','withdrawn') THEN 6
+ ELSE 3 END, created DESC, id LIMIT 200`
 	rows, e := a.DB.Query(query, args...)
 	if e != nil {
 		a.internal(w, e)
@@ -339,12 +346,13 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, title, state, stage, created string
-		if e = rows.Scan(&id, &title, &state, &stage, &created); e != nil {
+		var id, title, state, stage, created, kind, owner string
+		if e = rows.Scan(&id, &title, &state, &stage, &created, &kind, &owner); e != nil {
 			a.internal(w, e)
 			return
 		}
 		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
+		item["canCancel"] = kind == "migration" && (state == "queued" || state == "failed" || state == "blocked") && (owner == u.ID || u.Role == "admin")
 		if transfer := a.transfer(id, state); transfer != nil {
 			item["transfer"] = transfer
 		}

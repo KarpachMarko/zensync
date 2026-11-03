@@ -14,9 +14,7 @@ import (
 func mapValues(k, v string) url.Values { return url.Values{k: {v}} }
 func normalized(s string) string       { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
 func sameRecording(s apple.Song, title, artist, album string, duration float64) bool {
-	t := Track{Title: title, Duration: duration}
-	t.Artist.Name, t.Album.Title = artist, album
-	return assessRecording(s, t).Confident
+	return assessLibraryRecording(s, Song{Title: title, Artist: artist, Album: album, Duration: duration}).Confident
 }
 func (a *App) matchMigration(ctx context.Context, owner, mid string) error {
 	sources, e := a.sources(mid)

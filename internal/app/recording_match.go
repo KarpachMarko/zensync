@@ -232,6 +232,12 @@ func assessRecording(source apple.Song, track Track) RecordingMatch {
 	return match
 }
 
+func assessLibraryRecording(source apple.Song, song Song) RecordingMatch {
+	track := Track{Title: song.Title, Duration: song.Duration}
+	track.Artist.Name, track.Album.Title = song.Artist, song.Album
+	return assessRecording(source, track)
+}
+
 func recordingDuration(seconds float64) string {
 	return fmt.Sprintf("%d:%02d", int(seconds)/60, int(seconds)%60)
 }

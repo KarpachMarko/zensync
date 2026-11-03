@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -73,10 +74,11 @@ func TestReviewLibrarySearchUsesEnteredQueryAndPreservesPartialResults(t *testin
 		t.Fatal(err)
 	}
 	type response struct {
-		Library      []Song  `json:"library"`
-		Deezer       []Track `json:"deezer"`
-		LibraryError string  `json:"libraryError"`
-		DeezerError  string  `json:"deezerError"`
+		Library        []Song                    `json:"library"`
+		Deezer         []Track                   `json:"deezer"`
+		LibraryError   string                    `json:"libraryError"`
+		DeezerError    string                    `json:"deezerError"`
+		LibraryMatches map[string]RecordingMatch `json:"libraryMatches"`
 	}
 	search := func(q string) response {
 		t.Helper()
@@ -94,6 +96,9 @@ func TestReviewLibrarySearchUsesEnteredQueryAndPreservesPartialResults(t *testin
 	result := search(query)
 	if !reflect.DeepEqual(result.Library, library) || result.LibraryError != "" || result.DeezerError != "" {
 		t.Fatalf("different results for the same query: %+v vs %+v", result, library)
+	}
+	if match, ok := result.LibraryMatches[local.ID]; !ok || match.Confident || !strings.Contains(strings.Join(match.Reasons, " "), "Title differs") {
+		t.Fatalf("missing library comparison: %+v", result.LibraryMatches)
 	}
 	expectedLocalQuery = "deezer-down"
 	result = search("deezer-down")
@@ -114,5 +119,17 @@ func TestReviewLibrarySearchUsesEnteredQueryAndPreservesPartialResults(t *testin
 	result = search("https://www.deezer.com/track/42")
 	if len(result.Library) != 1 || len(result.Deezer) != 1 {
 		t.Fatalf("direct URL lookup failed: %+v", result)
+	}
+	// Compare with the imported song even when the user edits the search text.
+	expectedLocalQuery = "a completely different search"
+	local.Title, local.Artist, local.Album, local.Duration = sources[0].Metadata.Title, sources[0].Metadata.Artist, sources[0].Metadata.Album, sources[0].Metadata.Duration
+	result = search(expectedLocalQuery)
+	if match := result.LibraryMatches[local.ID]; !match.Confident || len(match.Reasons) != 0 || len(match.Warnings) != 0 {
+		t.Fatalf("exact library recording not identified: %+v", match)
+	}
+	local.Album, local.Duration = "Different album", local.Duration+30
+	result = search(expectedLocalQuery)
+	if match := result.LibraryMatches[local.ID]; match.Confident || !strings.Contains(strings.Join(match.Reasons, " "), "Album differs") || !strings.Contains(strings.Join(match.Reasons, " "), "Duration differs") {
+		t.Fatalf("library metadata differences not explained: %+v", match)
 	}
 }

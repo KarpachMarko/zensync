@@ -1,4 +1,5 @@
 import { AudioUpload } from "@/components/imports/audio-upload";
+import { MatchDetails } from "@/components/imports/match-details";
 import { PreviewPlayer } from "@/components/imports/preview-player";
 import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
 import { useDeezerPreview } from "@/hooks/use-deezer-preview";
@@ -17,7 +18,7 @@ import {
 import { useImportAction } from "@/hooks/use-import-action";
 import type { LibrarySong, Track } from "@/lib/api";
 import { api as readAPI, label, time } from "@/lib/api";
-import { songGuidance, status, type Migration, type Source } from "@/lib/migration";
+import { songGuidance, status, type Migration, type Source, type RecordingMatch } from "@/lib/migration";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -27,7 +28,8 @@ type Candidates = {
   library: LibrarySong[];
   libraryError?: string;
   deezerError?: string;
-  deezerMatches?: Record<string, { confident: boolean; reasons: string[]; warnings?: string[] }>;
+  deezerMatches?: Record<string, RecordingMatch>;
+  libraryMatches?: Record<string, RecordingMatch>;
   deezerAmbiguous?: boolean;
 };
 
@@ -88,7 +90,7 @@ export function Review({
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
       <DialogContent
-        className="flex h-[min(840px,90dvh)] w-[calc(100vw-2rem)] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px] max-[700px]:h-[calc(100dvh-1rem)] max-[700px]:w-[calc(100vw-1rem)]"
+        className="flex h-[min(840px,90dvh)] w-[calc(100vw-2rem)] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px] max-sm:h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           if (trigger.current instanceof HTMLElement && trigger.current.isConnected)
@@ -96,7 +98,7 @@ export function Review({
           else document.querySelector<HTMLElement>("main h1")?.focus();
         }}
       >
-        <header className="shrink-0 border-0 border-b border-solid border-border px-5 py-3 pr-14">
+        <header className="shrink-0 border-0 border-b border-solid border-border px-5 py-3 pr-14 max-sm:pl-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <DialogTitle className="m-0 text-lg leading-tight break-words">
               {s.metadata.title}
@@ -107,7 +109,7 @@ export function Review({
             {s.metadata.artist || "Unknown artist"} / {s.metadata.album || "Unknown album"} / {time(s.metadata.duration)}
           </DialogDescription>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3 max-sm:px-3">
           <SearchBox
             className="my-0 gap-2"
             label="Search or Deezer song URL"
@@ -194,6 +196,7 @@ export function Review({
                     <div className="min-w-0 break-words">
                       <strong>{t.title}</strong>
                       <Caption>{t.artist} / {t.album} / {time(t.duration)}</Caption>
+                      <MatchDetails match={candidates.data.libraryMatches?.[t.id]} />
                     </div>
                     <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { serverId: t.id })}>Use existing</Button>
                   </Row>
@@ -218,16 +221,7 @@ export function Review({
                     <div className="min-w-0 break-words">
                       <strong>{label(t)}</strong>
                       <Caption>{t.artist.name} / {t.album.title} / {time(t.duration)}</Caption>
-                      {candidates.data.deezerMatches?.[t.id] && (
-                        <p className="m-0 mt-1 text-xs leading-5 text-muted-foreground">
-                          {candidates.data.deezerMatches[t.id].confident
-                            ? "Title, artist credits, album and duration match."
-                            : candidates.data.deezerMatches[t.id].reasons.join(" · ")}
-                        </p>
-                      )}
-                      {candidates.data.deezerMatches?.[t.id]?.warnings?.map((warning) => (
-                        <p key={warning} className="m-0 mt-1 text-xs leading-5 text-muted-foreground">{warning}</p>
-                      ))}
+                      <MatchDetails match={candidates.data.deezerMatches?.[t.id]} />
                       <DeezerRecordingTools
                         track={t}
                         playing={preview.playing && preview.active?.id === t.id}
@@ -241,15 +235,16 @@ export function Review({
             </div>
           )}
         </div>
-        <footer className="flex shrink-0 flex-col gap-2 border-0 border-t border-solid border-border px-5 py-3">
+        <footer className="flex min-w-0 shrink-0 flex-col gap-2 border-0 border-t border-solid border-border px-5 py-3 max-sm:px-3">
           <PreviewPlayer preview={preview} />
           {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <Text className="m-0 text-xs">Selecting a recording does not start a download.</Text>
             {editable && !s.serverId && (
               <Button
                 title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."
                 variant="outline"
+                className="ml-auto shrink-0"
                 disabled={busy}
                 onClick={() => void act(s.deferred ? "resume" : "defer")}
               >

@@ -64,7 +64,11 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 	case strings.HasPrefix(path, "/api/v2/imports/"):
 		a.migrationRoute(w, r, u)
 	case strings.HasPrefix(path, "/api/v2/tasks/") && r.Method == "POST":
-		a.retryTask(w, r, u)
+		if strings.HasSuffix(path, "/cancel") {
+			a.cancelMigrationTask(w, r, u)
+		} else {
+			a.retryTask(w, r, u)
+		}
 	default:
 		return false
 	}
@@ -436,6 +440,48 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 404, "Unknown migration action")
 	}
 }
+func (a *App) cancelMigrationTask(w http.ResponseWriter, r *http.Request, u User) {
+	tid := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v2/tasks/"), "/cancel")
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	tx, err := a.DB.Begin()
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var owner, mid, action, state, message string
+	if err = tx.QueryRow("SELECT owner,migration_id,action,state,message FROM migration_tasks WHERE id=?", tid).Scan(&owner, &mid, &action, &state, &message); err != nil || (owner != u.ID && u.Role != "admin") {
+		fail(w, 404, "Task not found")
+		return
+	}
+	if state == "cancelled" {
+		send(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if state != "queued" && state != "failed" && state != "blocked" {
+		fail(w, 409, "Only queued or failed migration tasks can be cancelled")
+		return
+	}
+	if _, err = tx.Exec("UPDATE migration_tasks SET state='cancelled',message='Cancelled by user' WHERE id=?", tid); err == nil {
+		_, err = tx.Exec("DELETE FROM migration_task_wakeups WHERE migration_id=? AND action=? AND NOT EXISTS(SELECT 1 FROM migration_tasks WHERE migration_id=? AND action=? AND state IN ('queued','running'))", mid, action, mid, action)
+	}
+	if err == nil {
+		_, err = tx.Exec("UPDATE migrations SET error='' WHERE id=? AND error=? AND NOT EXISTS(SELECT 1 FROM migration_tasks WHERE migration_id=? AND state IN ('queued','running','failed','blocked'))", mid, message, mid)
+	}
+	if err == nil {
+		err = audit(tx, owner, u.ID, "migration.task_cancelled", tid)
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
+}
+
 func (a *App) queueMigration(owner, mid, action string) (string, error) {
 	tx, e := a.DB.Begin()
 	if e != nil {
@@ -543,7 +589,11 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			}
 		}
 		a.rememberReviewTracks(tracks)
-		send(w, 200, map[string]any{"deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryError": libraryError, "deezerError": deezerError})
+		libraryMatches := map[string]RecordingMatch{}
+		for _, song := range navSongs {
+			libraryMatches[song.ID] = assessLibraryRecording(source, song)
+		}
+		send(w, 200, map[string]any{"deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
 		return
 	}
 	var resolvedServer, resolvedCandidate string

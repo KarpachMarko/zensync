@@ -1,4 +1,9 @@
 import type { Track } from "./api";
+export type RecordingMatch = {
+  confident: boolean;
+  reasons: string[];
+  warnings?: string[];
+};
 export type Migration = {
   id: string;
   name: string;

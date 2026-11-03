@@ -6,6 +6,7 @@ import {
 import type { User } from "@/lib/types";
 import { useState, type ReactNode } from "react";
 import { WorkspaceSidebar } from "./sidebar";
+import { Brand } from "./content";
 
 export function AppShell({
   user,
@@ -31,12 +32,13 @@ export function AppShell({
       onOpenChange={(open) => changeCollapsed(!open)}
     >
       <WorkspaceSidebar user={user} onSignOut={onSignOut} onError={onError} />
-      <SidebarInset className="block w-full min-w-0 max-w-[1440px] px-11 pt-7 pb-[70px] max-[700px]:px-[18px] max-[700px]:py-6">
-        <div className="mb-4 md:hidden">
+      <SidebarInset className="block w-full min-w-0 max-w-[1440px] px-11 pt-7 pb-[70px] max-lg:px-4 max-lg:pt-4 max-lg:pb-8">
+        <div className="mb-4 flex items-center gap-3 lg:hidden">
           <SidebarTrigger
-            className="border-0 p-1"
+            className="size-11 border-0 p-1"
             aria-label="Open navigation"
           />
+          <Brand />
         </div>
         {children}
       </SidebarInset>

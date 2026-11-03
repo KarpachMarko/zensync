@@ -78,8 +78,13 @@ test("commit starts matching and each result has a clear next action", async ({ 
       const body: { query: string } = route.request().postDataJSON();
       candidateQueries.push(body.query);
       if (body.query === "local only") return route.fulfill({ json: {
-        library: [{ id: "local", title: "Local recording", artist: "Artist", album: "Album", duration: 180 }],
+        library: [{ id: "local", title: "Local recording", artist: "Artist", album: "Other album", duration: 210 }],
+        libraryMatches: { local: { confident: false, reasons: ["Title differs", "Album differs", "Duration differs (3:00 vs 3:30)"] } },
         deezer: [], deezerError: "Deezer unavailable", libraryError: "",
+      } });
+      if (body.query === "local exact") return route.fulfill({ json: {
+        library: [{ id: "local", title: "Unresolved song", artist: "Artist", album: "Album", duration: 180 }],
+        libraryMatches: { local: { confident: true, reasons: [] } }, deezer: [],
       } });
       if (body.query === "remote only") return route.fulfill({ json: {
         library: [], deezer: [recording], libraryError: "Navidrome unavailable", deezerError: "",
@@ -158,9 +163,14 @@ test("commit starts matching and each result has a clear next action", async ({ 
   const localResults = unresolvedDialog.getByRole("region", { name: /^Already in Navidrome/ });
   const deezerResults = unresolvedDialog.getByRole("region", { name: /^Deezer recordings/ });
   await expect(localResults.getByText("Local recording", { exact: true })).toBeVisible();
+  await expect(localResults.getByText("Title differs · Album differs · Duration differs (3:00 vs 3:30)", { exact: true })).toBeVisible();
   await expect(localResults.getByRole("button", { name: "Use existing" })).toBeEnabled();
   await expect(deezerResults.getByRole("alert")).toContainText("Deezer search failed");
   await expect(deezerResults.getByText(/No results/)).toHaveCount(0);
+  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("local exact");
+  await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(localResults.getByText("Title, artist credits, album and duration match.", { exact: true })).toBeVisible();
+  await expect(localResults.getByText(/Title differs/)).toHaveCount(0);
   await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("remote only");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   await expect(localResults.getByRole("alert")).toContainText("Library search failed");

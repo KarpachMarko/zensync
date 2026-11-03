@@ -248,6 +248,7 @@ export function MigrationPage() {
           {shown.length === 0 && (
             <Text>No songs match these filters. Change the statuses or clear your search.</Text>
           )}
+          <div className="@container/catalog min-w-0">
           <div className="flex min-h-[52px] items-center justify-between gap-5 border-b border-solid border-sidebar-border py-2.5 text-xs text-muted-foreground [&_label]:m-0">
             <CheckboxField>
               <Checkbox
@@ -286,12 +287,12 @@ export function MigrationPage() {
               />{" "}
               Select ready songs
             </CheckboxField>
-            <span>Status</span>
+            <span className="hidden @min-[760px]/catalog:block">Status</span>
           </div>
           {shownEntries.slice(0, limit).map(({ song: s, position }, index) => (
             <div
               data-slot="import-song"
-              className="flex min-h-[52px] items-center gap-3 border-b border-solid border-sidebar-border py-1.5 [&>input]:min-h-0 max-[700px]:flex-wrap"
+              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 border-b border-solid border-sidebar-border py-3 @min-[760px]/catalog:grid-cols-[auto_minmax(0,1fr)_auto_auto] @min-[760px]/catalog:items-center"
               key={s.id + "-" + index}
             >
               <Checkbox
@@ -306,17 +307,13 @@ export function MigrationPage() {
                   setSelected(next);
                 }}
               />
-              {currentPlaylist && (
-                <span data-slot="playlist-position" className="text-[12px] text-muted-foreground w-[22px]">
-                  {position}
-                </span>
-              )}
               <Button
-                className="block flex-1 min-w-0 text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm max-[700px]:basis-[65%]"
+                className="block min-w-0 whitespace-normal break-words text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm"
                 aria-haspopup="dialog"
                 onClick={() => void setRecordingId(s.id)}
               >
                 <strong>
+                  {currentPlaylist && <span data-slot="playlist-position" className="mr-2 text-xs font-normal text-muted-foreground">{position}</span>}
                   {s.metadata.title}
                   {s.metadata.favorite ? " ♥" : ""}
                 </strong>
@@ -328,9 +325,11 @@ export function MigrationPage() {
                     : ""}
                 </Caption>
               </Button>
-              <StatusBadge state={status(s, scanning)} />
+              <div className="col-start-2 @min-[760px]/catalog:col-start-auto"><StatusBadge state={status(s, scanning)} /></div>
+              <div data-slot="import-song-actions" className="col-start-2 grid min-w-0 grid-flow-col auto-cols-fr gap-2 @min-[760px]/catalog:col-start-auto @min-[760px]/catalog:flex">
               <Button
                 variant="outline"
+                className="whitespace-normal text-xs @min-[760px]/catalog:whitespace-nowrap @min-[760px]/catalog:text-sm"
                 aria-haspopup="dialog"
                 onClick={() => void setRecordingId(s.id)}
               >
@@ -340,6 +339,7 @@ export function MigrationPage() {
                 <Button
                   title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."
                   variant="outline"
+                  className="whitespace-normal text-xs @min-[760px]/catalog:whitespace-nowrap @min-[760px]/catalog:text-sm"
                   disabled={busy}
                   onClick={() =>
                     void action(
@@ -350,6 +350,7 @@ export function MigrationPage() {
                   {s.deferred ? "Resume" : "Skip for now"}
                 </Button>
               )}
+              </div>
             </div>
           ))}
           {shown.length > limit && (
@@ -357,6 +358,7 @@ export function MigrationPage() {
               Show more ({shown.length - limit} remaining)
             </Button>
           )}
+          </div>
         </>
       )}
 

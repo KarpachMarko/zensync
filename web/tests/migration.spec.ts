@@ -509,6 +509,18 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
           stage: "Waiting for a slot",
         },
         {
+          id: "scan",
+          title: "Waiting for scan song",
+          state: "awaiting_scan",
+          stage: "Waiting for indexing",
+        },
+        {
+          id: "import",
+          title: "Importing song",
+          state: "importing",
+          stage: "Copying audio",
+        },
+        {
           id: "blocked",
           title: "Blocked song",
           state: "blocked",
@@ -524,7 +536,13 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     }),
   );
   await page.goto("/activity");
-  await expect(page.getByRole("progressbar")).toHaveCount(1);
+  await expect(page.getByRole("progressbar")).toHaveCount(3);
+  const inProgress = page.locator('[data-slot="status-section"]').filter({ has: page.getByRole("button", { name: /^In progress/ }) });
+  await expect(inProgress.locator("strong")).toHaveText(["Downloading song", "Waiting for scan song", "Importing song"]);
+  const queued = page.locator('[data-slot="status-section"]').filter({ has: page.getByRole("button", { name: /^Queued/ }) });
+  await expect(queued.getByText("Queued song", { exact: true })).toBeVisible();
+  await expect(inProgress.getByText("Queued song", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-slot="status-section"]').last()).toContainText("Queued song");
   const running = page.getByRole("progressbar", {
     name: "Downloading song: downloading",
   });
