@@ -1,16 +1,11 @@
 import { ExpandableSection } from "@/components/expandable-section";
-import { Checkbox, CheckboxField, SearchField } from "@/components/forms";
+import { Checkbox, CheckboxField } from "@/components/forms";
+import { MigrationFilters } from "@/components/imports/migration-filters";
+import { MigrationHeader } from "@/components/imports/migration-header";
 import { MigrationChoices } from "@/components/imports/migration-choices";
 import { Review } from "@/components/imports/review";
 import { Snapshot } from "@/components/imports/snapshot";
-import {
-  Actions,
-  FieldGrid,
-  Notice,
-  PageTitle,
-  Row,
-  SearchBar,
-} from "@/components/layout/content";
+import { Actions, FieldGrid } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { StatusBadge } from "@/components/status";
 import {
@@ -20,16 +15,25 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { useApiMutation, useApiQuery } from "@/hooks/use-api";
-import { status, type Detail, type Source } from "@/lib/migration";
-import { useState } from "react";
+import { useApiQuery } from "@/hooks/use-api";
+import { useImportAction } from "@/hooks/use-import-action";
+import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
+import { requestKey } from "@/lib/api";
+import { useRef, useState } from "react";
+import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 export function MigrationPage() {
-  const { api } = useApiMutation();
   const { id, sourceId, playlistId } = useParams();
+  const { act: save } = useImportAction(id);
+  const [recordingId, setRecordingId] = useQueryState(
+    "recording",
+    parseAsString.withOptions({ history: "push" }),
+  );
+  const [hiddenStatuses, setHiddenStatuses] = useQueryState(
+    "hideStatus",
+    parseAsArrayOf(parseAsString).withDefault(["Available"]),
+  );
   const [actionError, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState<Set<string>>(new Set()),
@@ -41,15 +45,16 @@ export function MigrationPage() {
     refetchInterval: 4000,
   });
   const detail = result.data;
+  const [requesting, setRequesting] = useState(false);
+  const batchAttempt = useRef<{ selection: string; key: string } | null>(null);
   const error = actionError || result.error?.message;
-  const load = result.reload;
   async function action(path: string, body?: unknown) {
+    batchAttempt.current = null;
     setBusy(true);
     setError("");
 
     try {
-      await api("/imports/" + id + "/" + path, "POST", body);
-      await load();
+      await save(path, body);
       if (path === "match" || path === "publish")
         toast.success(
           "Task queued. Progress is shown in Activity and updates here.",
@@ -61,22 +66,27 @@ export function MigrationPage() {
     }
   }
   async function acquireSelected() {
+    if (busy || selectedVisible.length === 0) return;
     setBusy(true);
+    setRequesting(true);
     setError("");
-    let saved = 0;
+    const sourceIds = selectedVisible.map((song) => song.id).sort();
+    const selection = JSON.stringify(selectedVisible
+      .map((song) => [song.id, song.candidate?.id] as const)
+      .sort(([left], [right]) => left.localeCompare(right)));
+    if (batchAttempt.current?.selection !== selection) batchAttempt.current = { selection, key: requestKey() };
     try {
-      for (const sid of selected) {
-        await api("/imports/" + id + "/songs/" + sid + "/acquire", "POST");
-        saved++;
-      }
+      const response = await save("acquire", { sourceIds }, batchAttempt.current.key);
       setSelected(new Set());
-      await load();
-      toast.success(`${saved} acquisition requests saved.`);
+      batchAttempt.current = null;
+      const bulk = response.bulk;
+      const summary = bulk ? `${bulk.created} song requests saved.${bulk.existing ? ` ${bulk.existing} already requested.` : ""}${bulk.skipped ? ` ${bulk.skipped} no longer ready and skipped.` : ""}` : "Song requests saved.";
+      toast.success(summary + " You can close this page; requests are saved on the server.");
     } catch (e) {
-      setError(`${saved} requests saved. ${(e as Error).message}`);
-      await load();
+      setError((e as Error).message);
     } finally {
       setBusy(false);
+      setRequesting(false);
     }
   }
   if (!detail)
@@ -86,52 +96,55 @@ export function MigrationPage() {
         <Text>{error || "Loading your migration…"}</Text>
       </>
     );
-  const { migration: m, songs, playlists } = detail;
-  const currentSource = songs.find((s) => s.id === sourceId),
+  const { migration: m, songs, playlists, matchTask } = detail;
+  const scanning = ["queued", "running"].includes(matchTask?.state ?? "");
+  const currentSource = songs.find((s) => s.id === (recordingId ?? sourceId)),
     currentPlaylist = playlists.find((p) => p.id === playlistId);
+  const songsById = new Map<string, Source>(songs.map((song) => [song.id, song]));
   const shownSongs = currentPlaylist
     ? currentPlaylist.entries
-        .map((sid) => songs.find((s) => s.id === sid))
+        .map((sid) => songsById.get(sid))
         .filter((s): s is Source => !!s)
     : songs;
-  const shown = shownSongs.filter((s) =>
-    (s.metadata.title + " " + s.metadata.artist + " " + status(s))
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
-  const available = songs.filter((s) => s.serverId).length;
-  if (currentSource)
-    return (
-      <Review
-        key={currentSource.id}
-        source={currentSource}
-        migration={m}
-        reload={load}
-      />
+  const statusCounts = new Map<string, number>();
+  for (const song of shownSongs) {
+    const value = status(song, scanning);
+    statusCounts.set(value, (statusCounts.get(value) ?? 0) + 1);
+  }
+  const shownEntries = shownSongs
+    .map((song, index) => ({ song, position: index + 1 }))
+    .filter(({ song }) =>
+      !hiddenStatuses.includes(status(song, scanning)) &&
+      (song.metadata.title + " " + song.metadata.artist + " " + status(song, scanning))
+        .toLowerCase().includes(filter.toLowerCase()),
     );
+  const shown = shownEntries.map(({ song }) => song);
+  const selectedVisible = [...new Map<string, Source>(shown
+    .filter((song) => selected.has(song.id) && song.candidate && !song.serverId && !song.deferred && !song.requestId)
+    .map((song) => [song.id, song]),
+  ).values()];
   return (
     <>
       <div className="flex gap-[15px] mb-[22px] text-[13px] text-muted-foreground">
         <AppLink to="/imports">Imports</AppLink>
         {playlistId && <AppLink to={"/imports/" + id}>{m.name}</AppLink>}
       </div>
-      <PageTitle>
-        <PageHeading tabIndex={-1}>
-          {currentPlaylist?.name || m.name}
-        </PageHeading>
-        <StatusBadge state={m.state} />
-      </PageTitle>
-      {error && <Text role="alert">{error}</Text>}
-      {m.error && (
-        <Notice>
-          {m.error} <AppLink to="/activity">Open Activity</AppLink>
-        </Notice>
-      )}
+      <MigrationHeader
+        detail={detail}
+        currentPlaylist={currentPlaylist}
+        errors={[actionError, result.error?.message]}
+        busy={busy}
+        onAction={action}
+        onDeleted={() => navigate("/imports", { replace: true })}
+      />
       {m.state === "staged" ? (
         <>
           <Text>
-            Your snapshot is saved. Select the playlists you want to migrate;
-            all {m.report.songs} catalog entries will be retained.
+            <strong className="text-foreground">All {m.report.songs} songs are included</strong>,
+            including {m.report.unplaylisted} songs outside playlists. You do not
+            need to select Library or Music to include them. Committing
+            automatically starts a scan of every song in Navidrome and Deezer.
+            Request missing audio after matching; downloads require a separate request.
           </Text>
           <div className="my-6 flex flex-wrap items-center gap-4 text-muted-foreground max-[700px]:gap-2">
             <span>{m.report.unplaylisted} unplaylisted songs</span>
@@ -158,74 +171,6 @@ export function MigrationPage() {
         </>
       ) : (
         <>
-          <div className="my-7 flex items-center gap-5 max-[700px]:flex-wrap [&_strong]:text-[25px] [&_span]:text-sm [&_span]:font-normal [&_span]:text-muted-foreground">
-            <strong>
-              {available} <span>of {songs.length} songs available</span>
-            </strong>
-            <Progress
-              aria-label="Migration availability"
-              max={Math.max(1, songs.length)}
-              value={available}
-              className="h-[7px] w-[200px]"
-              indicatorClassName="bg-[#a2d5bd]"
-            />
-          </div>
-          {m.state === "open" ? (
-            <Actions className="my-[22px] mx-0">
-              <Button disabled={busy} onClick={() => void action("match")}>
-                Find matches
-              </Button>
-              <Button disabled={busy} onClick={() => void action("publish")}>
-                {m.targetUser
-                  ? "Publish available songs"
-                  : "Publish to Navidrome"}
-              </Button>
-              <AppLink to="/settings/connections">Connections</AppLink>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Finish this migration? ZenSync will stop all playlist and favorite updates. Pending acquisitions will continue and unresolved entries will remain in the report. This cannot be undone.",
-                    )
-                  )
-                    void action("handover");
-                }}
-              >
-                Finish migration
-              </Button>
-            </Actions>
-          ) : (
-            <Notice>
-              Navidrome now owns these collections. Pending acquisitions
-              continue, but will not change your playlists or favorites.
-            </Notice>
-          )}
-          {!currentPlaylist && (
-            <section className="mb-8">
-              <SectionHeading>Migration playlists</SectionHeading>
-              {playlists
-                .filter((p) => p.selected)
-                .map((p) => (
-                  <Row asChild key={p.id}>
-                    <AppLink
-                      className="max-[700px]:items-start no-underline"
-                      to={"/imports/" + id + "/playlists/" + p.id}
-                    >
-                      <div>
-                        <strong>{p.name}</strong>
-                        <Caption>
-                          {p.entries.length} ordered entries
-                          {p.remoteId ? " / Published" : " / Not published yet"}
-                        </Caption>
-                      </div>
-                      <StatusBadge state={p.state} />
-                    </AppLink>
-                  </Row>
-                ))}
-            </section>
-          )}
           {currentPlaylist && (
             <>
               <Text>
@@ -233,9 +178,6 @@ export function MigrationPage() {
                 retain their positions. Unavailable entries are kept here until
                 they can be filled.
               </Text>
-              {currentPlaylist.error && (
-                <Notice>{currentPlaylist.error}</Notice>
-              )}
               {currentPlaylist.state === "paused" && (
                 <section className="my-6 rounded-lg border border-solid border-[#526079] p-5">
                   <SectionHeading>Review external changes</SectionHeading>
@@ -294,30 +236,30 @@ export function MigrationPage() {
           <SectionHeading>
             {currentPlaylist ? "Ordered songs" : "Complete catalog"}
           </SectionHeading>
-          <SearchBar>
-            <SearchField>
-              Filter songs
-              <Input
-                value={filter}
-                onChange={(e) => {
-                  setFilter(e.target.value);
-                  setLimit(100);
-                }}
-                placeholder="Title, artist or status"
-              />
-            </SearchField>
-            <Button
-              disabled={busy || selected.size === 0}
-              onClick={() => void acquireSelected()}
-            >
-              Request selected ({selected.size})
-            </Button>
-          </SearchBar>
-          <Text className="text-[13px]">
-            Find matches identifies exact album/title/artist/duration matches.
-            Review other recordings before requesting. Missing audio downloads
-            only after an explicit request and any required approval.
-          </Text>
+          <MigrationFilters
+            counts={statusCounts}
+            hidden={hiddenStatuses}
+            onStatusesChange={(values) => {
+              void setHiddenStatuses(values);
+              setSelected(new Set());
+              setLimit(100);
+            }}
+            query={filter}
+            onQueryChange={(value) => {
+              setFilter(value);
+              setLimit(100);
+            }}
+            shown={shown.length}
+            total={shownSongs.length}
+            selected={selectedVisible.length}
+            requesting={requesting}
+            busy={busy}
+            onRequest={() => void acquireSelected()}
+          />
+          {shown.length === 0 && (
+            <Text>No songs match these filters. Change the statuses or clear your search.</Text>
+          )}
+          <div className="@container/catalog min-w-0">
           <div className="flex min-h-[52px] items-center justify-between gap-5 border-b border-solid border-sidebar-border py-2.5 text-xs text-muted-foreground [&_label]:m-0">
             <CheckboxField>
               <Checkbox
@@ -356,11 +298,12 @@ export function MigrationPage() {
               />{" "}
               Select ready songs
             </CheckboxField>
-            <span>Status</span>
+            <span className="hidden @min-[760px]/catalog:block">Status</span>
           </div>
-          {shown.slice(0, limit).map((s, index) => (
+          {shownEntries.slice(0, limit).map(({ song: s, position }, index) => (
             <div
-              className="flex min-h-[52px] items-center gap-3 border-b border-solid border-sidebar-border py-1.5 [&>input]:min-h-0 max-[700px]:flex-wrap"
+              data-slot="import-song"
+              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 border-b border-solid border-sidebar-border py-3 @min-[760px]/catalog:grid-cols-[auto_minmax(0,1fr)_auto_auto] @min-[760px]/catalog:items-center"
               key={s.id + "-" + index}
             >
               <Checkbox
@@ -375,16 +318,13 @@ export function MigrationPage() {
                   setSelected(next);
                 }}
               />
-              {currentPlaylist && (
-                <span className="text-[12px] text-muted-foreground w-[22px]">
-                  {index + 1}
-                </span>
-              )}
               <Button
-                className="block flex-1 min-w-0 text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm max-[700px]:basis-[65%]"
-                onClick={() => navigate("/imports/" + id + "/songs/" + s.id)}
+                className="block min-w-0 whitespace-normal break-words text-left bg-transparent border-0 p-0 font-normal text-foreground [&_strong]:text-sm"
+                aria-haspopup="dialog"
+                onClick={() => void setRecordingId(s.id)}
               >
                 <strong>
+                  {currentPlaylist && <span data-slot="playlist-position" className="mr-2 text-xs font-normal text-muted-foreground">{position}</span>}
                   {s.metadata.title}
                   {s.metadata.favorite ? " ♥" : ""}
                 </strong>
@@ -396,18 +336,32 @@ export function MigrationPage() {
                     : ""}
                 </Caption>
               </Button>
-              <StatusBadge state={status(s)} />
+              <div className="col-start-2 @min-[760px]/catalog:col-start-auto"><StatusBadge state={status(s, scanning)} /></div>
+              <div data-slot="import-song-actions" className="col-start-2 grid min-w-0 grid-flow-col auto-cols-fr gap-2 @min-[760px]/catalog:col-start-auto @min-[760px]/catalog:flex">
               <Button
                 variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void action(
-                    "songs/" + s.id + "/" + (s.deferred ? "resume" : "defer"),
-                  )
-                }
+                className="whitespace-normal text-xs @min-[760px]/catalog:whitespace-nowrap @min-[760px]/catalog:text-sm"
+                aria-haspopup="dialog"
+                onClick={() => void setRecordingId(s.id)}
               >
-                {s.deferred ? "Resume" : "Skip for now"}
+                {recordingAction(s)}
               </Button>
+              {m.state === "open" && !s.serverId && (
+                <Button
+                  title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."
+                  variant="outline"
+                  className="whitespace-normal text-xs @min-[760px]/catalog:whitespace-nowrap @min-[760px]/catalog:text-sm"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(
+                      "songs/" + s.id + "/" + (s.deferred ? "resume" : "defer"),
+                    )
+                  }
+                >
+                  {s.deferred ? "Resume" : "Skip for now"}
+                </Button>
+              )}
+              </div>
             </div>
           ))}
           {shown.length > limit && (
@@ -415,7 +369,22 @@ export function MigrationPage() {
               Show more ({shown.length - limit} remaining)
             </Button>
           )}
+          </div>
         </>
+      )}
+
+      {currentSource && (
+        <Review
+          key={currentSource.id}
+          source={currentSource}
+          migration={m}
+          onClose={() => {
+            // A reviewed/resolved recording starts a fresh bulk submission.
+            batchAttempt.current = null;
+            if (sourceId) navigate("/imports/" + id, { replace: true });
+            else void setRecordingId(null, { history: "replace" });
+          }}
+        />
       )}
     </>
   );

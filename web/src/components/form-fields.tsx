@@ -1,10 +1,26 @@
 import { useFieldContext } from "@/hooks/form-context";
 import { cn } from "@/lib/utils";
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { FieldLabel } from "./forms";
 import { Text } from "./typography";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
+import { Button } from "./ui/button";
+import {
+  FileUpload,
+  FileUploadDropzone,
+  FileUploadTrigger,
+} from "./ui/file-upload";
+import { FileTextIcon, UploadIcon, XIcon } from "lucide-react";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "./ui/attachment";
 
 export function ValidationErrors({
   errors,
@@ -66,36 +82,107 @@ export function TextField({
   );
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 export function FileField({
   label,
-  ...props
-}: Omit<
-  ComponentProps<typeof Input>,
-  "type" | "value" | "onChange" | "onBlur"
-> & { label: ReactNode }) {
+  disabled,
+  accept,
+  onFileValidate,
+  description,
+}: Pick<ComponentProps<typeof FileUpload>, "accept" | "disabled" | "onFileValidate"> & {
+  label: string;
+  description?: string;
+}) {
   const field = useFieldContext<File | null>(),
     id = useId();
+  const [rejection, setRejection] = useState("");
   const invalid = field.state.meta.isTouched && !field.state.meta.isValid;
+  const file = field.state.value;
   return (
-    <FieldLabel htmlFor={id}>
-      <span id={id + "-label"}>{label}</span>
-      <Input
-        {...props}
-        id={id}
-        type="file"
-        aria-labelledby={id + "-label"}
+    <div className="mb-[18px] flex flex-col gap-[7px]">
+      <span id={id + "-label"} className="text-sm">{label}</span>
+      <FileUpload
+        label={label}
         name={field.name}
-        onChange={(event) =>
-          field.handleChange(event.target.files?.[0] ?? null)
-        }
-        onBlur={field.handleBlur}
-        aria-invalid={invalid}
-        aria-describedby={invalid ? id + "-error" : undefined}
-      />
-      {invalid && (
+        value={file ? [file] : []}
+        onValueChange={(files) => {
+          field.handleChange(files[0] ?? null);
+          field.handleBlur();
+          setRejection("");
+        }}
+        onFileValidate={onFileValidate}
+        onFileReject={(_file, message) => setRejection(message)}
+        accept={accept}
+        maxFiles={1}
+        disabled={disabled}
+        invalid={invalid || !!rejection}
+        aria-describedby={rejection || invalid ? id + "-error" : undefined}
+      >
+        {!file && (
+          <FileUploadDropzone
+            aria-label="Drop file here"
+            aria-describedby={rejection || invalid ? id + "-error" : id + "-help"}
+            className="gap-3 border-border py-7 text-center data-dragging:border-primary data-dragging:bg-accent"
+          >
+            <UploadIcon className="size-6 text-muted-foreground" aria-hidden="true" />
+            <span className="text-sm">Drag and drop your file here</span>
+            <span id={id + "-help"} className="text-xs text-muted-foreground">
+              {description ?? "Choose one file"}
+            </span>
+            <FileUploadTrigger asChild>
+              <Button variant="outline" type="button">Choose file</Button>
+            </FileUploadTrigger>
+          </FileUploadDropzone>
+        )}
+        {file && (
+          <Attachment
+            state={disabled ? "uploading" : "idle"}
+            className="w-full box-border flex-nowrap border-solid border-border"
+            aria-labelledby={id + "-filename"}
+            aria-describedby={id + "-metadata"}
+          >
+            <AttachmentMedia aria-hidden="true">
+              <FileTextIcon className="size-5" />
+            </AttachmentMedia>
+            <AttachmentContent>
+              <AttachmentTitle id={id + "-filename"} title={file.name}>
+                {file.name}
+              </AttachmentTitle>
+              <AttachmentDescription id={id + "-metadata"} aria-live="polite">
+                {file.name.split(".").pop()?.toUpperCase()} · {formatFileSize(file.size)} · {disabled ? "Uploading…" : "Ready to import"}
+              </AttachmentDescription>
+            </AttachmentContent>
+            <AttachmentActions className="pr-2">
+              <AttachmentAction
+                type="button"
+                disabled={disabled}
+                aria-label={"Remove " + file.name}
+                className="inline-flex items-center justify-center max-[700px]:min-w-11"
+                onClick={() => {
+                  field.handleChange(null);
+                  field.handleBlur();
+                  setRejection("");
+                }}
+              >
+                <XIcon className="size-4" aria-hidden="true" />
+              </AttachmentAction>
+            </AttachmentActions>
+          </Attachment>
+        )}
+      </FileUpload>
+      {rejection ? (
+        <Text id={id + "-error"} role="alert" className="m-0 text-xs">
+          {rejection}
+        </Text>
+      ) : invalid ? (
         <ValidationErrors id={id + "-error"} errors={field.state.meta.errors} />
-      )}
-    </FieldLabel>
+      ) : null}
+    </div>
   );
 }
 

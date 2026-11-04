@@ -90,29 +90,42 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	return done
 }
 func (a *App) runMigrationTask(ctx context.Context) {
+	if !a.migrationMu.TryLock() {
+		return
+	}
+	defer a.migrationMu.Unlock()
 	var tid, owner, mid, action string
 	e := a.DB.QueryRow("SELECT id,owner,migration_id,action FROM migration_tasks WHERE state='queued' ORDER BY created,rowid LIMIT 1").Scan(&tid, &owner, &mid, &action)
 	if e != nil {
 		return
 	}
 	a.opMu.Lock()
-	defer a.opMu.Unlock()
 	m, e := a.getMigration(mid, owner)
 	if e != nil {
+		a.opMu.Unlock()
 		return
 	}
 	if m.State != "open" {
 		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='cancelled',message='Migration no longer open' WHERE id=?", tid)
+		a.opMu.Unlock()
 		return
 	}
-	_, e = a.DB.Exec("UPDATE migration_tasks SET state='running',message=? WHERE id=?", map[string]string{"match": "Matching existing library and Deezer recordings", "publish": "Verifying and publishing personal collections"}[action], tid)
+	claim, e := a.DB.Exec("UPDATE migration_tasks SET state='running',message=? WHERE id=? AND state='queued'", map[string]string{"match": "Matching existing library and Deezer recordings", "publish": "Verifying and publishing personal collections"}[action], tid)
+	a.opMu.Unlock()
 	if e != nil {
+		return
+	}
+	if count, err := claim.RowsAffected(); err != nil || count != 1 {
 		return
 	}
 	if action == "match" {
 		e = a.matchMigration(ctx, owner, mid)
 	} else {
 		e = a.publishMigration(ctx, owner, mid)
+	}
+	if current, err := a.getMigration(mid, owner); err != nil || current.State != "open" {
+		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='cancelled',message='Migration no longer open' WHERE id=?", tid)
+		return
 	}
 	slog.Info("migration task finished", "task_id", tid, "migration_id", mid, "action", action, "success", e == nil)
 	state, message := "completed", "Finished"
@@ -226,6 +239,21 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	jid, rid, owner, target, quality, reason, actor, upgrade := claim.jid, claim.rid, claim.owner, claim.target, claim.quality, claim.reason, claim.actor, claim.upgrade
 	var e error
+	// A legacy/stale queued claim may outlive a source replacement. Never fetch
+	// the old provider target or fulfill its former source with different audio.
+	var replaced bool
+	if e = a.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM request_source_history WHERE request_id=?) AND NOT EXISTS(SELECT 1 FROM request_sources WHERE request_id=?)`, rid, rid).Scan(&replaced); e != nil {
+		return
+	}
+	if replaced {
+		var previous string
+		_ = a.DB.QueryRow("SELECT stage FROM jobs WHERE id=?", jid).Scan(&previous)
+		if !strings.HasPrefix(previous, "Replaced by ") {
+			previous = "Replaced by a new recording choice for the imported song. Previous task: " + previous
+		}
+		a.jobState(jid, "superseded", previous)
+		return
+	}
 	if upgrade {
 		a.jobState(jid, "blocked", "Asset replacement is not enabled; existing audio is retained")
 		return
@@ -286,7 +314,13 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	}
 	var file, actual, metadata string
 	e = a.DB.QueryRow("SELECT file_path,quality,metadata FROM assets WHERE target=?", target).Scan(&file, &actual, &metadata)
-	if e == sql.ErrNoRows {
+	if e == sql.ErrNoRows && strings.HasPrefix(target, "upload:") {
+		file, actual, metadata, e = a.placeUploadedAudio(jid, rid, target)
+		if e != nil {
+			a.jobState(jid, "failed", e.Error())
+			return
+		}
+	} else if e == sql.ErrNoRows {
 		t, err := a.track(ctx, target)
 		if err != nil {
 			a.jobState(jid, "failed", err.Error())
@@ -298,7 +332,7 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 			return
 		}
 		var approved Track
-		if json.Unmarshal([]byte(approvedJSON), &approved) != nil || approved.ID != t.ID || normalized(trackLabel(approved)) != normalized(trackLabel(t)) || normalized(approved.Artist.Name) != normalized(t.Artist.Name) || normalized(approved.Album.Title) != normalized(t.Album.Title) || approved.Duration != t.Duration {
+		if json.Unmarshal([]byte(approvedJSON), &approved) != nil || !sameApprovedRecording(approved, t) {
 			a.jobState(jid, "failed", "Provider metadata changed since approval; review and submit a fresh request")
 			return
 		}
@@ -365,7 +399,7 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 		return
 	}
 	slog.Info("Navidrome indexing check", "job_id", jid, "scanning", scan.Scan.Scanning, "scanned_count", scan.Scan.Count, "file_path", file)
-	songID, e := a.findPlaced(ctx, c, file, metadata)
+	songID, lookup, e := a.findPlacedWithReport(ctx, c, file, metadata, false)
 	if e != nil {
 		a.jobState(jid, "failed", e.Error())
 		return
@@ -378,7 +412,9 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 		}
 		slog.Warn("Placed file not found in Navidrome", "job_id", jid, "file_path", file, "wait_seconds", elapsed, "scanning", scan.Scan.Scanning)
 		if elapsed >= 300 {
-			a.jobState(jid, "failed", "Could not verify the downloaded file in Navidrome after 5 minutes. Check scan progress, shared music storage and the service account's library/download permissions. The validated file is retained; retry after correcting the connection or storage.")
+			a.jobState(jid, "failed", "Could not verify the downloaded file in Navidrome after 5 minutes. "+lookup.reason()+". Retained file: "+file+". Retry checks this file again without downloading it again.")
+		} else {
+			a.jobState(jid, "awaiting_scan", lookup.reason()+". The validated file is retained; checking again shortly.")
 		}
 		return
 	}
@@ -420,13 +456,16 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 		return
 	}
 	providerID, _ := strconv.ParseInt(strings.TrimPrefix(target, "deezer:track:"), 10, 64)
-	if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND match_state IN ('confident','manual') AND server_id=''", songID, providerID); e != nil {
-		return
+	if providerID > 0 {
+		if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND match_state IN ('confident','manual') AND server_id=''", songID, providerID); e != nil {
+			return
+		}
 	}
 	if e = tx.Commit(); e != nil {
 		return
 	}
 	_ = os.RemoveAll(filepath.Join(a.dataDir, "staging", jid))
+	a.cleanAudioUpload(target)
 	rows, e := a.DB.Query("SELECT DISTINCT m.owner,m.id,m.target_user,m.state FROM source_songs s JOIN migrations m ON m.id=s.migration_id WHERE s.server_id=?", songID)
 	if e != nil {
 		return

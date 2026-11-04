@@ -40,12 +40,23 @@ export const uploadSchema = z.object({
   file: z
     .instanceof(File)
     .nullable()
-    .refine((file) => file !== null, "Choose an XML export.")
+    .refine((file) => file !== null, "Choose an XML or TXT export.")
+    .refine(
+      (file) => !file || /\.(xml|txt)$/i.test(file.name),
+      "Choose an XML or TXT export.",
+    )
     .refine(
       (file) => !file || file.size <= 32 * 1024 * 1024,
       "Choose an export smaller than 32 MiB.",
     ),
 });
+export const audioUploadSchema = z.object({
+  file: z.instanceof(File).nullable()
+    .refine((file) => file !== null, "Choose an audio file.")
+    .refine((file) => !file || /\.(flac|mp3|m4a|ogg|opus|wav|aif|aiff)$/i.test(file.name), "Choose FLAC, MP3, M4A, OGG, OPUS, WAV or AIFF audio.")
+    .refine((file) => !file || (file.size >= 1024 && file.size <= 1024 ** 3), "Audio must be between 1 KiB and 1 GiB."),
+});
+
 export const migrationChoicesSchema = z.object({
   playlists: z.array(z.string().min(1)),
   favorites: z.boolean(),

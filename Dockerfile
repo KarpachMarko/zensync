@@ -16,6 +16,7 @@ COPY integrations/gofi/zensync_progress.go.txt ./internal/dfi/zensync_progress.g
 COPY integrations/gofi/zensync_progress_test.go.txt ./internal/dfi/zensync_progress_test.go
 # Fail the build if the pinned hook integration point ever changes.
 RUN test "$(grep -c 'options.Hooks = terminalDownloadHooks(options.Message)' internal/dfi/download_track.go)" = 1 && sed -i 's/options.Hooks = terminalDownloadHooks(options.Message)/options.Hooks = zenSyncDownloadHooks(options.Message)/' internal/dfi/download_track.go
+RUN sed -i 's/^\([[:space:]]\)return DownloadTrack(ctx, options)$/\1return zenSyncDownloadTrack(ctx, options)/' internal/dfi/download_track.go && test "$(grep -c 'return zenSyncDownloadTrack(ctx, options)' internal/dfi/download_track.go)" = 1
 RUN go test ./internal/dfi -run TestZenSyncProgress -count=1
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/d-fi ./cmd/d-fi
 

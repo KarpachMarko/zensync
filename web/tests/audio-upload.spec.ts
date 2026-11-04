@@ -1,0 +1,62 @@
+import { test, expect } from "@playwright/test";
+import type { Detail, Source } from "../src/lib/migration";
+
+test("review accepts a local recording without a Deezer match and retains failed uploads for retry", async ({ page }) => {
+  const source: Source = { id: "source", metadata: { title: "Missing song", artist: "Artist", album: "Album", duration: 180, favorite: false, missing: false }, serverId: "", candidate: null, matchState: "unresolved", deferred: false, favoriteState: "", requestId: "", decision: "", jobState: "" };
+  const detail: Detail = { migration: { id: "migration", name: "Migration", state: "open", favorites: false, targetUser: "", error: "", report: { songs: 1, playlists: 0, unplaylisted: 1, missing: 0, excluded: 0, warnings: [] } }, songs: [source], playlists: [] };
+  const keys: string[] = [];
+  let failUpload = true;
+  let releaseUpload = () => {};
+  const pending = new Promise<void>((resolve) => { releaseUpload = resolve; });
+  await page.route("**/api/v2/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
+    if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "csrf-fixture", user: { id: "user", username: "user", role: "member", quality: ["128"] } } });
+    if (path === "/api/v2/imports/migration") return route.fulfill({ json: detail });
+    if (path.endsWith("/candidates")) return route.fulfill({ json: { library: [], deezer: [], deezerError: "Recording unavailable" } });
+    if (path.endsWith("/upload")) {
+      expect(route.request().headers()["content-type"]).toBe("application/octet-stream");
+      expect(route.request().headers()["x-file-name"]).toBe("My%20version.flac");
+      expect(route.request().headers()["x-csrf-token"]).toBe("csrf-fixture");
+      expect(route.request().postDataBuffer()?.length).toBe(2048);
+      keys.push(route.request().headers()["idempotency-key"]);
+      if (failUpload) return route.fulfill({ status: 400, json: { error: "Cannot read this audio file" } });
+      await pending;
+      source.requestId = "uploaded-request";
+      source.decision = "awaiting_approval";
+      source.matchState = "manual";
+      return route.fulfill({ status: 201, json: { id: "uploaded-request", decision: "awaiting_approval" } });
+    }
+    if (path === "/api/v2/requests" || path === "/api/v2/activity") return route.fulfill({ json: [] });
+    throw new Error("Unexpected API: " + path);
+  });
+  await page.goto("/imports/migration?recording=source");
+  const dialog = page.getByRole("dialog", { name: "Missing song", exact: true });
+  await dialog.getByRole("button", { name: "Upload your version", exact: true }).click();
+  await expect(dialog.getByText(/Audio is not re-encoded/)).toBeVisible();
+  const submit = dialog.getByRole("button", { name: "Upload and import", exact: true });
+  await submit.click();
+  await expect(dialog.getByRole("alert").filter({ hasText: "Choose an audio file." })).toBeVisible();
+  const input = dialog.getByLabel("Your audio file", { exact: true });
+  await input.setInputFiles({ name: "picture.png", mimeType: "image/png", buffer: Buffer.alloc(2048) });
+  await expect(dialog.getByRole("alert").filter({ hasText: "Choose FLAC" })).toBeVisible();
+  expect(keys).toHaveLength(0);
+  await input.setInputFiles({ name: "My version.flac", mimeType: "audio/flac", buffer: Buffer.alloc(2048) });
+  await submit.click();
+  await expect(dialog.getByRole("alert").filter({ hasText: "Cannot read this audio file" })).toBeVisible();
+  await expect(dialog.getByText("My version.flac", { exact: true })).toBeVisible();
+  failUpload = false;
+  await submit.click();
+  await expect(dialog.getByRole("button", { name: "Uploading and validating…" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Remove My version.flac", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  releaseUpload();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-slot="import-song"]').getByText("awaiting approval", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Find recording", exact: true }).click();
+  await expect(dialog.getByRole("link", { name: "View request and approval" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Upload your version", exact: true })).toBeDisabled();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});

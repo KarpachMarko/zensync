@@ -47,8 +47,9 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 		if out[index].Decision == "approved" {
 			e = a.DB.QueryRow(`SELECT CASE
  WHEN count(*)=0 THEN 'queued'
- WHEN sum(state IN ('available','completed','cancelled'))=count(*) THEN 'completed'
- WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred'))>0 THEN
+ WHEN sum(state='superseded')=count(*) THEN 'superseded'
+ WHEN sum(state IN ('available','completed','cancelled','superseded'))=count(*) THEN 'completed'
+ WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred','superseded'))>0 THEN
    CASE WHEN count(DISTINCT state)=1 THEN min(state) ELSE 'running' END
  WHEN sum(state='failed')>0 THEN 'failed'
  ELSE 'blocked' END FROM jobs WHERE (request_id=? AND NOT EXISTS(SELECT 1 FROM request_children WHERE parent_id=?)) OR request_id IN (SELECT child_id FROM request_children WHERE parent_id=?)`, out[index].ID, out[index].ID, out[index].ID).Scan(&out[index].State)
@@ -86,6 +87,13 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 			}
 		} else {
 			out[index].Kind = "track"
+			if err := a.DB.QueryRow("SELECT id,stage FROM jobs WHERE request_id=?", out[index].ID).Scan(&out[index].JobID, &out[index].Detail); err != nil && err != sql.ErrNoRows {
+				a.internal(w, err)
+				return
+			}
+			if strings.HasPrefix(out[index].Target, "upload:") {
+				out[index].Kind = "upload"
+			}
 			if out[index].State == "downloading" {
 				var job string
 				if err := a.DB.QueryRow("SELECT id FROM jobs WHERE request_id=?", out[index].ID).Scan(&job); err != nil && err != sql.ErrNoRows {
@@ -99,6 +107,12 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 	send(w, 200, out)
 }
 func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
+	a.createVerifiedRequest(w, r, u, nil)
+}
+
+// Internal migration requests already have a server-verified recording. The
+// worker still rechecks provider metadata before executing an approved request.
+func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u User, recording *Track) {
 	var in struct {
 		Target   string `json:"target"`
 		Title    string `json:"title"`
@@ -123,7 +137,13 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	var verified Track
 	{
-		t, e := a.track(r.Context(), in.Target)
+		var t Track
+		var e error
+		if recording != nil {
+			t = *recording
+		} else {
+			t, e = a.track(r.Context(), in.Target)
+		}
 		if e != nil {
 			fail(w, 400, e.Error())
 			return
@@ -173,24 +193,7 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
-	rid := id()
-	decision, reason := "awaiting_approval", ""
-	if !in.Upgrade && (u.Role == "admin" || u.Direct) {
-		decision, reason = "approved", "Allowed without approval"
-	}
-	_, e = tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, in.Target, in.Title, in.Artist, in.Upgrade, string(u.Quality), decision, reason)
-	if e == nil {
-		_, e = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", rid, mustJSON(verified))
-	}
-	if e == nil && in.SourceID != "" {
-		_, e = tx.Exec("INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", in.SourceID, rid)
-	}
-	if e == nil && decision == "approved" {
-		_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
-	}
-	if e == nil {
-		e = audit(tx, u.ID, u.ID, "request.created", rid)
-	}
+	rid, e := insertTrackRequest(tx, u, key, in.SourceID, verified, in.Upgrade)
 	if e == nil {
 		e = tx.Commit()
 	}
@@ -198,7 +201,40 @@ func (a *App) createRequest(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
-	send(w, 201, map[string]string{"id": rid})
+	response := map[string]any{"id": rid}
+	if in.SourceID != "" {
+		var mid string
+		if a.DB.QueryRow("SELECT migration_id FROM source_songs WHERE id=?", in.SourceID).Scan(&mid) == nil {
+			if songs, err := a.sources(mid, in.SourceID); err == nil && len(songs) == 1 {
+				response["source"] = songs[0]
+			}
+		}
+	}
+	send(w, 201, response)
+}
+
+// Callers validate the server-fetched recording and handle idempotency before
+// insertion. Single and bulk requests share approval, quality and job creation.
+func insertTrackRequest(tx *sql.Tx, u User, key, sourceID string, track Track, upgrade bool) (string, error) {
+	rid := id()
+	decision, reason := "awaiting_approval", ""
+	if !upgrade && (u.Role == "admin" || u.Direct) {
+		decision, reason = "approved", "Allowed without approval"
+	}
+	_, err := tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, fmt.Sprintf("deezer:track:%d", track.ID), trackLabel(track), track.Artist.Name, upgrade, string(u.Quality), decision, reason)
+	if err == nil {
+		_, err = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", rid, mustJSON(track))
+	}
+	if err == nil && sourceID != "" {
+		_, err = tx.Exec("INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", sourceID, rid)
+	}
+	if err == nil && decision == "approved" {
+		_, err = tx.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
+	}
+	if err == nil {
+		err = audit(tx, u.ID, u.ID, "request.created", rid)
+	}
+	return rid, err
 }
 func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	rid := strings.TrimPrefix(r.URL.Path, "/api/v2/requests/")
@@ -287,20 +323,36 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
+	if in.Decision != "approved" {
+		var target string
+		if a.DB.QueryRow("SELECT target FROM requests WHERE id=?", rid).Scan(&target) == nil {
+			a.cleanAudioUpload(target)
+		}
+	}
 	send(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) activity(w http.ResponseWriter, u User) {
-	query := `SELECT id,title,state,stage,created FROM (
- SELECT j.id,r.title,j.state,j.stage,j.created,r.owner FROM jobs j JOIN requests r ON r.id=j.request_id
- UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
- UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner FROM asset_relocations
+	query := `SELECT id,title,state,CASE WHEN state='superseded' AND stage NOT LIKE 'Replaced by %' THEN 'Superseded by a newer successful request. Previous failure: '||stage ELSE stage END,created,kind,owner FROM (
+ SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
+ SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
+ WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
+ ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN r.target LIKE 'deezer:track:%' THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+ UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
+ UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  )`
 	args := []any{}
 	if u.Role != "admin" {
 		query += " WHERE owner=?"
 		args = append(args, u.ID)
 	}
-	query += " ORDER BY created DESC LIMIT 200"
+	query += ` ORDER BY CASE
+ WHEN state='downloading' THEN 0
+ WHEN state IN ('awaiting_scan','scanning') THEN 1
+ WHEN state='importing' THEN 2
+ WHEN state IN ('blocked','failed','deferred') THEN 4
+ WHEN state='queued' THEN 5
+ WHEN state IN ('available','completed','cancelled','declined','withdrawn','superseded') THEN 6
+ ELSE 3 END, created DESC, id LIMIT 200`
 	rows, e := a.DB.Query(query, args...)
 	if e != nil {
 		a.internal(w, e)
@@ -309,12 +361,15 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, title, state, stage, created string
-		if e = rows.Scan(&id, &title, &state, &stage, &created); e != nil {
+		var id, title, state, stage, created, kind, owner string
+		if e = rows.Scan(&id, &title, &state, &stage, &created, &kind, &owner); e != nil {
 			a.internal(w, e)
 			return
 		}
 		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
+		item["canCancel"] = kind == "migration" && (state == "queued" || state == "failed" || state == "blocked") && (owner == u.ID || u.Role == "admin")
+		item["canReview"] = kind == "acquisition" && (state == "failed" || state == "blocked")
+		item["canDismiss"] = kind == "acquisition" && state == "failed"
 		if transfer := a.transfer(id, state); transfer != nil {
 			item["transfer"] = transfer
 		}

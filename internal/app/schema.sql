@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS events (
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS requests_owner ON requests(owner,created);
+CREATE INDEX IF NOT EXISTS requests_owner_target ON requests(owner,target);
 CREATE INDEX IF NOT EXISTS events_owner ON events(owner,id);
 CREATE TABLE IF NOT EXISTS secrets (name TEXT PRIMARY KEY, value BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -71,6 +72,12 @@ CREATE TABLE IF NOT EXISTS job_runtime (
 CREATE TABLE IF NOT EXISTS assets (
  target TEXT PRIMARY KEY, file_path TEXT NOT NULL, quality TEXT NOT NULL, metadata TEXT NOT NULL,
  server_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS audio_duration_approvals (
+ checksum TEXT NOT NULL, recording TEXT NOT NULL, quality TEXT NOT NULL,
+ duration REAL NOT NULL, actor TEXT NOT NULL REFERENCES users(id),
+ request_id TEXT NOT NULL REFERENCES requests(id), created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(checksum,recording,quality)
 );
 INSERT OR IGNORE INTO schema_version VALUES(2);
 
@@ -121,3 +128,24 @@ CREATE TABLE IF NOT EXISTS invitations (
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT OR IGNORE INTO schema_version VALUES(4);
+
+CREATE TABLE IF NOT EXISTS audio_uploads (
+ target TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id),
+ file_path TEXT NOT NULL, metadata TEXT NOT NULL, quality TEXT NOT NULL,
+ checksum TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS migration_acquisition_batches (
+ owner TEXT NOT NULL REFERENCES users(id), idem TEXT NOT NULL,
+ migration_id TEXT NOT NULL REFERENCES migrations(id) ON DELETE CASCADE,
+ fingerprint TEXT NOT NULL, result TEXT NOT NULL,
+ PRIMARY KEY(owner,idem)
+);
+
+-- Former associations survive recording changes, independently of current links.
+CREATE TABLE IF NOT EXISTS request_source_history (
+ source_id TEXT NOT NULL REFERENCES source_songs(id) ON DELETE CASCADE,
+ request_id TEXT NOT NULL REFERENCES requests(id),
+ PRIMARY KEY(source_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS request_source_history_request ON request_source_history(request_id);

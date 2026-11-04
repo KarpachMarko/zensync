@@ -1,4 +1,4 @@
-// Package apple reads fixed Apple Music/iTunes XML snapshots. It never follows
+// Package apple reads fixed Apple Music/iTunes XML and text snapshots. It never follows
 // a Location or retrieves a DTD. Limits apply before metadata is persisted.
 package apple
 
@@ -176,7 +176,7 @@ func number(v any) float64 {
 	}
 	return 0
 }
-func Parse(data []byte) (Snapshot, error) {
+func parseXML(data []byte) (Snapshot, error) {
 	out := Snapshot{Songs: []Song{}, Playlists: []Playlist{}, Warnings: []string{}}
 	if len(data) > MaxBytes {
 		return out, errors.New("XML file exceeds 32 MiB")

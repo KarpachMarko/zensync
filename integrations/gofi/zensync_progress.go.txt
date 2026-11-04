@@ -3,13 +3,53 @@
 package dfi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/d-fi/GoFi/download"
 	"github.com/d-fi/GoFi/types"
 )
+
+func zenSyncDownloadTrack(ctx context.Context, options DownloadTrackOptions) (string, error) {
+	// Disabled fallback must also preserve the original typed geo-block error.
+	// Upstream otherwise swallows it when a fallback pointer is present.
+	if !options.FallbackTrack {
+		options.Track.FALLBACK = nil
+	}
+	path, err := DownloadTrack(ctx, options)
+	if os.Getenv("ZENSYNC_PROGRESS") == "1" {
+		if code := zenSyncResultCode(path, err); code != "" {
+			data, _ := json.Marshal(struct {
+				Code string `json:"code"`
+			}{code})
+			fmt.Printf("ZENSYNC_RESULT %s\n", data)
+		}
+	}
+	return path, err
+}
+
+func zenSyncResultCode(path string, err error) string {
+	var geo *download.GeoBlocked
+	var license *download.WrongLicense
+	switch {
+	case errors.As(err, &geo):
+		return "geo_blocked"
+	case errors.As(err, &license):
+		return "license_required"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case err != nil:
+		return "provider_error"
+	case path == "":
+		return "unavailable"
+	default:
+		return ""
+	}
+}
 
 func zenSyncDownloadHooks(message string) DownloadTrackHooks {
 	hooks := terminalDownloadHooks(message)

@@ -1,3 +1,4 @@
+import { DeleteMigration } from "@/components/imports/delete-migration";
 import { ExpandableSection } from "@/components/expandable-section";
 import { NewMigrationDialog } from "@/components/imports/new-migration-dialog";
 import { parseAsBoolean, useQueryState } from "nuqs";
@@ -79,9 +80,9 @@ function isCompleted(migration: Migration) {
 
 function MigrationList({ migrations }: { migrations: Migration[] }) {
   return migrations.map((migration) => (
-    <Row asChild key={migration.id}>
+    <Row key={migration.id}>
       <AppLink
-        className="no-underline max-[700px]:items-start"
+        className="flex min-w-0 flex-1 items-center justify-between gap-5 no-underline max-[700px]:items-start"
         to={"/imports/" + migration.id}
       >
         <div>
@@ -93,6 +94,7 @@ function MigrationList({ migrations }: { migrations: Migration[] }) {
         </div>
         <StatusBadge state={migration.state} />
       </AppLink>
+      <DeleteMigration migration={migration} />
     </Row>
   ));
 }

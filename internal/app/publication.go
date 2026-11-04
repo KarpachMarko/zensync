@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strings"
 	"zensync/internal/apple"
@@ -14,7 +14,7 @@ import (
 func mapValues(k, v string) url.Values { return url.Values{k: {v}} }
 func normalized(s string) string       { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
 func sameRecording(s apple.Song, title, artist, album string, duration float64) bool {
-	return !s.Missing && s.Title != "" && s.Artist != "" && s.Album != "" && s.Duration > 0 && normalized(s.Title) == normalized(title) && normalized(s.Artist) == normalized(artist) && normalized(s.Album) == normalized(album) && duration > 0 && math.Abs(s.Duration-duration) <= 2
+	return assessLibraryRecording(s, Song{Title: title, Artist: artist, Album: album, Duration: duration}).Confident
 }
 func (a *App) matchMigration(ctx context.Context, owner, mid string) error {
 	sources, e := a.sources(mid)
@@ -26,13 +26,31 @@ func (a *App) matchMigration(ctx context.Context, owner, mid string) error {
 		return e
 	}
 	for index, s := range sources {
+		m, err := a.getMigration(mid, owner)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if m.State != "open" {
+			return nil
+		}
+		var hasCandidate bool
+		err = a.DB.QueryRow("SELECT server_id,candidate<>'',match_state,deferred FROM source_songs WHERE id=? AND migration_id=?", s.ID, mid).Scan(&s.ServerID, &hasCandidate, &s.MatchState, &s.Deferred)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
 		if index%10 == 0 {
 			_, _ = a.DB.Exec("UPDATE migration_tasks SET message=? WHERE migration_id=? AND action='match' AND state='running'", fmt.Sprintf("Matching song %d of %d", index+1, len(sources)), mid)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if s.ServerID != "" || s.Metadata.Missing {
+		if s.ServerID != "" || s.Metadata.Missing || s.MatchState == "manual" {
 			continue
 		}
 		local, e := a.navSearch(ctx, c, s.Metadata.Title, 0)
@@ -46,30 +64,28 @@ func (a *App) matchMigration(ctx context.Context, owner, mid string) error {
 			}
 		}
 		if len(matches) == 1 {
-			if _, e = a.DB.Exec("UPDATE source_songs SET server_id=?,match_state='confident' WHERE id=? AND server_id='' AND match_state<>'manual'", matches[0].ID, s.ID); e != nil {
+			if _, e = a.DB.Exec("UPDATE source_songs SET server_id=?,match_state='confident' WHERE id=? AND server_id='' AND match_state<>'manual' AND EXISTS(SELECT 1 FROM migrations WHERE id=source_songs.migration_id AND state='open')", matches[0].ID, s.ID); e != nil {
 				return e
 			}
 			continue
 		}
-		if s.Candidate != nil || s.Deferred {
+		if hasCandidate || s.Deferred {
 			continue
 		}
-		tracks, e := a.searchDeezer(ctx, s.Metadata.Artist+" "+s.Metadata.Title)
+		tracks, e := a.searchImportRecordings(ctx, s.Metadata, s.Metadata.Artist+" "+s.Metadata.Title)
 		if e != nil {
 			return e
 		}
-		candidates := []Track{}
-		for _, t := range tracks {
-			if sameRecording(s.Metadata, trackLabel(t), t.Artist.Name, t.Album.Title, t.Duration) {
-				candidates = append(candidates, t)
-			}
-		}
-		if len(candidates) == 1 {
-			if _, e = a.DB.Exec("UPDATE source_songs SET candidate=?,match_state='confident' WHERE id=? AND candidate='' AND server_id='' AND match_state<>'manual'", apple.JSON(candidates[0]), s.ID); e != nil {
+		if candidate := confidentRecording(s.Metadata, tracks); candidate != nil {
+			if _, e = a.DB.Exec("UPDATE source_songs SET candidate=?,match_state='confident' WHERE id=? AND candidate='' AND server_id='' AND deferred=0 AND match_state<>'manual' AND EXISTS(SELECT 1 FROM migrations WHERE id=source_songs.migration_id AND state='open')", apple.JSON(candidate), s.ID); e != nil {
 				return e
 			}
-		} else if len(tracks) > 0 || len(matches) > 1 {
-			if _, e = a.DB.Exec("UPDATE source_songs SET match_state='ambiguous' WHERE id=?", s.ID); e != nil {
+		} else {
+			state := "unresolved"
+			if len(tracks) > 0 || len(matches) > 1 {
+				state = "ambiguous"
+			}
+			if _, e = a.DB.Exec("UPDATE source_songs SET match_state=? WHERE id=? AND candidate='' AND server_id='' AND deferred=0 AND match_state<>'manual' AND EXISTS(SELECT 1 FROM migrations WHERE id=source_songs.migration_id AND state='open')", state, s.ID); e != nil {
 				return e
 			}
 		}
@@ -123,7 +139,18 @@ func (a *App) publishMigration(ctx context.Context, owner, mid string) error {
 		return e
 	}
 	available := map[string]Song{}
-	for _, s := range sources {
+	verified := map[string]Song{}
+	for index, s := range sources {
+		if index%10 == 0 {
+			current, err := a.getMigration(mid, owner)
+			if err != nil || current.State != "open" {
+				return nil
+			}
+		}
+		if song, ok := verified[s.ServerID]; ok {
+			available[s.ID] = song
+			continue
+		}
 		if s.ServerID == "" {
 			continue
 		}
@@ -135,6 +162,7 @@ func (a *App) publishMigration(ctx context.Context, owner, mid string) error {
 			return errors.New("Navidrome returned an invalid song mapping")
 		}
 		available[s.ID] = out.Song
+		verified[s.ServerID] = out.Song
 	}
 	playlists, e := a.playlists(mid)
 	if e != nil {
@@ -149,54 +177,16 @@ func (a *App) publishMigration(ctx context.Context, owner, mid string) error {
 			hadPause = true
 			continue
 		}
-		ids := []string{}
-		for _, sid := range p.Entries {
-			if song, ok := available[sid]; ok {
-				ids = append(ids, song.ID)
-			}
-		}
-		if len(ids) == 0 && p.RemoteID == "" {
-			continue
-		} // Nothing playable yet; don't create an empty remote shell.
-		if e = a.publishPlaylist(ctx, c, p, ids); e != nil {
+		if e = a.publishCurrentPlaylist(ctx, owner, mid, c, p.ID, available); e != nil {
 			return e
 		}
 	}
 	if m.Favorites {
-		for _, s := range sources {
-			song, ok := available[s.ID]
-			if !ok || !s.Metadata.Favorite || s.FavoriteState == "applied" || s.FavoriteState == "review" {
-				continue
-			}
-			if s.FavoriteState == "writing" {
-				if song.Starred != "" {
-					_, e = a.DB.Exec("UPDATE source_songs SET favorite_state='applied' WHERE id=?", s.ID)
-				} else {
-					_, e = a.DB.Exec("UPDATE source_songs SET favorite_state='review' WHERE id=?", s.ID)
-				}
-				if e != nil {
+		for _, source := range sources {
+			if song, ok := available[source.ID]; ok && source.Metadata.Favorite && source.FavoriteState != "applied" && source.FavoriteState != "review" {
+				if e = a.publishCurrentFavorite(ctx, owner, mid, c, source.ID, song); e != nil {
 					return e
 				}
-				continue
-			}
-			if song.Starred == "" {
-				if _, e = a.DB.Exec("UPDATE source_songs SET favorite_state='writing' WHERE id=?", s.ID); e != nil {
-					return e
-				}
-				if _, e = a.nav(ctx, c, "star", mapValues("id", song.ID)); e != nil {
-					return e
-				}
-				check, err := a.nav(ctx, c, "getSong", mapValues("id", song.ID))
-				if err != nil {
-					return err
-				}
-				if check.Song.Starred == "" {
-					_, _ = a.DB.Exec("UPDATE source_songs SET favorite_state='review' WHERE id=?", s.ID)
-					continue
-				}
-			}
-			if _, e = a.DB.Exec("UPDATE source_songs SET favorite_state='applied' WHERE id=?", s.ID); e != nil {
-				return e
 			}
 		}
 	}
@@ -209,6 +199,127 @@ func (a *App) publishMigration(ctx context.Context, owner, mid string) error {
 	}
 	return nil
 }
+
+// Publication holds the mutation lock only while applying one collection or
+// favorite, never while verifying thousands of existing library songs.
+func (a *App) publishCurrentPlaylist(ctx context.Context, owner, mid string, c Credentials, pid string, available map[string]Song) error {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	m, err := a.getMigration(mid, owner)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if m.State != "open" || m.TargetUser != c.Username {
+		return nil
+	}
+	playlists, err := a.playlists(mid)
+	if err != nil {
+		return err
+	}
+	var current *Playlist
+	for i := range playlists {
+		if playlists[i].ID == pid {
+			current = &playlists[i]
+			break
+		}
+	}
+	if current == nil || !current.Selected || current.State == "paused" || current.State == "handed_over" {
+		return nil
+	}
+	// Resolutions can change while getSong runs. Use only mappings that were
+	// verified and still point at the same recording at publication time.
+	rows, err := a.DB.Query("SELECT id,server_id FROM source_songs WHERE migration_id=?", mid)
+	if err != nil {
+		return err
+	}
+	mappings := map[string]string{}
+	for rows.Next() {
+		var sid, server string
+		if err = rows.Scan(&sid, &server); err != nil {
+			rows.Close()
+			return err
+		}
+		mappings[sid] = server
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for _, sid := range current.Entries {
+		if song, ok := available[sid]; ok && mappings[sid] == song.ID {
+			ids = append(ids, song.ID)
+		}
+	}
+	if len(ids) == 0 && current.RemoteID == "" {
+		return nil
+	}
+	return a.publishPlaylist(ctx, c, *current, ids)
+}
+
+func (a *App) publishCurrentFavorite(ctx context.Context, owner, mid string, c Credentials, sid string, song Song) error {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	m, err := a.getMigration(mid, owner)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if m.State != "open" || !m.Favorites || m.TargetUser != c.Username {
+		return nil
+	}
+	sources, err := a.sources(mid, sid)
+	if err != nil {
+		return err
+	}
+	if len(sources) != 1 {
+		return nil
+	}
+	s := sources[0]
+	if s.ServerID != song.ID || !s.Metadata.Favorite || s.FavoriteState == "applied" || s.FavoriteState == "review" {
+		return nil
+	}
+	var e error
+	if s.FavoriteState == "writing" {
+		if song.Starred != "" {
+			_, e = a.DB.Exec("UPDATE source_songs SET favorite_state='applied' WHERE id=?", s.ID)
+		} else {
+			_, e = a.DB.Exec("UPDATE source_songs SET favorite_state='review' WHERE id=?", s.ID)
+		}
+		if e != nil {
+			return e
+		}
+		return nil
+	}
+	if song.Starred == "" {
+		if _, e = a.DB.Exec("UPDATE source_songs SET favorite_state='writing' WHERE id=?", s.ID); e != nil {
+			return e
+		}
+		if _, e = a.nav(ctx, c, "star", mapValues("id", song.ID)); e != nil {
+			return e
+		}
+		check, err := a.nav(ctx, c, "getSong", mapValues("id", song.ID))
+		if err != nil {
+			return err
+		}
+		if check.Song.Starred == "" {
+			_, _ = a.DB.Exec("UPDATE source_songs SET favorite_state='review' WHERE id=?", s.ID)
+			return nil
+		}
+	}
+	if _, e = a.DB.Exec("UPDATE source_songs SET favorite_state='applied' WHERE id=?", s.ID); e != nil {
+		return e
+	}
+
+	return nil
+}
+
 func (a *App) publishPlaylist(ctx context.Context, c Credentials, p Playlist, ids []string) error {
 	name := p.Name + " · ZenSync " + p.ID[:8]
 	desired := playlistSnapshot{Name: name, Owner: c.Username, IDs: ids}

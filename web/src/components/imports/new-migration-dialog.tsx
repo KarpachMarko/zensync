@@ -33,11 +33,11 @@ export function NewMigrationDialog({ onClose }: { onClose: () => void }) {
         await client.invalidateQueries({ queryKey: ["api", "/imports"] });
         navigate("/imports/" + migration.id);
         toast.success(
-          "XML uploaded. Review the migration preview before committing.",
+          "Export uploaded. Review the migration preview before committing.",
         );
       } catch (cause) {
         setError(
-          cause instanceof Error ? cause.message : "Unable to upload XML",
+          cause instanceof Error ? cause.message : "Unable to upload export",
         );
       } finally {
         setBusy(false);
@@ -56,7 +56,9 @@ export function NewMigrationDialog({ onClose }: { onClose: () => void }) {
           <DialogTitle>New migration</DialogTitle>
           <DialogDescription>
             In Apple Music, choose File → Library → Export Library. For one
-            playlist, choose File → Library → Export Playlist and select XML.
+            playlist, select it, choose File → Library → Export Playlist and
+            select XML or Text. Text exports use the filename as the playlist
+            name.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -69,8 +71,14 @@ export function NewMigrationDialog({ onClose }: { onClose: () => void }) {
           <form.AppField name="file">
             {(field) => (
               <field.FileField
-                label="Apple Music or iTunes XML export"
-                accept=".xml,application/xml,text/xml"
+                label="Apple Music or iTunes export (XML or TXT)"
+                disabled={busy}
+                description="One XML or TXT file, up to 32 MiB"
+                onFileValidate={(file) => {
+                  const result = uploadSchema.shape.file.safeParse(file);
+                  return result.success ? null : result.error.issues[0]?.message;
+                }}
+                accept=".xml,.txt,application/xml,text/xml,text/plain"
               />
             )}
           </form.AppField>
@@ -81,7 +89,7 @@ export function NewMigrationDialog({ onClose }: { onClose: () => void }) {
           </Text>
           {error && <Text role="alert">{error}</Text>}
           <Button disabled={busy}>
-            {busy ? "Reading your library…" : "Upload and preview"}
+            {busy ? "Reading your export…" : "Upload and preview"}
           </Button>
         </form>
       </DialogContent>

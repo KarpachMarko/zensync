@@ -4,7 +4,7 @@ A self-hosted Navidrome companion for initial music migration and ongoing music 
 
 ## Current status
 
-The first migration workflow is implemented: first-access administrator setup, Apple Music XML preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes. Legacy ID/hash downloads are automatically reorganized into readable paths with verified Navidrome identity preservation and recovery backups.
+The first migration workflow is implemented: first-access administrator setup, Apple Music XML/text preview/commit, recording review, Deezer search or direct song URLs, approved acquisition through pinned d-fi 2.3.5, validated shared-library placement, and personal Navidrome playlist/favorite publication. External edits pause playlist updates; final handover stops migration collection writes. Legacy ID/hash downloads are automatically reorganized into readable paths with verified Navidrome identity preservation and recovery backups.
 
 Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
 
@@ -13,10 +13,13 @@ See [deployment and first-migration instructions](docs/deployment.md) and the [s
 ## Phase 1
 
 - Go + SQLite backend, compact React/TypeScript UI, Apple/iTunes and Deezer metadata, and acquisition through the existing d-fi Go binary.
-- Apple Music XML migration of the complete music catalog, selected playlists and favorites. No ongoing Apple synchronization or updated-export merging.
+- Apple Music XML migration of the complete music catalog, selected playlists and favorites, plus single-playlist imports from Apple Music tab-separated `.txt` exports (UTF-16 or UTF-8). Text imports preserve order and use the filename as the playlist name. No ongoing Apple synchronization or updated-export merging.
+- Recording review supports uploading your own audio when a download source has no match or you prefer another version. Choose **Upload your version**, then upload FLAC, MP3, M4A, OGG, OPUS, WAV or AIFF (up to 1 GiB). Files are validated and imported through the usual approval and Navidrome indexing flow; existing library audio is preserved.
+- New MP3 and FLAC uploads preserve embedded cover art and extract a front-cover thumbnail for Requests. Original artwork stays embedded for Navidrome; thumbnail access is limited to the owner and administrators. Recording previews use a compact player with cover art, seeking, volume and the 30-second preview limit.
 - One admin-configured Navidrome instance and shared music library, with separate personal Navidrome accounts. Personal linking is needed for migration publication, not search or acquisition requests.
 - Migration stays open to fill missing entries until explicit handover. External edits pause the affected playlist. After handover, Navidrome owns playlists/favorites; outstanding acquisitions continue without changing those collections.
 - Persistent unresolved entries with Skip for now. Confidently matched existing music can fill skipped entries without a new download; alternative versions require review.
+- Import matching normalizes release labels, featured credits, punctuation and common Cyrillic transliterations, and retries shorter queries when necessary. Automatic selection still requires agreement on artist credits, album, title/version and duration; review explains remaining differences. Use **Scan again** to apply updated matching to unresolved entries without changing manual choices. See [matching behavior and example analysis](docs/import-matching.md).
 - Per-user ordered quality profiles: lossless first, then allowed lower qualities. Reuse existing audio unless Upgrade is explicitly requested; replacing a shared file requires admin approval and verification.
 - Admin-approved member acquisitions by default, with an optional direct-acquisition grant. Song deletion has a separate direct-delete grant; other deletion requests require admin approval.
 - Wavio connects directly to Navidrome for playback and collection management, and uses ZenSync's acquisition adapter. Approval may appear as Queued in Wavio; details are shown in ZenSync.

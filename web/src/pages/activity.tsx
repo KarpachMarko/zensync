@@ -1,41 +1,36 @@
-import { Actions, Row } from "@/components/layout/content";
+import { ActivityRow } from "@/components/requests/activity-row";
 import { AppLink } from "@/components/navigation";
 import {
-  ActiveProgress,
-  StatusBadge,
   StatusSection,
   blocked,
   finished,
 } from "@/components/status";
-import { Caption, PageHeading, Text } from "@/components/typography";
-import { Button } from "@/components/ui/button";
+import { PageHeading, Text } from "@/components/typography";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
-import type { TransferProgress } from "@/lib/api";
+import type { ActivityItem } from "@/lib/types";
 import { useState } from "react";
 import { toast } from "sonner";
 export function Activity({ admin }: { admin: boolean }) {
   const { api } = useApiMutation();
-  const result = useApiQuery<
-    {
-      id: string;
-      title: string;
-      state: string;
-      stage: string;
-      transfer?: TransferProgress;
-    }[]
-  >("/activity", { refetchInterval: 3000 });
+  const result = useApiQuery<ActivityItem[]>("/activity", { refetchInterval: 3000 });
   const rows = result.data ?? [];
   const [actionError, setError] = useState("");
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
   const error = actionError || result.error?.message;
   const loading = result.isPending;
   const load = result.reload;
-  async function retry(id: string) {
+  async function taskAction(id: string, cancel = false, dismiss = false) {
+    if (pendingTask) return;
+    setPendingTask(id);
+    setError("");
     try {
-      await api("/tasks/" + id, "POST");
+      await api("/tasks/" + id + (dismiss ? "/dismiss" : cancel ? "/cancel" : ""), "POST");
       await load();
-      toast.success("Task queued for retry.");
+      toast.success(dismiss ? "Failure dismissed. Music files are kept." : cancel ? "Migration task cancelled." : "Task queued for retry.");
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setPendingTask(null);
     }
   }
   return (
@@ -54,46 +49,25 @@ export function Activity({ admin }: { admin: boolean }) {
           transfer slot.
         </Text>
       ) : (
-        ["In progress", "Blocked", "Completed"].map((title) => {
+        ["In progress", "Blocked", "Completed", "Queued"].map((title) => {
           const group = rows.filter(
             (r) =>
               title ===
-              (finished(r.state)
-                ? "Completed"
-                : blocked(r.state)
-                  ? "Blocked"
-                  : "In progress"),
+              (r.state === "queued"
+                ? "Queued"
+                : finished(r.state)
+                  ? "Completed"
+                  : blocked(r.state)
+                    ? "Blocked"
+                    : "In progress"),
           );
           return (
             <StatusSection key={title} title={title} count={group.length}>
               {group.map((r) => (
-                <div
-                  className="border-b border-solid border-sidebar-border"
-                  key={r.id}
-                >
-                  <Row>
-                    <div>
-                      <strong>{r.title}</strong>
-                      <Caption>{r.stage}</Caption>
-                    </div>
-                    <Actions>
-                      <StatusBadge state={r.state} />
-                      {(r.state === "failed" || r.state === "blocked") && (
-                        <Button
-                          variant="outline"
-                          onClick={() => void retry(r.id)}
-                        >
-                          Retry
-                        </Button>
-                      )}
-                    </Actions>
-                  </Row>
-                  <ActiveProgress
-                    state={r.state}
-                    title={r.title}
-                    transfer={r.transfer}
-                  />
-                </div>
+                <ActivityRow key={r.id} item={r} busy={pendingTask !== null}
+                  onRetry={() => void taskAction(r.id)}
+                  onDismiss={() => void taskAction(r.id, false, true)}
+                  onCancel={() => void taskAction(r.id, true)} />
               ))}
             </StatusSection>
           );

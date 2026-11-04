@@ -27,9 +27,15 @@ func trackMatches(t Track, s Song) bool {
 
 type probe struct {
 	Streams []struct {
-		Codec   string `json:"codec_name"`
-		Type    string `json:"codec_type"`
-		BitRate string `json:"bit_rate"`
+		Index       int `json:"index"`
+		Disposition struct {
+			AttachedPic int `json:"attached_pic"`
+		} `json:"disposition"`
+		Codec    string            `json:"codec_name"`
+		Duration string            `json:"duration"`
+		Type     string            `json:"codec_type"`
+		BitRate  string            `json:"bit_rate"`
+		Tags     map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
 		Duration string            `json:"duration"`
@@ -38,6 +44,9 @@ type probe struct {
 }
 
 func (a *App) validateAudio(path string, t Track, quality string) error {
+	if strings.HasPrefix(quality, "uploaded:") {
+		return a.validateUploadedAudio(path, t, strings.TrimPrefix(quality, "uploaded:"))
+	}
 	info, e := os.Lstat(path)
 	if e != nil || !info.Mode().IsRegular() || info.Size() < 1024 || info.Size() > 1<<30 {
 		return errors.New("Downloaded audio is missing, unsafe or exceeds 1 GiB")
@@ -54,13 +63,13 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		return errors.New("Invalid audio probe output")
 	}
 	duration, _ := strconv.ParseFloat(p.Format.Duration, 64)
-	if t.Duration <= 0 || math.Abs(duration-t.Duration) > 3 {
-		return errors.New("Downloaded duration differs from the selected recording")
-	}
 	valid := false
 	for _, s := range p.Streams {
 		if s.Type != "audio" {
 			continue
+		}
+		if seconds, err := strconv.ParseFloat(s.Duration, 64); err == nil && validDuration(seconds) {
+			duration = seconds
 		}
 		if quality == "lossless" {
 			valid = s.Codec == "flac"
@@ -81,11 +90,29 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	if tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
 		return errors.New("Downloaded source ID does not match the selected Deezer track")
 	}
-	if t.ISRC != "" && tags["isrc"] != t.ISRC && tags["tsrc"] != t.ISRC {
+	if t.ISRC != "" && !strings.EqualFold(tags["isrc"], t.ISRC) && !strings.EqualFold(tags["tsrc"], t.ISRC) {
 		return errors.New("Downloaded ISRC differs from the selected recording")
 	}
 	if normalized(tags["title"]) != normalized(trackLabel(t)) || !artistMatches(t, tags["artist"]) || normalized(tags["album"]) != normalized(t.Album.Title) {
 		return errors.New("Downloaded tags differ from the selected track; review is required")
+	}
+	tolerance := verifiedDurationTolerance(t.Duration, t.ISRC != "")
+	if !validDuration(duration) || !validDuration(t.Duration) {
+		return errors.New("Downloaded recording has an invalid duration")
+	}
+	var mismatch *audioDurationMismatch
+	if math.Abs(duration-t.Duration) > tolerance {
+		mismatch = &audioDurationMismatch{Expected: t.Duration, Measured: duration, Tolerance: tolerance}
+		if a.DB != nil {
+			checksum, err := hashFile(path)
+			if err != nil {
+				return err
+			}
+			var accepted float64
+			if a.DB.QueryRow("SELECT duration FROM audio_duration_approvals WHERE checksum=? AND recording=? AND quality=?", checksum, audioApprovalKey(t), quality).Scan(&accepted) == nil && math.Abs(accepted-duration) < 0.01 {
+				mismatch = nil
+			}
+		}
 	}
 	decoder := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-xerror", "-i", path, "-map", "0:a:0", "-f", "null", "-")
 	protectChild(decoder)
@@ -94,7 +121,36 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	if e = decoder.Run(); e != nil {
 		return errors.New("Full audio decoding failed; the file was not published")
 	}
+	if mismatch != nil {
+		return mismatch
+	}
 	return nil
+}
+
+func validDuration(seconds float64) bool {
+	return seconds > 0 && !math.IsNaN(seconds) && !math.IsInf(seconds, 0)
+}
+
+func verifiedDurationTolerance(seconds float64, isrcVerified bool) float64 {
+	limit := 3.0
+	if isrcVerified {
+		limit = 5
+	}
+	return math.Min(limit, math.Max(1, seconds*0.05))
+}
+
+func sameApprovedRecording(approved, current Track) bool {
+	if approved.ID != current.ID || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
+		return false
+	}
+	tolerance := verifiedDurationTolerance(approved.Duration, approved.ISRC != "")
+	if !validDuration(approved.Duration) || !validDuration(current.Duration) || math.Abs(approved.Duration-current.Duration) > tolerance {
+		return false
+	}
+	// Compare identity/versions with the same normalization used for review;
+	// duration was checked explicitly above against the approved snapshot.
+	source := apple.Song{Title: trackLabel(approved), Artist: approved.Artist.Name, Album: approved.Album.Title, Duration: current.Duration}
+	return assessRecording(source, current).Confident
 }
 func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile, arl string) (string, string, error) {
 	root, e := os.Lstat(a.musicDir)
@@ -114,6 +170,32 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 	}
 	defer a.clearTransfer(jid)
 	failures := []string{}
+	// An explicit file acceptance wins over quality fallback retries. Otherwise
+	// accepting the retained 320 file could start a fresh lossless download first.
+	if a.DB != nil {
+		for _, quality := range qualities {
+			if quality != "lossless" && quality != "320" && quality != "128" {
+				continue
+			}
+			paths, err := stagedAudio(filepath.Join(a.dataDir, "staging", jid, quality))
+			if err != nil || len(paths) != 1 {
+				continue
+			}
+			checksum, err := hashFile(paths[0])
+			if err != nil {
+				continue
+			}
+			var accepted int
+			if a.DB.QueryRow("SELECT count(*) FROM audio_duration_approvals WHERE checksum=? AND recording=? AND quality=?", checksum, audioApprovalKey(t), quality).Scan(&accepted) != nil || accepted == 0 {
+				continue
+			}
+			if err := a.validateAudio(paths[0], t, quality); err != nil {
+				return "", "", err
+			}
+			rel, err := a.placeAudio(jid, target, paths[0], t, quality)
+			return rel, quality, err
+		}
+	}
 	for _, quality := range qualities {
 		if quality != "lossless" && quality != "320" && quality != "128" {
 			return "", "", errors.New("Unsupported quality in request")
@@ -162,10 +244,12 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 		protectChild(cmd)
 		cmd.Dir = stage
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + stage, "TMPDIR=" + stage, "DFI_NO_PAUSE=1", "ZENSYNC_PROGRESS=1"}
-		cmd.Stdout = &transferOutput{app: a, job: jid}
+		output := &transferOutput{app: a, job: jid}
+		cmd.Stdout = output
 		cmd.Stderr = io.Discard
 		cmd.WaitDelay = 5 * time.Second
 		started := time.Now()
+		monitorFailure := ""
 		e = cmd.Start()
 		if e == nil {
 			done := make(chan error, 1)
@@ -182,6 +266,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 						limitErr = diskHeadroom(stage, 32<<20)
 					}
 					if limitErr != nil {
+						monitorFailure = "Downloader stopped because staging safety or free-storage limits were exceeded"
 						cancel()
 						<-done
 						e = limitErr
@@ -199,11 +284,38 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 			return "", "", ctx.Err()
 		}
 		if e != nil {
+			reason := output.failure
+			if reason == "" {
+				var exit *exec.ExitError
+				if errors.As(e, &exit) {
+					reason = fmt.Sprintf("d-fi exited with code %d; check the configured ARL/account and connectivity", exit.ExitCode())
+				} else {
+					reason = "d-fi could not run; check its executable and configuration"
+				}
+			}
+			if monitorFailure != "" {
+				reason = monitorFailure
+			}
+			if runCtx.Err() == context.DeadlineExceeded {
+				reason = "Downloader timed out"
+			}
+			failures = append(failures, quality+": "+reason)
 			continue
 		}
 		paths, scanErr := stagedAudio(stage)
 		e = scanErr
 		if e != nil || len(paths) != 1 {
+			reason := output.failure
+			if reason == "" {
+				if scanErr != nil {
+					reason = "Downloader output failed staging safety checks"
+				} else if len(paths) > 1 {
+					reason = "d-fi produced multiple audio files; none was accepted"
+				} else {
+					reason = "d-fi produced no audio file; check account access to this exact recording"
+				}
+			}
+			failures = append(failures, quality+": "+reason)
 			continue
 		}
 		a.jobState(jid, "validating", "Verifying audio, tags, duration and quality")
@@ -318,58 +430,9 @@ func (a *App) verifyPlaced(rel, metadata, quality string) error {
 	return a.validateAudio(filepath.Join(a.musicDir, filepath.FromSlash(rel)), t, quality)
 }
 func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata string, requireUnique ...bool) (string, error) {
-	var t Track
-	if json.Unmarshal([]byte(metadata), &t) != nil {
-		return "", errors.New("Invalid asset metadata")
-	}
-	songs := []Song{}
-	for offset := 0; offset < 10000; offset += 100 {
-		var count int
-		page, err := a.navSearch(ctx, c, t.Title, offset, &count)
-		if err != nil {
-			return "", err
-		}
-		songs = append(songs, page...)
-		if count < 100 {
-			break
-		}
-	}
 	unique := len(requireUnique) > 0 && requireUnique[0]
-	matchedIDs := []string{}
-	slog.Info("Navidrome song lookup", "expected_path", rel, "candidate_count", len(songs))
-	for _, s := range songs {
-		path := strings.ReplaceAll(s.Path, "\\", "/")
-		pathMatches := path == rel || strings.HasSuffix(path, "/"+rel)
-		if pathMatches && !trackMatches(t, s) {
-			slog.Warn("Navidrome file metadata differs from approved recording", "song_id", s.ID, "file_path", path)
-		}
-		// Navidrome normally reports virtual paths. Verify original bytes rather
-		// than trusting a virtual filename or metadata-only coincidence.
-		matched, err := a.sameRemoteAudio(ctx, c, s, rel)
-		if err != nil {
-			return "", err
-		}
-		if matched {
-			if !trackMatches(t, s) {
-				slog.Warn("Navidrome metadata differs but original audio bytes match", "song_id", s.ID)
-			}
-			slog.Info("Navidrome asset verified", "song_id", s.ID, "file_path", rel, "reported_path", path)
-			if !unique {
-				return s.ID, nil
-			}
-			matchedIDs = append(matchedIDs, s.ID)
-			continue
-		}
-		slog.Warn("Navidrome candidate has different file content", "song_id", s.ID, "reported_path", path)
-
-	}
-	if len(matchedIDs) == 1 {
-		return matchedIDs[0], nil
-	}
-	if len(matchedIDs) > 1 {
-		return "", errors.New("Multiple Navidrome songs contain the same audio; relocation cannot safely identify the original file")
-	}
-	return "", nil
+	id, _, err := a.findPlacedWithReport(ctx, c, rel, metadata, unique)
+	return id, err
 }
 
 func stagedAudio(stage string) ([]string, error) {
@@ -423,28 +486,48 @@ func (a *App) sameRemoteAudio(ctx context.Context, c Credentials, s Song, rel st
 		return false, errors.New("Validated local file is missing")
 	}
 	if s.Size > 0 && s.Size != info.Size() {
-		return false, nil
+		slog.Warn("Navidrome indexed size differs; checking original bytes", "song_id", s.ID, "indexed_size", s.Size, "local_size", info.Size())
 	}
 	checksum, e := hashFile(local)
 	if e != nil {
 		return false, e
 	}
-	resp, e := a.navRaw(ctx, c, "download", mapValues("id", s.ID))
+	return a.sameRemoteAudioHash(ctx, c, s.ID, info.Size(), checksum)
+}
+
+func (a *App) sameRemoteAudioHash(ctx context.Context, c Credentials, sid string, size int64, checksum string) (bool, error) {
+	resp, e := a.navRaw(ctx, c, "download", mapValues("id", sid))
 	if e != nil {
 		return false, e
 	}
 	defer resp.Body.Close()
-	contentType := resp.Header.Get("Content-Type")
+	// An index entry can outlive its file during a scan. It is a failed
+	// candidate, not evidence that the account cannot download another entry.
+	if resp.StatusCode == 404 || resp.StatusCode == 410 {
+		return false, nil
+	}
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(contentType, "json") || strings.Contains(contentType, "xml") {
+		if strings.Contains(contentType, "json") {
+			var envelope struct {
+				Response NavResponse `json:"subsonic-response"`
+			}
+			if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&envelope) == nil && envelope.Response.Error != nil && envelope.Response.Error.Code == 70 {
+				return false, nil
+			}
+		}
 		return false, errors.New("Navidrome returned an API error instead of original audio; check the service account's download permission")
 	}
 	if resp.StatusCode != 200 {
 		return false, errors.New("Navidrome original-file verification failed; allow downloads for the service account")
 	}
+	if resp.ContentLength >= 0 && resp.ContentLength != size {
+		return false, nil
+	}
 	h := sha256.New()
-	n, e := io.Copy(h, io.LimitReader(resp.Body, info.Size()+1))
+	n, e := io.Copy(h, io.LimitReader(resp.Body, size+1))
 	if e != nil {
 		return false, errors.New("Could not verify original audio from Navidrome; check download permission and connectivity")
 	}
-	return n == info.Size() && hex.EncodeToString(h.Sum(nil)) == checksum, nil
+	return n == size && hex.EncodeToString(h.Sum(nil)) == checksum, nil
 }

@@ -45,6 +45,10 @@ func TestParallelTransfersRespectLiveLimitAndTargetDeduplication(t *testing.T) {
 	if _, e := exec.LookPath("ffprobe"); e != nil {
 		t.Skip("ffprobe required")
 	}
+	// Race instrumentation and contended CI runners can delay the worker's
+	// SQLite transitions for several seconds after a child exits. Gates below
+	// determine transfer ordering; the deadline only bounds eventual progress.
+	const workerWait = 30 * time.Second
 	dir := t.TempDir()
 	a, e := Open(filepath.Join(dir, "db"))
 	if e != nil {
@@ -103,14 +107,14 @@ func TestParallelTransfersRespectLiveLimitAndTargetDeduplication(t *testing.T) {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(8 * time.Second):
+		case <-time.After(workerWait):
 			t.Error("workers failed to stop safely")
 		}
 	}()
 	started := func() []string { b, _ := os.ReadFile(marker); return strings.Fields(string(b)) }
 	wait := func(condition func() bool) {
 		t.Helper()
-		deadline := time.Now().Add(8 * time.Second)
+		deadline := time.Now().Add(workerWait)
 		for time.Now().Before(deadline) {
 			if condition() {
 				return
@@ -148,7 +152,7 @@ func TestParallelTransfersRespectLiveLimitAndTargetDeduplication(t *testing.T) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(8 * time.Second):
+	case <-time.After(workerWait):
 		t.Fatal("shutdown did not cancel and join active downloaders")
 	}
 	if a.activeAcquisitions() != 0 {

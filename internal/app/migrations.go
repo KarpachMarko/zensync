@@ -49,6 +49,10 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && strings.HasSuffix(path, "/recording-review") && r.Method == "POST":
+		a.recordingReview(w, r, u)
+	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && (strings.HasSuffix(path, "/review-audio") || strings.HasSuffix(path, "/review-audio/file")):
+		a.reviewAcquisitionAudio(w, r, u)
 	case path == "/api/v2/settings/downloads":
 		a.downloadSettings(w, r, u)
 	case path == "/api/v2/connections":
@@ -64,14 +68,20 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 	case strings.HasPrefix(path, "/api/v2/imports/"):
 		a.migrationRoute(w, r, u)
 	case strings.HasPrefix(path, "/api/v2/tasks/") && r.Method == "POST":
-		a.retryTask(w, r, u)
+		if strings.HasSuffix(path, "/dismiss") {
+			a.dismissAcquisitionFailure(w, r, u)
+		} else if strings.HasSuffix(path, "/cancel") {
+			a.cancelMigrationTask(w, r, u)
+		} else {
+			a.retryTask(w, r, u)
+		}
 	default:
 		return false
 	}
 	return true
 }
 func (a *App) listMigrations(w http.ResponseWriter, u User) {
-	rows, e := a.DB.Query("SELECT id,name,state,report,favorites,target_user,error,created FROM migrations WHERE owner=? ORDER BY created DESC", u.ID)
+	rows, e := a.DB.Query("SELECT id,name,state,report,favorites,target_user,error,created FROM migrations WHERE owner=? AND source<>'request-review' ORDER BY created DESC", u.ID)
 	if e != nil {
 		a.internal(w, e)
 		return
@@ -96,7 +106,7 @@ func (a *App) listMigrations(w http.ResponseWriter, u User) {
 }
 func (a *App) upload(w http.ResponseWriter, r *http.Request, u User) {
 	if !a.importMu.TryLock() {
-		fail(w, 429, "Another XML export is being parsed; retry shortly")
+		fail(w, 429, "Another export is being parsed; retry shortly")
 		return
 	}
 	defer a.importMu.Unlock()
@@ -107,14 +117,14 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 413, "Export exceeds 32 MiB or could not be read")
 		return
 	}
-	snapshot, e := apple.Parse(data)
-	if e != nil {
-		fail(w, 400, e.Error())
-		return
-	}
 	name := strings.TrimSpace(r.Header.Get("X-Import-Name"))
 	if decoded, err := url.QueryUnescape(name); err == nil {
 		name = decoded
+	}
+	snapshot, e := apple.ParseFile(data, name)
+	if e != nil {
+		fail(w, 400, e.Error())
+		return
 	}
 	if name == "" {
 		name = "Apple Music migration"
@@ -180,8 +190,14 @@ func (a *App) getMigration(mid, owner string) (Migration, error) {
 	m.Report = json.RawMessage(report)
 	return m, e
 }
-func (a *App) sources(mid string) ([]Source, error) {
-	rows, e := a.DB.Query(`SELECT s.id,s.metadata,s.server_id,s.candidate,s.match_state,s.deferred,s.favorite_state,COALESCE(r.id,''),COALESCE(r.decision,''),COALESCE(j.state,'') FROM source_songs s LEFT JOIN requests r ON r.id=(SELECT rs.request_id FROM request_sources rs JOIN requests rq ON rq.id=rs.request_id WHERE rs.source_id=s.id ORDER BY rq.created DESC,rq.rowid DESC LIMIT 1) LEFT JOIN jobs j ON j.request_id=r.id WHERE s.migration_id=? ORDER BY s.rowid`, mid)
+func (a *App) sources(mid string, sourceIDs ...string) ([]Source, error) {
+	query := `SELECT s.id,s.metadata,s.server_id,s.candidate,s.match_state,s.deferred,s.favorite_state,COALESCE(r.id,''),COALESCE(r.decision,''),COALESCE(j.state,'') FROM source_songs s LEFT JOIN requests r ON r.id=(SELECT rs.request_id FROM request_sources rs JOIN requests rq ON rq.id=rs.request_id WHERE rs.source_id=s.id ORDER BY rq.created DESC,rq.rowid DESC LIMIT 1) LEFT JOIN jobs j ON j.request_id=r.id WHERE s.migration_id=?`
+	args := []any{mid}
+	if len(sourceIDs) > 0 {
+		query += " AND s.id=?"
+		args = append(args, sourceIDs[0])
+	}
+	rows, e := a.DB.Query(query+" ORDER BY s.rowid", args...)
 	if e != nil {
 		return nil, e
 	}
@@ -237,6 +253,10 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 404, "Migration not found")
 		return
 	}
+	if len(parts) == 1 && r.Method == "DELETE" {
+		a.deleteMigration(w, u, mid)
+		return
+	}
 	if len(parts) == 1 && r.Method == "GET" {
 		songs, e := a.sources(mid)
 		if e != nil {
@@ -248,7 +268,16 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 			a.internal(w, e)
 			return
 		}
-		send(w, 200, map[string]any{"migration": m, "songs": songs, "playlists": pls})
+		var matchTask struct {
+			State   string `json:"state"`
+			Message string `json:"message"`
+		}
+		e = a.DB.QueryRow("SELECT state,message FROM migration_tasks WHERE migration_id=? AND action='match' ORDER BY created DESC,rowid DESC LIMIT 1", mid).Scan(&matchTask.State, &matchTask.Message)
+		if e != nil && e != sql.ErrNoRows {
+			a.internal(w, e)
+			return
+		}
+		send(w, 200, map[string]any{"migration": m, "songs": songs, "playlists": pls, "matchTask": matchTask})
 		return
 	}
 	if r.Method != "POST" || len(parts) < 2 {
@@ -256,7 +285,11 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	if parts[1] == "songs" && len(parts) == 4 {
-		a.sourceAction(w, r, u, m, parts[2], parts[3])
+		if parts[3] == "upload" {
+			a.uploadSourceAudio(w, r, u, mid, parts[2])
+		} else {
+			a.sourceAction(w, r, u, m, parts[2], parts[3])
+		}
 		return
 	}
 	a.opMu.Lock()
@@ -267,6 +300,12 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	switch parts[1] {
+	case "acquire":
+		if len(parts) != 2 {
+			fail(w, 404, "Endpoint unavailable")
+			return
+		}
+		a.acquireMigrationSongs(w, r, u, m)
 	case "commit":
 		if m.State != "staged" {
 			send(w, 200, map[string]bool{"ok": true})
@@ -307,6 +346,11 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 			}
 		}
 		_, e = tx.Exec("UPDATE migrations SET state='open',favorites=? WHERE id=?", in.Favorites, mid)
+		if e == nil {
+			// Commit and the initial scan are atomic: retries cannot leave an
+			// open migration without its first matching task.
+			_, e = tx.Exec("INSERT INTO migration_tasks(id,owner,migration_id,action) VALUES(?,?,?,'match')", id(), u.ID, mid)
+		}
 		if e == nil {
 			e = audit(tx, u.ID, u.ID, "migration.committed", mid)
 		}
@@ -408,6 +452,48 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 404, "Unknown migration action")
 	}
 }
+func (a *App) cancelMigrationTask(w http.ResponseWriter, r *http.Request, u User) {
+	tid := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v2/tasks/"), "/cancel")
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	tx, err := a.DB.Begin()
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var owner, mid, action, state, message string
+	if err = tx.QueryRow("SELECT owner,migration_id,action,state,message FROM migration_tasks WHERE id=?", tid).Scan(&owner, &mid, &action, &state, &message); err != nil || (owner != u.ID && u.Role != "admin") {
+		fail(w, 404, "Task not found")
+		return
+	}
+	if state == "cancelled" {
+		send(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if state != "queued" && state != "failed" && state != "blocked" {
+		fail(w, 409, "Only queued or failed migration tasks can be cancelled")
+		return
+	}
+	if _, err = tx.Exec("UPDATE migration_tasks SET state='cancelled',message='Cancelled by user' WHERE id=?", tid); err == nil {
+		_, err = tx.Exec("DELETE FROM migration_task_wakeups WHERE migration_id=? AND action=? AND NOT EXISTS(SELECT 1 FROM migration_tasks WHERE migration_id=? AND action=? AND state IN ('queued','running'))", mid, action, mid, action)
+	}
+	if err == nil {
+		_, err = tx.Exec("UPDATE migrations SET error='' WHERE id=? AND error=? AND NOT EXISTS(SELECT 1 FROM migration_tasks WHERE migration_id=? AND state IN ('queued','running','failed','blocked'))", mid, message, mid)
+	}
+	if err == nil {
+		err = audit(tx, owner, u.ID, "migration.task_cancelled", tid)
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
+}
+
 func (a *App) queueMigration(owner, mid, action string) (string, error) {
 	tx, e := a.DB.Begin()
 	if e != nil {
@@ -453,8 +539,6 @@ func (a *App) finishMigrationTask(tid, owner, mid, action, state, message string
 	return tx.Commit()
 }
 func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Migration, sid, action string) {
-	a.opMu.Lock()
-	defer a.opMu.Unlock()
 	var data, candidate, server string
 	var deferred bool
 	e := a.DB.QueryRow("SELECT metadata,candidate,server_id,deferred FROM source_songs WHERE id=? AND migration_id=?", sid, m.ID).Scan(&data, &candidate, &server, &deferred)
@@ -479,23 +563,96 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			fail(w, 400, "Search is too long")
 			return
 		}
-		var tracks []Track
+		tracks := []Track{}
+		navSongs := []Song{}
+		libraryQuery := q
 		if strings.HasPrefix(q, "http") {
-			t, err := a.track(r.Context(), q)
-			e = err
-			tracks = []Track{t}
-		} else {
-			tracks, e = a.searchDeezer(r.Context(), q)
+			// A Deezer URL identifies a recording; use the source metadata
+			// for the accompanying local search instead of the literal URL.
+			libraryQuery = strings.TrimSpace(source.Artist + " " + source.Title)
 		}
-		if e != nil {
-			fail(w, 502, e.Error())
+		var libraryError, deezerError string
+		if c, err := a.shared(); err != nil {
+			libraryError = err.Error()
+		} else if results, err := a.navSearch(r.Context(), c, libraryQuery, 0); err != nil {
+			libraryError = err.Error()
+		} else {
+			navSongs = results
+		}
+		if strings.HasPrefix(q, "http") {
+			if track, err := a.track(r.Context(), q); err != nil {
+				deezerError = err.Error()
+			} else {
+				tracks = append(tracks, track)
+			}
+		} else {
+			results, err := a.searchImportRecordings(r.Context(), source, q)
+			tracks = results
+			if err != nil {
+				deezerError = err.Error()
+			}
+		}
+		assessments := map[int64]RecordingMatch{}
+		confident := 0
+		for _, track := range tracks {
+			assessments[track.ID] = assessRecording(source, track)
+			if assessments[track.ID].Confident {
+				confident++
+			}
+		}
+		a.rememberReviewTracks(tracks)
+		libraryMatches := map[string]RecordingMatch{}
+		for _, song := range navSongs {
+			libraryMatches[song.ID] = assessLibraryRecording(source, song)
+		}
+		send(w, 200, map[string]any{"deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
+		return
+	}
+	var resolvedServer, resolvedCandidate string
+	if action == "resolve" {
+		if m.State == "staged" {
+			fail(w, 409, "Commit the migration first")
 			return
 		}
-		navSongs := []Song{}
-		if c, err := a.shared(); err == nil {
-			navSongs, _ = a.navSearch(r.Context(), c, source.Title, 0)
+		var in struct {
+			Target   string `json:"target"`
+			ServerID string `json:"serverId"`
 		}
-		send(w, 200, map[string]any{"deezer": tracks, "library": navSongs})
+		if !decode(w, r, &in) {
+			return
+		}
+		if in.ServerID != "" {
+			c, err := a.personal(u.ID)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			response, err := a.nav(r.Context(), c, "getSong", mapValues("id", in.ServerID))
+			if err != nil || response.Song.ID != in.ServerID {
+				fail(w, 400, "Song is not available to your linked Navidrome account")
+				return
+			}
+			resolvedServer = in.ServerID
+		} else {
+			track, err := a.reviewTrack(r.Context(), in.Target)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			resolvedCandidate = apple.JSON(track)
+		}
+	}
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	// Reads above may have overlapped a deletion or another source action.
+	m, e = a.getMigration(m.ID, u.ID)
+	if e != nil {
+		fail(w, 404, "Migration not found")
+		return
+	}
+	e = a.DB.QueryRow("SELECT candidate,server_id,deferred FROM source_songs WHERE id=? AND migration_id=?", sid, m.ID).Scan(&candidate, &server, &deferred)
+	if e != nil {
+		fail(w, 404, "Source song not found")
 		return
 	}
 	if m.State == "staged" {
@@ -529,13 +686,6 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 	case "defer", "resume":
 		_, e = a.DB.Exec("UPDATE source_songs SET deferred=? WHERE id=?", action == "defer", sid)
 	case "resolve":
-		var in struct {
-			Target   string `json:"target"`
-			ServerID string `json:"serverId"`
-		}
-		if !decode(w, r, &in) {
-			return
-		}
 		var pending int
 		if e = a.DB.QueryRow(`SELECT count(*) FROM request_sources rs JOIN requests r ON r.id=rs.request_id LEFT JOIN jobs j ON j.request_id=r.id WHERE rs.source_id=? AND r.decision IN ('approved','awaiting_approval') AND COALESCE(j.state,'') NOT IN ('failed','cancelled','available')`, sid).Scan(&pending); e != nil {
 			a.internal(w, e)
@@ -545,26 +695,7 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			fail(w, 409, "Withdraw or finish the existing request before changing its recording")
 			return
 		}
-		if in.ServerID != "" {
-			c, err := a.personal(u.ID)
-			if err != nil {
-				fail(w, 400, err.Error())
-				return
-			}
-			response, err := a.nav(r.Context(), c, "getSong", mapValues("id", in.ServerID))
-			if err != nil || response.Song.ID != in.ServerID {
-				fail(w, 400, "Song is not available to your linked Navidrome account")
-				return
-			}
-			e = a.resolveSource(sid, in.ServerID, "")
-		} else {
-			t, err := a.track(r.Context(), in.Target)
-			if err != nil {
-				fail(w, 400, err.Error())
-				return
-			}
-			e = a.resolveSource(sid, "", apple.JSON(t))
-		}
+		e = a.resolveSource(sid, resolvedServer, resolvedCandidate)
 	case "acquire":
 		if deferred {
 			fail(w, 409, "Resume this song before requesting acquisition")
@@ -591,7 +722,7 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 		var revision string
 		_ = a.DB.QueryRow("SELECT revision FROM source_resolutions WHERE source_id=?", sid).Scan(&revision)
 		r.Header.Set("Idempotency-Key", digest(sid+fmt.Sprint(t.ID)+prior+revision))
-		a.createRequest(w, r, u)
+		a.createVerifiedRequest(w, r, u, &t)
 		return
 	default:
 		fail(w, 404, "Unknown source action")
@@ -604,7 +735,11 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 	if m.State == "open" && m.TargetUser != "" && action == "resolve" {
 		_, _ = a.queueMigration(u.ID, m.ID, "publish")
 	}
-	send(w, 200, map[string]bool{"ok": true})
+	response := map[string]any{"ok": true}
+	if songs, err := a.sources(m.ID, sid); err == nil && len(songs) == 1 {
+		response["source"] = songs[0]
+	}
+	send(w, 200, response)
 }
 
 func (a *App) resolveSource(sid, serverID, candidate string) error {
@@ -616,11 +751,57 @@ func (a *App) resolveSource(sid, serverID, candidate string) error {
 	if _, e = tx.Exec("INSERT INTO source_resolutions(source_id,revision) VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision", sid, id()); e != nil {
 		return e
 	}
-	if _, e = tx.Exec("DELETE FROM request_sources WHERE source_id=?", sid); e != nil {
+	if e = archiveSourceRequests(tx, sid); e != nil {
 		return e
 	}
 	if _, e = tx.Exec("UPDATE source_songs SET server_id=?,candidate=?,match_state='manual',deferred=0 WHERE id=?", serverID, candidate, sid); e != nil {
 		return e
 	}
 	return tx.Commit()
+}
+
+// deleteMigration removes a private snapshot under the publication write lock,
+// so no collection writes can outlive deletion. Matching checks the latest
+// migration state in its conditional updates.
+// Acquisition requests are independent records and retain their lifecycle.
+func (a *App) deleteMigration(w http.ResponseWriter, u User, mid string) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	m, err := a.getMigration(mid, u.ID)
+	if err != nil {
+		fail(w, 404, "Migration not found")
+		return
+	}
+	if m.State != "staged" && m.State != "open" {
+		fail(w, 409, "Only unfinished migrations can be deleted")
+		return
+	}
+	tx, err := a.DB.Begin()
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	defer tx.Rollback()
+	for _, statement := range []string{
+		"DELETE FROM request_sources WHERE source_id IN (SELECT id FROM source_songs WHERE migration_id=?)",
+		"DELETE FROM source_resolutions WHERE source_id IN (SELECT id FROM source_songs WHERE migration_id=?)",
+		"DELETE FROM source_songs WHERE migration_id=?",
+		"DELETE FROM migration_playlists WHERE migration_id=?",
+		"DELETE FROM migration_task_wakeups WHERE migration_id=?",
+		"DELETE FROM migration_tasks WHERE migration_id=?",
+		"DELETE FROM migrations WHERE id=?",
+	} {
+		if _, err = tx.Exec(statement, mid); err != nil {
+			a.internal(w, err)
+			return
+		}
+	}
+	if err = audit(tx, u.ID, u.ID, "migration.deleted", mid); err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	send(w, 200, map[string]bool{"ok": true})
 }

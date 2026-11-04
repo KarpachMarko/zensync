@@ -16,9 +16,11 @@ export async function api<T = unknown>(
   method = "GET",
   body?: unknown,
   key?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const res = await fetch("/api/v2" + path, {
     method,
+    signal,
     headers: {
       "Content-Type": "application/json",
       "X-CSRF-Token": csrf,
@@ -34,7 +36,7 @@ export async function upload(file: File): Promise<{ id: string }> {
   const res = await fetch("/api/v2/imports", {
     method: "POST",
     headers: {
-      "Content-Type": "application/xml",
+      "Content-Type": "application/octet-stream",
       "X-CSRF-Token": csrf,
       "X-Import-Name": encodeURIComponent(file.name),
     },
@@ -52,14 +54,33 @@ export async function upload(file: File): Promise<{ id: string }> {
   }
   return { id: data.id };
 }
+export async function uploadAudioFile(path: string, file: File, key: string): Promise<{ id: string }> {
+  const response = await fetch("/api/v2" + path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-CSRF-Token": csrf,
+      "X-File-Name": encodeURIComponent(file.name),
+      "Idempotency-Key": key,
+    },
+    body: file,
+  });
+  const data: unknown = await response.json();
+  if (!response.ok) throw new Error(responseError(data, "Audio upload failed"));
+  if (typeof data !== "object" || data === null || !("id" in data) || typeof data.id !== "string")
+    throw new Error("Invalid audio upload response");
+  return { id: data.id };
+}
+
 export type Track = {
   id: number;
   title: string;
   title_version: string;
   duration: number;
   artist: { name: string };
-  album: { title: string };
+  album: { title: string; cover_medium?: string };
   link: string;
+  preview?: string;
 };
 export type LibrarySong = {
   id: string;

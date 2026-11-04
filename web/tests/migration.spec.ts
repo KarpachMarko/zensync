@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 
 async function inviteMember(page: Page, username: string, password: string) {
   await page.getByRole("button", { name: "Invite user", exact: true }).click();
@@ -90,9 +91,34 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     .click();
   await page.getByRole("button", { name: "New migration" }).click();
   await page
-    .getByLabel("Apple Music or iTunes XML export")
+    .getByLabel("Apple Music or iTunes export (XML or TXT)")
+    .setInputFiles({
+      name: "test import.txt",
+      mimeType: "text/plain",
+      buffer: await readFile(
+        path.resolve("../internal/apple/testdata/playlist.txt"),
+      ),
+    });
+  await page.getByRole("button", { name: "Upload and preview" }).click();
+  await expect(page.getByRole("checkbox", { name: /test import/ })).toBeChecked();
+  await page.getByRole("button", { name: "Commit migration" }).click();
+  await page.getByRole("link", { name: /test import.*13 ordered entries/ }).click();
+  await expect(page.getByRole("button", { name: /Каждый день/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Другой стиль/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Ordered songs" })).toBeVisible();
+  await page.goto("/imports/new");
+  await page
+    .getByLabel("Apple Music or iTunes export (XML or TXT)")
     .setInputFiles(path.resolve("../internal/apple/testdata/library.xml"));
   await page.getByRole("button", { name: "Upload and preview" }).click();
+
+  await expect(page.getByText("All 4 songs are included", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Playlists to create in Navidrome" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Music/ })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Apple Music views and folders/ }).click();
+  await expect(page.getByText(/System view — songs already included/)).toBeVisible();
+  await expect(page.getByText(/Folders organise playlists/)).toBeVisible();
   await expect(page.getByText("1 unplaylisted songs")).toBeVisible();
   await expect(page.getByText("1 missing references")).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Roadtrip/ })).toBeChecked();
@@ -104,14 +130,18 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("button", { name: /Outside playlists/ }),
   ).toBeVisible();
   const migrationURL = page.url();
+  await page.route("**/api/v2/imports/*/songs/*/candidates", (route) =>
+    route.fulfill({ json: { library: [], deezer: [] } }),
+  );
   await page.getByRole("button", { name: /Second song/ }).click();
   await expect(
     page.getByRole("heading", { name: "Second song", exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Search or Deezer song URL")).toBeVisible();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByText("Skipped for now", { exact: true }),
+    page.locator('[data-slot="import-song"]').filter({ hasText: "Second song" }).getByText("Skipped for now", { exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(
@@ -123,6 +153,12 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     page.getByRole("heading", { name: "Ordered songs" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /First song/ })).toHaveCount(2);
+  const playlistURL = page.url();
+  await page.getByRole("button", { name: /First song/ }).first().click();
+  await expect(page.getByRole("dialog", { name: "First song", exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(new URL(playlistURL).pathname);
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page).toHaveURL(playlistURL);
   await page.goto("/requests");
   await expect(page.getByLabel("Deezer track ID")).toHaveCount(0);
   await page
@@ -292,9 +328,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   });
   await page.goto("/requests");
   await expect(page.locator("article[data-slot=request]")).toHaveCount(1);
-  await page.getByText("2 tracks · 0 available").click();
+  await page.getByRole("button", { name: "Actions for The album", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show tracks (2)", exact: true }).click();
   await expect(page.getByText("1. Album song one")).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.locator("article[data-slot=request]").getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menuitem", { name: "Approve", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
@@ -473,6 +511,18 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
           stage: "Waiting for a slot",
         },
         {
+          id: "scan",
+          title: "Waiting for scan song",
+          state: "awaiting_scan",
+          stage: "Waiting for indexing",
+        },
+        {
+          id: "import",
+          title: "Importing song",
+          state: "importing",
+          stage: "Copying audio",
+        },
+        {
           id: "blocked",
           title: "Blocked song",
           state: "blocked",
@@ -488,7 +538,13 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     }),
   );
   await page.goto("/activity");
-  await expect(page.getByRole("progressbar")).toHaveCount(1);
+  await expect(page.getByRole("progressbar")).toHaveCount(3);
+  const inProgress = page.locator('[data-slot="status-section"]').filter({ has: page.getByRole("button", { name: /^In progress/ }) });
+  await expect(inProgress.locator("strong")).toHaveText(["Downloading song", "Waiting for scan song", "Importing song"]);
+  const queued = page.locator('[data-slot="status-section"]').filter({ has: page.getByRole("button", { name: /^Queued/ }) });
+  await expect(queued.getByText("Queued song", { exact: true })).toBeVisible();
+  await expect(inProgress.getByText("Queued song", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-slot="status-section"]').last()).toContainText("Queued song");
   const running = page.getByRole("progressbar", {
     name: "Downloading song: downloading",
   });
@@ -652,7 +708,8 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByText("Shared deletion song (Delete song)"),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.locator("article[data-slot=request]").getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menuitem", { name: "Approve", exact: true }).click();
   const approvalDialog = page.getByRole("alertdialog", {
     name: "Approve song deletion?",
   });
@@ -664,9 +721,10 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByText(/queued: Queued for library removal/),
-  ).toBeVisible();
+  await expect(page.locator("article[data-slot=request]").getByText("queued", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Shared deletion song", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show details", exact: true }).click();
+  await expect(page.getByText("Queued for library removal", { exact: true })).toBeVisible();
 
   await page.goto("/settings/people");
   await inviteMember(page, "delete-member", "local-member-password");

@@ -36,12 +36,17 @@ type App struct {
 	activeJobs       map[string]string
 	activeTargets    map[string]bool
 	importMu         sync.Mutex
+	reviewMu         sync.Mutex
+	reviewTracks     map[int64]reviewRecording
+	navIndexMu       sync.Mutex
+	navIndexes       map[string]navSongIndex
 	providerMu       sync.Mutex
 	lastMetadata     time.Time
 	metadataInterval time.Duration
 	DB               *sql.DB
 	mu               sync.Mutex
 	failures         []time.Time
+	migrationMu      sync.Mutex
 	opMu             sync.Mutex
 	key              []byte
 	dataDir          string
@@ -60,6 +65,7 @@ type User struct {
 	Quality      json.RawMessage `json:"quality"`
 }
 type Request struct {
+	JobID      string            `json:"jobId,omitempty"`
 	Transfer   *TransferProgress `json:"transfer,omitempty"`
 	State      string            `json:"state"`
 	Detail     string            `json:"detail,omitempty"`
@@ -135,7 +141,10 @@ func fail(w http.ResponseWriter, status int, msg string) {
 	send(w, status, map[string]string{"error": msg})
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 16384)
+	return decodeLimit(w, r, v, 16384)
+}
+func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if d.Decode(v) != nil || d.Decode(new(any)) != io.EOF {
@@ -240,6 +249,8 @@ func (a *App) Handler() http.Handler {
 			a.createRequest(w, r, u)
 		case strings.HasPrefix(r.URL.Path, "/api/v2/requests/") && r.Method == "POST":
 			a.decide(w, r, u)
+		case strings.HasPrefix(r.URL.Path, "/api/v2/requests/") && strings.HasSuffix(r.URL.Path, "/cover") && r.Method == "GET":
+			a.uploadedCover(w, r, u)
 		case r.URL.Path == "/api/v2/activity" && r.Method == "GET":
 			a.activity(w, u)
 		case r.URL.Path == "/api/v2/invitations" || strings.HasPrefix(r.URL.Path, "/api/v2/invitations/"):

@@ -8,6 +8,7 @@ export type User = {
   quality: string[];
 };
 export type MusicRequest = {
+  jobId?: string;
   transfer?: TransferProgress;
   state: string;
   kind: string;
@@ -29,4 +30,15 @@ export type MusicRequest = {
   reason: string;
   upgrade: boolean;
   quality: string[];
+};
+
+export type ActivityItem = {
+  id: string;
+  title: string;
+  state: string;
+  stage: string;
+  canCancel?: boolean;
+  canReview?: boolean;
+  canDismiss?: boolean;
+  transfer?: TransferProgress;
 };

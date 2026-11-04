@@ -19,21 +19,59 @@ type Artist struct {
 	Role string `json:"role"`
 }
 type Track struct {
-	Contributors []Artist `json:"contributors"`
-	ID           int64    `json:"id"`
-	Title        string   `json:"title"`
-	TitleVersion string   `json:"title_version"`
-	Duration     float64  `json:"duration"`
-	ISRC         string   `json:"isrc"`
-	Link         string   `json:"link"`
-	Readable     *bool    `json:"readable"`
-	Artist       struct {
+	Contributors   []Artist `json:"contributors"`
+	ID             int64    `json:"id"`
+	Title          string   `json:"title"`
+	TitleVersion   string   `json:"title_version"`
+	Duration       float64  `json:"duration"`
+	ISRC           string   `json:"isrc"`
+	Link           string   `json:"link"`
+	Preview        string   `json:"preview"`
+	Readable       *bool    `json:"readable"`
+	ExplicitLyrics *bool    `json:"explicit_lyrics,omitempty"`
+	Artist         struct {
 		Name string `json:"name"`
 	} `json:"artist"`
 	Album struct {
 		Title string `json:"title"`
 		Cover string `json:"cover_medium"`
 	} `json:"album"`
+}
+
+// Review choices may reuse recently fetched public metadata. Acquisition
+// deliberately calls track(), which revalidates it against the provider.
+type reviewRecording struct {
+	track   Track
+	fetched time.Time
+}
+
+func (a *App) rememberReviewTracks(tracks []Track) {
+	a.reviewMu.Lock()
+	defer a.reviewMu.Unlock()
+	if a.reviewTracks == nil {
+		a.reviewTracks = map[int64]reviewRecording{}
+	}
+	for _, track := range tracks {
+		if track.ID <= 0 || track.Title == "" {
+			continue
+		}
+		if len(a.reviewTracks) >= 4096 {
+			clear(a.reviewTracks)
+		}
+		a.reviewTracks[track.ID] = reviewRecording{track: track, fetched: time.Now()}
+	}
+}
+func (a *App) reviewTrack(ctx context.Context, target string) (Track, error) {
+	if id, err := deezerID(target); err == nil {
+		number, _ := strconv.ParseInt(id, 10, 64)
+		a.reviewMu.Lock()
+		cached, found := a.reviewTracks[number]
+		a.reviewMu.Unlock()
+		if found && time.Since(cached.fetched) < 10*time.Minute {
+			return cached.track, nil
+		}
+	}
+	return a.track(ctx, target)
 }
 
 var digits = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)

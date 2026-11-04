@@ -95,7 +95,7 @@ export function Connections({ admin }: { admin: boolean }) {
           )}
           <Text>
             <Button asChild>
-              <AppLink to="/imports/new">Import Apple Music XML</AppLink>
+              <AppLink to="/imports/new">Import Apple Music export</AppLink>
             </Button>
           </Text>
         </>

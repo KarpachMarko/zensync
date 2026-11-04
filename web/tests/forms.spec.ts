@@ -129,10 +129,10 @@ test("XML form validates missing and oversized files before uploading", async ({
     exact: true,
   });
   await submit.click();
-  await expect(page.getByRole("alert")).toHaveText("Choose an XML export.");
+  await expect(page.getByRole("alert")).toHaveText("Choose an XML or TXT export.");
   expect(uploads).toBe(0);
   await page
-    .getByLabel("Apple Music or iTunes XML export", { exact: true })
+    .getByLabel("Apple Music or iTunes export (XML or TXT)", { exact: true })
     .setInputFiles({
       name: "oversized.xml",
       mimeType: "application/xml",
@@ -216,7 +216,7 @@ test("Imports combines creation, active work, and collapsed history", async ({
     exact: true,
   });
   await expect(
-    dialog.getByLabel("Apple Music or iTunes XML export"),
+    dialog.getByLabel("Apple Music or iTunes export (XML or TXT)"),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/imports\?new=true$/);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();

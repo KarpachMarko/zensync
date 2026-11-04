@@ -110,7 +110,11 @@ func (a *App) libraryPath(source string, t Track, checksum string) (string, erro
 	if e = a.ensureMusicDirs(dir); e != nil {
 		return "", e
 	}
-	for _, suffix := range []string{"", fmt.Sprintf(" [Deezer %d]", t.ID), fmt.Sprintf(" [Deezer %d-%s]", t.ID, checksum[:8])} {
+	suffixes := []string{"", fmt.Sprintf(" [Deezer %d]", t.ID), fmt.Sprintf(" [Deezer %d-%s]", t.ID, checksum[:8])}
+	if t.ID == 0 {
+		suffixes = []string{"", " [Upload " + checksum[:8] + "]"}
+	}
+	for _, suffix := range suffixes {
 		rel := filepath.Join(dir, name+suffix+ext)
 		info, e := os.Lstat(filepath.Join(a.musicDir, rel))
 		if os.IsNotExist(e) {

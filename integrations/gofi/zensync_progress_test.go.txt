@@ -2,6 +2,7 @@ package dfi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,24 @@ import (
 	"github.com/d-fi/GoFi/download"
 	"github.com/d-fi/GoFi/types"
 )
+
+func TestZenSyncProgressFailureCodes(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		err  error
+		want string
+	}{
+		{"", &download.GeoBlocked{Country: "private-country"}, "geo_blocked"},
+		{"", &download.WrongLicense{Format: "private-format"}, "license_required"},
+		{"", context.DeadlineExceeded, "timeout"},
+		{"", errors.New("private-cookie-url-must-not-leak"), "provider_error"},
+		{"", nil, "unavailable"}, {"audio.flac", nil, ""},
+	} {
+		if got := zenSyncResultCode(test.path, test.err); got != test.want {
+			t.Fatalf("code=%q, want %q", got, test.want)
+		}
+	}
+}
 
 func TestZenSyncProgressProtocol(t *testing.T) {
 	t.Setenv("ZENSYNC_PROGRESS", "1")
