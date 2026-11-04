@@ -387,58 +387,9 @@ func (a *App) verifyPlaced(rel, metadata, quality string) error {
 	return a.validateAudio(filepath.Join(a.musicDir, filepath.FromSlash(rel)), t, quality)
 }
 func (a *App) findPlaced(ctx context.Context, c Credentials, rel, metadata string, requireUnique ...bool) (string, error) {
-	var t Track
-	if json.Unmarshal([]byte(metadata), &t) != nil {
-		return "", errors.New("Invalid asset metadata")
-	}
-	songs := []Song{}
-	for offset := 0; offset < 10000; offset += 100 {
-		var count int
-		page, err := a.navSearch(ctx, c, t.Title, offset, &count)
-		if err != nil {
-			return "", err
-		}
-		songs = append(songs, page...)
-		if count < 100 {
-			break
-		}
-	}
 	unique := len(requireUnique) > 0 && requireUnique[0]
-	matchedIDs := []string{}
-	slog.Info("Navidrome song lookup", "expected_path", rel, "candidate_count", len(songs))
-	for _, s := range songs {
-		path := strings.ReplaceAll(s.Path, "\\", "/")
-		pathMatches := path == rel || strings.HasSuffix(path, "/"+rel)
-		if pathMatches && !trackMatches(t, s) {
-			slog.Warn("Navidrome file metadata differs from approved recording", "song_id", s.ID, "file_path", path)
-		}
-		// Navidrome normally reports virtual paths. Verify original bytes rather
-		// than trusting a virtual filename or metadata-only coincidence.
-		matched, err := a.sameRemoteAudio(ctx, c, s, rel)
-		if err != nil {
-			return "", err
-		}
-		if matched {
-			if !trackMatches(t, s) {
-				slog.Warn("Navidrome metadata differs but original audio bytes match", "song_id", s.ID)
-			}
-			slog.Info("Navidrome asset verified", "song_id", s.ID, "file_path", rel, "reported_path", path)
-			if !unique {
-				return s.ID, nil
-			}
-			matchedIDs = append(matchedIDs, s.ID)
-			continue
-		}
-		slog.Warn("Navidrome candidate has different file content", "song_id", s.ID, "reported_path", path)
-
-	}
-	if len(matchedIDs) == 1 {
-		return matchedIDs[0], nil
-	}
-	if len(matchedIDs) > 1 {
-		return "", errors.New("Multiple Navidrome songs contain the same audio; relocation cannot safely identify the original file")
-	}
-	return "", nil
+	id, _, err := a.findPlacedWithReport(ctx, c, rel, metadata, unique)
+	return id, err
 }
 
 func stagedAudio(stage string) ([]string, error) {
@@ -492,28 +443,48 @@ func (a *App) sameRemoteAudio(ctx context.Context, c Credentials, s Song, rel st
 		return false, errors.New("Validated local file is missing")
 	}
 	if s.Size > 0 && s.Size != info.Size() {
-		return false, nil
+		slog.Warn("Navidrome indexed size differs; checking original bytes", "song_id", s.ID, "indexed_size", s.Size, "local_size", info.Size())
 	}
 	checksum, e := hashFile(local)
 	if e != nil {
 		return false, e
 	}
-	resp, e := a.navRaw(ctx, c, "download", mapValues("id", s.ID))
+	return a.sameRemoteAudioHash(ctx, c, s.ID, info.Size(), checksum)
+}
+
+func (a *App) sameRemoteAudioHash(ctx context.Context, c Credentials, sid string, size int64, checksum string) (bool, error) {
+	resp, e := a.navRaw(ctx, c, "download", mapValues("id", sid))
 	if e != nil {
 		return false, e
 	}
 	defer resp.Body.Close()
-	contentType := resp.Header.Get("Content-Type")
+	// An index entry can outlive its file during a scan. It is a failed
+	// candidate, not evidence that the account cannot download another entry.
+	if resp.StatusCode == 404 || resp.StatusCode == 410 {
+		return false, nil
+	}
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(contentType, "json") || strings.Contains(contentType, "xml") {
+		if strings.Contains(contentType, "json") {
+			var envelope struct {
+				Response NavResponse `json:"subsonic-response"`
+			}
+			if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&envelope) == nil && envelope.Response.Error != nil && envelope.Response.Error.Code == 70 {
+				return false, nil
+			}
+		}
 		return false, errors.New("Navidrome returned an API error instead of original audio; check the service account's download permission")
 	}
 	if resp.StatusCode != 200 {
 		return false, errors.New("Navidrome original-file verification failed; allow downloads for the service account")
 	}
+	if resp.ContentLength >= 0 && resp.ContentLength != size {
+		return false, nil
+	}
 	h := sha256.New()
-	n, e := io.Copy(h, io.LimitReader(resp.Body, info.Size()+1))
+	n, e := io.Copy(h, io.LimitReader(resp.Body, size+1))
 	if e != nil {
 		return false, errors.New("Could not verify original audio from Navidrome; check download permission and connectivity")
 	}
-	return n == info.Size() && hex.EncodeToString(h.Sum(nil)) == checksum, nil
+	return n == size && hex.EncodeToString(h.Sum(nil)) == checksum, nil
 }

@@ -384,7 +384,7 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 		return
 	}
 	slog.Info("Navidrome indexing check", "job_id", jid, "scanning", scan.Scan.Scanning, "scanned_count", scan.Scan.Count, "file_path", file)
-	songID, e := a.findPlaced(ctx, c, file, metadata)
+	songID, lookup, e := a.findPlacedWithReport(ctx, c, file, metadata, false)
 	if e != nil {
 		a.jobState(jid, "failed", e.Error())
 		return
@@ -397,7 +397,9 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 		}
 		slog.Warn("Placed file not found in Navidrome", "job_id", jid, "file_path", file, "wait_seconds", elapsed, "scanning", scan.Scan.Scanning)
 		if elapsed >= 300 {
-			a.jobState(jid, "failed", "Could not verify the downloaded file in Navidrome after 5 minutes. Check scan progress, shared music storage and the service account's library/download permissions. The validated file is retained; retry after correcting the connection or storage.")
+			a.jobState(jid, "failed", "Could not verify the downloaded file in Navidrome after 5 minutes. "+lookup.reason()+". Retained file: "+file+". Retry checks this file again without downloading it again.")
+		} else {
+			a.jobState(jid, "awaiting_scan", lookup.reason()+". The validated file is retained; checking again shortly.")
 		}
 		return
 	}

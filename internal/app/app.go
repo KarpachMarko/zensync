@@ -38,6 +38,8 @@ type App struct {
 	importMu         sync.Mutex
 	reviewMu         sync.Mutex
 	reviewTracks     map[int64]reviewRecording
+	navIndexMu       sync.Mutex
+	navIndexes       map[string]navSongIndex
 	providerMu       sync.Mutex
 	lastMetadata     time.Time
 	metadataInterval time.Duration
