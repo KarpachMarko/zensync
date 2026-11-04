@@ -54,7 +54,7 @@ func (a *App) recordingReview(w http.ResponseWriter, r *http.Request, u User) {
 			_ = json.Unmarshal([]byte(metadata), &track)
 			source := apple.Song{SourceID: rid, Title: title, Artist: artist, Album: track.Album.Title, Duration: track.Duration}
 			candidate := ""
-			if track.ID > 0 {
+			if track.ID > 0 && track.Provider != "lossless" {
 				candidate = mustJSON(track)
 			}
 			_, err = tx.Exec("INSERT INTO migrations(id,owner,fingerprint,name,state,source,report) VALUES(?,?,?,?,'open','request-review',?)", mid, u.ID, fingerprint, title, mustJSON(map[string]any{"songs": 1, "playlists": 0, "unplaylisted": 1, "warnings": []string{}}))

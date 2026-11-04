@@ -73,6 +73,8 @@ export async function uploadAudioFile(path: string, file: File, key: string): Pr
 }
 
 export type Track = {
+  provider?: "deezer" | "lossless";
+  source?: string;
   id: number;
   title: string;
   title_version: string;

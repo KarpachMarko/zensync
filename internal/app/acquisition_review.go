@@ -17,7 +17,11 @@ func (e *audioDurationMismatch) Error() string {
 	return fmt.Sprintf("Downloaded duration differs from the selected recording (expected %.3fs, measured %.3fs; tolerance %.3fs)", e.Expected, e.Measured, e.Tolerance)
 }
 func audioApprovalKey(t Track) string {
-	return digest(mustJSON([]any{t.ID, normalized(trackLabel(t)), normalized(t.Artist.Name), normalized(t.Album.Title), strings.ToUpper(t.ISRC), t.Duration}))
+	var identity any = t.ID
+	if t.Provider == "lossless" {
+		identity = trackTarget(t)
+	}
+	return digest(mustJSON([]any{identity, normalized(trackLabel(t)), normalized(t.Artist.Name), normalized(t.Album.Title), strings.ToUpper(t.ISRC), t.Duration}))
 }
 
 type reviewAudioCandidate struct {

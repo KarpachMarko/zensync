@@ -19,6 +19,8 @@ type Artist struct {
 	Role string `json:"role"`
 }
 type Track struct {
+	Provider       string   `json:"provider,omitempty"`
+	Source         string   `json:"source,omitempty"`
 	Contributors   []Artist `json:"contributors"`
 	ID             int64    `json:"id"`
 	Title          string   `json:"title"`
@@ -138,7 +140,7 @@ func (a *App) deezer(ctx context.Context, path string, out any) error {
 	}
 	return json.Unmarshal(b, out)
 }
-func (a *App) track(ctx context.Context, input string) (Track, error) {
+func (a *App) deezerTrack(ctx context.Context, input string) (Track, error) {
 	var t Track
 	id, e := a.resolveDeezerID(ctx, input)
 	if e != nil {
@@ -164,6 +166,10 @@ func (a *App) searchDeezer(ctx context.Context, q string) ([]Track, error) {
 	return out.Data, e
 }
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
+	if provider := r.URL.Query().Get("provider"); provider != "" && provider != "deezer" {
+		a.searchProvider(w, r, provider)
+		return
+	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len(q) > 500 {
 		fail(w, 400, "Search is too long")

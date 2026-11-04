@@ -352,9 +352,12 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 			a.fulfill(jid, rid, target, matches[0].ID)
 			return
 		}
-		var arl string
-		if a.unseal("deezer", &arl) != nil || arl == "" {
-			a.jobState(jid, "blocked", "Configure Deezer in Settings to acquire music")
+		provider, err := a.mediaProvider(t.Provider)
+		if err == nil {
+			err = provider.Ready()
+		}
+		if err != nil {
+			a.jobState(jid, "blocked", err.Error())
 			return
 		}
 		attempt := id()
@@ -362,7 +365,7 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 		if e != nil {
 			return
 		}
-		file, actual, e = a.acquire(ctx, jid, target, t, quality, arl)
+		file, actual, e = a.acquireProvider(ctx, jid, target, t, quality)
 		outcome := "completed"
 		if e != nil {
 			outcome = "failed"

@@ -24,6 +24,11 @@ type FoundAlbum = {
   artist: { name: string };
   trackCount?: number;
 };
+function trackTarget(t: Track) {
+  return t.provider === "lossless"
+    ? `lossless:track:${t.source}:${t.id}`
+    : `deezer:track:${t.id}`;
+}
 export function Search({ canDelete }: { canDelete: boolean }) {
   const [urlQuery, setUrlQuery] = useQueryState(
     "q",
@@ -33,13 +38,17 @@ export function Search({ canDelete }: { canDelete: boolean }) {
     "type",
     parseAsStringLiteral(["Both", "Album", "Song"]).withDefault("Both"),
   );
+  const [provider, setProvider] = useQueryState(
+    "provider",
+    parseAsStringLiteral(["deezer", "lossless"]).withDefault("deezer"),
+  );
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
   const searched = !!urlQuery.trim();
   const [albumRequested, setAlbumRequested] = useState<Set<number>>(new Set());
-  const [requested, setRequested] = useState<Set<number>>(new Set());
+  const [requested, setRequested] = useState<Set<string>>(new Set());
   const albumKeys = useRef<Record<number, string>>({});
-  const keys = useRef<Record<number, string>>({});
+  const keys = useRef<Record<string, string>>({});
   const [actionError, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const { api: mutate } = useApiMutation();
@@ -55,7 +64,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
     enabled: searched,
   });
   const candidateQuery = useQuery({
-    queryKey: ["api", "search", urlQuery],
+    queryKey: ["api", "search", urlQuery, provider],
     queryFn: () =>
       api<
         | Track[]
@@ -65,7 +74,12 @@ export function Search({ canDelete }: { canDelete: boolean }) {
             albums?: FoundAlbum[];
             warnings?: string[];
           }
-      >("/search?q=" + encodeURIComponent(urlQuery) + "&details=1"),
+      >(
+        "/search?q=" +
+          encodeURIComponent(urlQuery) +
+          "&details=1&provider=" +
+          provider,
+      ),
     enabled: searched,
   });
   const response = candidateQuery.data;
@@ -100,10 +114,10 @@ export function Search({ canDelete }: { canDelete: boolean }) {
       await mutate(
         "/requests",
         "POST",
-        { target: `deezer:track:${t.id}` },
-        (keys.current[t.id] ||= requestKey()),
+        { target: trackTarget(t) },
+        (keys.current[trackTarget(t)] ||= requestKey()),
       );
-      setRequested(new Set([...requested, t.id]));
+      setRequested(new Set([...requested, trackTarget(t)]));
       toast.success("Song request saved.");
     } catch (e) {
       setError((e as Error).message);
@@ -133,10 +147,27 @@ export function Search({ canDelete }: { canDelete: boolean }) {
     <>
       <PageHeading tabIndex={-1}>Search</PageHeading>
       <Text>
-        Find music in your library and on Deezer, or paste a song or album link.
+        Find music in your library, on Deezer or on lossless.am. Deezer also
+        supports song and album links.
       </Text>
+      <div className="mb-4 flex gap-2" role="group" aria-label="Media provider">
+        {(["deezer", "lossless"] as const).map((name) => (
+          <Button
+            key={name}
+            variant="outline"
+            aria-pressed={provider === name}
+            onClick={() => void setProvider(name)}
+          >
+            {name === "deezer" ? "Deezer" : "lossless.am"}
+          </Button>
+        ))}
+      </div>
       <SearchBox
-        label="Song, artist, album or Deezer URL"
+        label={
+          provider === "deezer"
+            ? "Song, artist, album or Deezer URL"
+            : "Song or artist on lossless.am"
+        }
         placeholder="Song, artist, album name or Deezer link"
         value={urlQuery}
         disabled={busy}
@@ -210,7 +241,11 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                 : 0)
             }
           >
-            {importLoading && <Text role="status">Searching Deezer…</Text>}
+            {importLoading && (
+              <Text role="status">
+                Searching {provider === "deezer" ? "Deezer" : "lossless.am"}…
+              </Text>
+            )}
             {showAlbums && album && (
               <section className="my-5 flex items-center justify-between gap-5 border-y border-solid border-border py-[18px] [&_h2]:m-0 [&_p]:my-1.5 [&_button]:shrink-0 max-[700px]:items-start max-[700px]:flex-col">
                 <div>
@@ -313,25 +348,26 @@ export function Search({ canDelete }: { canDelete: boolean }) {
               )}
             <div hidden={!showSongs}>
               {results.map((t) => (
-                <Row asChild key={t.id}>
+                <Row asChild key={trackTarget(t)}>
                   <article className="max-[700px]:items-start">
                     <div>
                       <strong>{label(t)}</strong>
                       <Caption>
-                        {t.artist.name} / {t.album.title} / {time(t.duration)}
+                        {t.artist.name} / {t.album.title} / {time(t.duration)} /{" "}
+                        {t.provider === "lossless" ? "lossless.am" : "Deezer"}
                       </Caption>
                     </div>
                     <Button
                       disabled={
                         busy ||
-                        requested.has(t.id) ||
+                        requested.has(trackTarget(t)) ||
                         !!(album && albumRequested.has(album.id))
                       }
                       onClick={() => void request(t)}
                     >
                       {album && albumRequested.has(album.id)
                         ? "Included in album"
-                        : requested.has(t.id)
+                        : requested.has(trackTarget(t))
                           ? "Requested"
                           : "Request"}
                     </Button>

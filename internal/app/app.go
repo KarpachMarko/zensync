@@ -24,8 +24,9 @@ import (
 var schema string
 
 type App struct {
-	transferMu sync.Mutex
-	transfers  map[string]TransferProgress
+	losslessAuthMu sync.Mutex
+	transferMu     sync.Mutex
+	transfers      map[string]TransferProgress
 
 	albumMu          sync.Mutex
 	activeOwners     map[string]int

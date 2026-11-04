@@ -87,8 +87,8 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	for k, v := range p.Format.Tags {
 		tags[strings.ToLower(k)] = v
 	}
-	if tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
-		return errors.New("Downloaded source ID does not match the selected Deezer track")
+	if t.Provider != "lossless" && tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
+		return errors.New("Downloaded source ID does not match the selected provider track")
 	}
 	if t.ISRC != "" && !strings.EqualFold(tags["isrc"], t.ISRC) && !strings.EqualFold(tags["tsrc"], t.ISRC) {
 		return errors.New("Downloaded ISRC differs from the selected recording")
@@ -140,7 +140,7 @@ func verifiedDurationTolerance(seconds float64, isrcVerified bool) float64 {
 }
 
 func sameApprovedRecording(approved, current Track) bool {
-	if approved.ID != current.ID || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
+	if trackTarget(approved) != trackTarget(current) || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
 		return false
 	}
 	tolerance := verifiedDurationTolerance(approved.Duration, approved.ISRC != "")

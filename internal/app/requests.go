@@ -3,13 +3,12 @@ package app
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 )
 
-var targetPattern = regexp.MustCompile(`^deezer:track:[1-9][0-9]{0,19}$`)
+var targetPattern = regexp.MustCompile(`^(deezer:track:[1-9][0-9]{0,19}|lossless:track:[a-zA-Z0-9_-]{1,40}:[1-9][0-9]{0,18})$`)
 
 func (a *App) listRequests(w http.ResponseWriter, u User) {
 	query := "SELECT id,owner,target,title,artist,upgrade,quality,decision,reason,created FROM requests WHERE NOT EXISTS(SELECT 1 FROM request_children c WHERE c.child_id=requests.id)"
@@ -148,14 +147,14 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 			fail(w, 400, e.Error())
 			return
 		}
-		in.Target = fmt.Sprintf("deezer:track:%d", t.ID)
+		in.Target = trackTarget(t)
 		in.Title = trackLabel(t)
 		in.Artist = t.Artist.Name
 		verified = t
 	}
 	key := r.Header.Get("Idempotency-Key")
 	if len(key) < 8 || len(key) > 128 || !targetPattern.MatchString(in.Target) || strings.TrimSpace(in.Title) == "" || len(in.Title) > 300 || len(in.Artist) > 300 {
-		fail(w, 400, "A verified Deezer song and an 8–128 character Idempotency-Key are required")
+		fail(w, 400, "A verified provider song and an 8–128 character Idempotency-Key are required")
 		return
 	}
 	tx, e := a.DB.Begin()
@@ -173,7 +172,7 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 		}
 		var chosen Track
 		_ = json.Unmarshal([]byte(candidate), &chosen)
-		if deferred || in.Target != fmt.Sprintf("deezer:track:%d", chosen.ID) {
+		if deferred || in.Target != trackTarget(chosen) {
 			fail(w, 409, "Source song target changed or is deferred")
 			return
 		}
@@ -221,7 +220,7 @@ func insertTrackRequest(tx *sql.Tx, u User, key, sourceID string, track Track, u
 	if !upgrade && (u.Role == "admin" || u.Direct) {
 		decision, reason = "approved", "Allowed without approval"
 	}
-	_, err := tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, fmt.Sprintf("deezer:track:%d", track.ID), trackLabel(track), track.Artist.Name, upgrade, string(u.Quality), decision, reason)
+	_, err := tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, trackTarget(track), trackLabel(track), track.Artist.Name, upgrade, string(u.Quality), decision, reason)
 	if err == nil {
 		_, err = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", rid, mustJSON(track))
 	}
@@ -336,7 +335,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
  SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
  SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
  WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
- ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN r.target LIKE 'deezer:track:%' THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+ ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN (r.target LIKE 'deezer:track:%' OR r.target LIKE 'lossless:track:%') THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
  UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
  UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  )`

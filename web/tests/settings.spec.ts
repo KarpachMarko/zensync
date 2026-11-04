@@ -277,3 +277,32 @@ test("quality switches and reorder buttons autosave one FLAC option and persist 
     fullPage: true,
   });
 });
+
+test("lossless sign-in validates email and password, autosaves and clears the password", async ({
+  page,
+}) => {
+  const { connections } = await settingsFixture(page);
+  await page.goto("/settings/connections");
+  const email = page.getByLabel("Lossless.am email", { exact: true });
+  const password = page.getByLabel("Lossless.am password", { exact: true });
+  await email.fill("invalid");
+  await password.fill("long-password");
+  await password.blur();
+  expect(connections).toHaveLength(0);
+  await email.fill("listener@example.com");
+  await email.blur();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Lossless.am connected." }),
+  ).toBeVisible();
+  expect(connections).toEqual([
+    {
+      kind: "lossless-login",
+      email: "listener@example.com",
+      password: "long-password",
+    },
+  ]);
+  await expect(password).toHaveValue("");
+  await expect(email).toHaveValue("listener@example.com");
+});

@@ -51,10 +51,19 @@ export const uploadSchema = z.object({
     ),
 });
 export const audioUploadSchema = z.object({
-  file: z.instanceof(File).nullable()
+  file: z
+    .instanceof(File)
+    .nullable()
     .refine((file) => file !== null, "Choose an audio file.")
-    .refine((file) => !file || /\.(flac|mp3|m4a|ogg|opus|wav|aif|aiff)$/i.test(file.name), "Choose FLAC, MP3, M4A, OGG, OPUS, WAV or AIFF audio.")
-    .refine((file) => !file || (file.size >= 1024 && file.size <= 1024 ** 3), "Audio must be between 1 KiB and 1 GiB."),
+    .refine(
+      (file) =>
+        !file || /\.(flac|mp3|m4a|ogg|opus|wav|aif|aiff)$/i.test(file.name),
+      "Choose FLAC, MP3, M4A, OGG, OPUS, WAV or AIFF audio.",
+    )
+    .refine(
+      (file) => !file || (file.size >= 1024 && file.size <= 1024 ** 3),
+      "Audio must be between 1 KiB and 1 GiB.",
+    ),
 });
 
 export const migrationChoicesSchema = z.object({
@@ -82,7 +91,12 @@ export const permissionsSchema = z.object({
   direct: z.boolean(),
   directDelete: z.boolean(),
 });
-export type ConnectionKind = "shared" | "personal" | "deezer";
+export type ConnectionKind =
+  | "shared"
+  | "personal"
+  | "deezer"
+  | "lossless"
+  | "lossless-login";
 export const connectionSchema = (kind: ConnectionKind, ready: boolean) =>
   z
     .object({
@@ -98,6 +112,35 @@ export const connectionSchema = (kind: ConnectionKind, ready: boolean) =>
           path: ["username"],
           message: "Connect the shared server first.",
         });
+        return;
+      }
+      if (kind === "lossless-login") {
+        if (!z.email().safeParse(draft.username.trim()).success)
+          ctx.addIssue({
+            code: "custom",
+            path: ["username"],
+            message: "Enter your Lossless.am email.",
+          });
+        if (draft.password.length < 8 || draft.password.length > 4096)
+          ctx.addIssue({
+            code: "custom",
+            path: ["password"],
+            message: "Enter your Lossless.am password (at least 8 characters).",
+          });
+        return;
+      }
+      if (kind === "lossless") {
+        if (
+          draft.arl.length < 3 ||
+          draft.arl.length > 4096 ||
+          !draft.arl.includes("=") ||
+          /[\r\n]/.test(draft.arl)
+        )
+          ctx.addIssue({
+            code: "custom",
+            path: ["arl"],
+            message: "Enter the complete session Cookie header.",
+          });
         return;
       }
       if (kind === "deezer") {

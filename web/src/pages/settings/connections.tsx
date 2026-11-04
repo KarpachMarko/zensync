@@ -20,6 +20,7 @@ type ConnectionsData = {
   configured: boolean;
   personalUsername: string;
   deezerConfigured: boolean;
+  losslessConfigured?: boolean;
   downloaderReady: boolean;
   musicMounted: boolean;
   downloaderVersion: string;
@@ -93,6 +94,30 @@ export function Connections({ admin }: { admin: boolean }) {
               }
             />
           )}
+          {admin && (
+            <ConnectionEditor
+              kind="lossless-login"
+              title="Lossless.am sign-in"
+              initial={{ url: "", username: "", password: "", arl: "" }}
+              description={
+                data.losslessConfigured
+                  ? "A session is saved. Sign in to replace it. ZenSync renews access automatically until the refresh session expires or is revoked. Your password is not stored."
+                  : "Enter your lossless.am email and password to connect. ZenSync saves an encrypted session and renews access automatically. Your password is not stored."
+              }
+            />
+          )}
+          {admin && (
+            <ConnectionEditor
+              kind="lossless"
+              title="Lossless.am cookie connection (alternative)"
+              initial={{ url: "", username: "", password: "", arl: "" }}
+              description={
+                data.losslessConfigured
+                  ? "Enter a Cookie header to replace the saved connection instead of using email/password."
+                  : "Search and FLAC downloads use lossless.am. If the service requires login, copy the Cookie header from an authenticated request in your browser. The saved session is encrypted and can renew access when a refresh cookie is included; it is not verified when saved."
+              }
+            />
+          )}
           <Text>
             <Button asChild>
               <AppLink to="/imports/new">Import Apple Music export</AppLink>
@@ -111,7 +136,7 @@ function ConnectionEditor({
   initial,
   ready = true,
 }: {
-  kind: "shared" | "personal" | "deezer";
+  kind: "shared" | "personal" | "deezer" | "lossless" | "lossless-login";
   title: string;
   description: string;
   initial: ConnectionDraft;
@@ -127,14 +152,16 @@ function ConnectionEditor({
       await api(
         "/connections",
         "PUT",
-        kind === "deezer"
-          ? { kind, arl: draft.arl }
-          : {
-              kind,
-              url: draft.url,
-              username: draft.username,
-              password: draft.password,
-            },
+        kind === "lossless-login"
+          ? { kind, email: draft.username.trim(), password: draft.password }
+          : kind === "deezer" || kind === "lossless"
+            ? { kind, arl: draft.arl }
+            : {
+                kind,
+                url: draft.url,
+                username: draft.username,
+                password: draft.password,
+              },
       );
     },
     normalizeSaved: (draft) => ({
@@ -144,11 +171,15 @@ function ConnectionEditor({
       arl: "",
     }),
     message:
-      kind === "deezer"
-        ? "Deezer credentials saved."
-        : kind === "shared"
-          ? "Navidrome server verified and saved."
-          : "Personal Navidrome account linked.",
+      kind === "lossless-login"
+        ? "Lossless.am connected."
+        : kind === "deezer" || kind === "lossless"
+          ? kind === "lossless"
+            ? "Lossless.am session saved."
+            : "Deezer credentials saved."
+          : kind === "shared"
+            ? "Navidrome server verified and saved."
+            : "Personal Navidrome account linked.",
     toastId: "connection-" + kind,
   });
   function update(field: keyof ConnectionDraft, value: string) {
@@ -182,13 +213,15 @@ function ConnectionEditor({
             />
           </FieldLabel>
         )}
-        {kind === "deezer" ? (
+        {kind === "deezer" || kind === "lossless" ? (
           <FieldLabel>
-            Deezer ARL cookie
+            {kind === "lossless"
+              ? "Lossless.am session Cookie header"
+              : "Deezer ARL cookie"}
             <Input
               type="password"
               autoComplete="new-password"
-              minLength={32}
+              minLength={kind === "lossless" ? 3 : 32}
               maxLength={4096}
               value={editor.value.arl}
               onChange={(event) => update("arl", event.target.value)}
@@ -197,7 +230,11 @@ function ConnectionEditor({
         ) : (
           <FieldGrid>
             <FieldLabel>
-              {kind === "shared" ? "Service username" : "Personal username"}
+              {kind === "lossless-login"
+                ? "Lossless.am email"
+                : kind === "shared"
+                  ? "Service username"
+                  : "Personal username"}
               <Input
                 autoComplete="off"
                 disabled={!ready}
@@ -207,7 +244,11 @@ function ConnectionEditor({
               />
             </FieldLabel>
             <FieldLabel>
-              {kind === "shared" ? "Service password" : "Personal password"}
+              {kind === "lossless-login"
+                ? "Lossless.am password"
+                : kind === "shared"
+                  ? "Service password"
+                  : "Personal password"}
               <Input
                 type="password"
                 autoComplete="new-password"
@@ -224,7 +265,9 @@ function ConnectionEditor({
           {!ready
             ? "Connect the shared server first."
             : editor.saving
-              ? "Verifying and saving…"
+              ? kind === "lossless"
+                ? "Saving session…"
+                : "Verifying and saving…"
               : "Saves automatically when the required fields are complete. Credentials are cleared after saving."}
         </Caption>
       </form>
