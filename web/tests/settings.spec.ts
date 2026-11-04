@@ -404,3 +404,41 @@ test("connections and providers are separate and saved masks never submit as cre
     ),
   ).toBe(true);
 });
+
+test("settings tabs use distinct shadcn panels and preserve the active route", async ({
+  page,
+}) => {
+  await settingsFixture(page);
+  await page.goto("/settings/providers");
+  const active = page.getByRole("tab", {
+    name: "Music providers",
+    exact: true,
+  });
+  await expect(active).toHaveAttribute("data-slot", "tabs-trigger");
+  await expect(active).toHaveAttribute("data-state", "active");
+  await expect(page.locator('[data-slot="tabs"]')).toHaveCSS(
+    "flex-direction",
+    "column",
+  );
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toHaveAttribute(
+    "id",
+    (await active.getAttribute("aria-controls"))!,
+  );
+  await expect(panel).toHaveAttribute(
+    "aria-labelledby",
+    (await active.getAttribute("id"))!,
+  );
+  await expect(
+    panel.getByRole("heading", { name: "Music providers", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Connections", exact: true }).click();
+  await expect(page).toHaveURL(/settings\/connections$/);
+  await expect(
+    panel.getByRole("heading", { name: "Navidrome connections", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(active).toHaveAttribute("data-state", "active");
+  await page.reload();
+  await expect(active).toHaveAttribute("aria-selected", "true");
+});

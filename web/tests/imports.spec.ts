@@ -158,7 +158,7 @@ test("commit starts matching and each result has a clear next action", async ({ 
   const unresolvedDialog = page.getByRole("dialog", { name: "Unresolved song", exact: true });
   await expect(unresolvedDialog.getByRole("button", { name: "Use this recording" })).toBeVisible();
   expect(candidateQueries).toContain("Artist Unresolved song");
-  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("local only");
+  await unresolvedDialog.getByLabel("Search or provider song URL").fill("local only");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   const localResults = unresolvedDialog.getByRole("region", { name: /^Already in Navidrome/ });
   const deezerResults = unresolvedDialog.getByRole("region", { name: /^Deezer recordings/ });
@@ -167,16 +167,16 @@ test("commit starts matching and each result has a clear next action", async ({ 
   await expect(localResults.getByRole("button", { name: "Use existing" })).toBeEnabled();
   await expect(deezerResults.getByRole("alert")).toContainText("Deezer search failed");
   await expect(deezerResults.getByText(/No results/)).toHaveCount(0);
-  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("local exact");
+  await unresolvedDialog.getByLabel("Search or provider song URL").fill("local exact");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   await expect(localResults.getByText("Title, artist credits, album and duration match.", { exact: true })).toBeVisible();
   await expect(localResults.getByText(/Title differs/)).toHaveCount(0);
-  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("remote only");
+  await unresolvedDialog.getByLabel("Search or provider song URL").fill("remote only");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   await expect(localResults.getByRole("alert")).toContainText("Library search failed");
   await expect(localResults.getByText("No local candidates.")).toHaveCount(0);
   await expect(deezerResults.getByRole("button", { name: "Use this recording" })).toBeEnabled();
-  await unresolvedDialog.getByLabel("Search or Deezer song URL").fill("alternative");
+  await unresolvedDialog.getByLabel("Search or provider song URL").fill("alternative");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   await expect(unresolvedDialog.getByRole("alert")).toContainText("Search unavailable");
   failSearch = false;

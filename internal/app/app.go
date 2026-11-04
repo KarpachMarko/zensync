@@ -38,7 +38,7 @@ type App struct {
 	activeTargets    map[string]bool
 	importMu         sync.Mutex
 	reviewMu         sync.Mutex
-	reviewTracks     map[int64]reviewRecording
+	reviewTracks     map[string]reviewRecording
 	navIndexMu       sync.Mutex
 	navIndexes       map[string]navSongIndex
 	providerMu       sync.Mutex

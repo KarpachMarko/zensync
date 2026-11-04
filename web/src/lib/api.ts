@@ -84,6 +84,9 @@ export type Track = {
   link: string;
   preview?: string;
 };
+export function trackTarget(t: Track) {
+ return t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+}
 export type LibrarySong = {
   id: string;
   title: string;

@@ -54,7 +54,7 @@ func trackTarget(t Track) string {
 }
 func (a *App) track(ctx context.Context, target string) (Track, error) {
 	name := "deezer"
-	if strings.HasPrefix(target, "lossless:") {
+	if strings.HasPrefix(target, "lossless:") || strings.HasPrefix(target, "https://lossless.am/") {
 		name = "lossless"
 	}
 	p, err := a.mediaProvider(name)

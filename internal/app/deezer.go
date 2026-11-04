@@ -51,7 +51,7 @@ func (a *App) rememberReviewTracks(tracks []Track) {
 	a.reviewMu.Lock()
 	defer a.reviewMu.Unlock()
 	if a.reviewTracks == nil {
-		a.reviewTracks = map[int64]reviewRecording{}
+		a.reviewTracks = map[string]reviewRecording{}
 	}
 	for _, track := range tracks {
 		if track.ID <= 0 || track.Title == "" {
@@ -60,18 +60,22 @@ func (a *App) rememberReviewTracks(tracks []Track) {
 		if len(a.reviewTracks) >= 4096 {
 			clear(a.reviewTracks)
 		}
-		a.reviewTracks[track.ID] = reviewRecording{track: track, fetched: time.Now()}
+		a.reviewTracks[trackTarget(track)] = reviewRecording{track: track, fetched: time.Now()}
 	}
 }
 func (a *App) reviewTrack(ctx context.Context, target string) (Track, error) {
+	key := target
 	if id, err := deezerID(target); err == nil {
-		number, _ := strconv.ParseInt(id, 10, 64)
-		a.reviewMu.Lock()
-		cached, found := a.reviewTracks[number]
-		a.reviewMu.Unlock()
-		if found && time.Since(cached.fetched) < 10*time.Minute {
-			return cached.track, nil
-		}
+		key = "deezer:track:" + id
+	}
+	if normalizedTarget, err := losslessTarget(target); err == nil {
+		key = normalizedTarget
+	}
+	a.reviewMu.Lock()
+	cached, found := a.reviewTracks[key]
+	a.reviewMu.Unlock()
+	if found && time.Since(cached.fetched) < 10*time.Minute {
+		return cached.track, nil
 	}
 	return a.track(ctx, target)
 }

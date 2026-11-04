@@ -42,7 +42,7 @@ const losslessSearchFixture = `{"tracks":[{"id":42,"title":"Song","duration":2,"
 
 func TestLosslessSearchRequestIdentityAndSecrets(t *testing.T) {
 	a := losslessFixture(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/search" || r.Method != "POST" {
+		if r.URL.Path != "/api/search" && r.URL.Path != "/api/track/42" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Cookie") != "session=private-value" {
@@ -50,7 +50,7 @@ func TestLosslessSearchRequestIdentityAndSecrets(t *testing.T) {
 		}
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["query"] == "" {
+		if r.URL.Path == "/api/search" && body["query"] == "" {
 			t.Error("missing search query")
 		}
 		io.WriteString(w, losslessSearchFixture)

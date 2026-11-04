@@ -128,3 +128,44 @@ for (const action of ["library", "deezer", "upload"] as const) {
     if (action === "upload") expect(mutations).toEqual([{ path: "/api/v2/imports/migration/songs/source/upload", body: null }]);
   });
 }
+
+test("import review searches lossless and preserves its source when choosing a recording", async ({ page }) => {
+  const data = context("Внутри головы", "KlouKoma");
+  data.source.candidate = null;
+  data.source.requestId = "";
+  data.source.jobState = "";
+  data.source.decision = "";
+  data.source.matchState = "unresolved";
+  const targets: string[] = [];
+  const queries: string[] = [];
+  const recording = { id: 104040942, provider: "lossless", source: "main", title: "Внутри головы", duration: 158, artist: { name: "КлоуКома" }, album: { title: "HELP" } };
+  await page.route("**/api/v2/**", async (route) => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
+    if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "fixture", user: { id: "user", username: "user", role: "member", quality: ["lossless"] } } });
+    if (path === "/api/v2/imports/migration") return route.fulfill({ json: { migration: data.migration, songs: [data.source], playlists: [] } });
+    if (path.endsWith("/candidates")) {
+      queries.push((request.postDataJSON() as { query: string }).query);
+      return route.fulfill({ json: { library: [], deezer: [], providers: [
+        { id: "deezer", name: "Deezer", tracks: [], error: "Deezer unavailable" },
+        { id: "lossless", name: "Lossless.am", tracks: [recording] },
+      ] } });
+    }
+    if (path.endsWith("/resolve")) {
+      targets.push((request.postDataJSON() as { target: string }).target);
+      return route.fulfill({ json: { source: data.source } });
+    }
+    throw new Error("Unexpected API: " + path);
+  });
+  await page.goto("/imports/migration?recording=source");
+  const dialog = page.getByRole("dialog", { name: "Внутри головы", exact: true });
+  const results = dialog.getByRole("region", { name: /^Lossless.am recordings/ });
+  await expect(results.getByText("Внутри головы", { exact: true })).toBeVisible();
+  await expect(results.getByRole("link", { name: /Open .* in Lossless.am/ })).toHaveAttribute("href", "https://lossless.am/app/track/main/104040942");
+  await dialog.getByLabel("Search or provider song URL", { exact: true }).fill("https://lossless.am/app/track/main/104040942?l=ru");
+  await dialog.getByRole("button", { name: "Search", exact: true }).click();
+  await expect.poll(() => queries.at(-1)).toBe("https://lossless.am/app/track/main/104040942?l=ru");
+  await results.getByRole("button", { name: "Use this recording", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(targets).toEqual(["lossless:track:main:104040942"]);
+});

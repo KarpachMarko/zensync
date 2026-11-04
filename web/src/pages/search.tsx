@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api, label, requestKey, time } from "@/lib/api";
+import { api, label, requestKey, time, trackTarget } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
@@ -24,11 +24,6 @@ type FoundAlbum = {
   artist: { name: string };
   trackCount?: number;
 };
-function trackTarget(t: Track) {
-  return t.provider === "lossless"
-    ? `lossless:track:${t.source}:${t.id}`
-    : `deezer:track:${t.id}`;
-}
 export function Search({ canDelete }: { canDelete: boolean }) {
   const [urlQuery, setUrlQuery] = useQueryState(
     "q",

@@ -96,8 +96,8 @@ export function songGuidance(s: Source) {
   if (s.candidate)
     return "Compare the selected recording, then request missing audio when you are ready.";
   if (s.metadata.missing)
-    return "The export has no metadata for this song. Search by title and artist or paste a Deezer song URL.";
+    return "The export has no metadata for this song. Search by title and artist or paste a provider song URL.";
   if (s.matchState === "ambiguous")
     return "Compare the album, version and duration, then choose the intended recording.";
-  return "No recording has been selected. Edit the search or paste a Deezer song URL.";
+  return "No recording has been selected. Edit the search or paste a provider song URL.";
 }

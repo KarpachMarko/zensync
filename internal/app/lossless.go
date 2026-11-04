@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,8 +16,7 @@ import (
 	"time"
 )
 
-// Only endpoints observed in the supplied HAR are used. Search revalidates exact
-// IDs because the capture does not establish a track-detail endpoint.
+// The captured client establishes search and exact track lookup endpoints.
 type losslessProvider struct{ app *App }
 
 func (p losslessProvider) Ready() error { return nil }
@@ -34,6 +34,10 @@ func (p losslessProvider) Search(ctx context.Context, q string) ([]Track, error)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	return p.decodeTracks(resp)
+}
+func (p losslessProvider) decodeTracks(resp *http.Response) ([]Track, error) {
+	tracks := []Track{}
 	var result struct {
 		Tracks []struct {
 			ID        int64    `json:"id"`
@@ -64,26 +68,38 @@ func (p losslessProvider) Search(ctx context.Context, q string) ([]Track, error)
 		t.Album.Title = r.Album.Title
 		t.Album.Cover = r.Album.Picture.Medium
 		// Unverified third-party preview URLs from the service are intentionally omitted.
-		if _, err = p.app.DB.Exec("INSERT INTO provider_tracks(target,metadata) VALUES(?,?) ON CONFLICT(target) DO UPDATE SET metadata=excluded.metadata", trackTarget(t), mustJSON(t)); err != nil {
+		if _, err := p.app.DB.Exec("INSERT INTO provider_tracks(target,metadata) VALUES(?,?) ON CONFLICT(target) DO UPDATE SET metadata=excluded.metadata", trackTarget(t), mustJSON(t)); err != nil {
 			return nil, err
 		}
 		tracks = append(tracks, t)
 	}
 	return tracks, nil
 }
-func (p losslessProvider) Track(ctx context.Context, target string) (Track, error) {
-	if !targetPattern.MatchString(target) || !strings.HasPrefix(target, "lossless:") {
-		return Track{}, errors.New("Choose a Lossless.am song from Search")
+func losslessTarget(input string) (string, error) {
+	if strings.HasPrefix(input, "lossless:track:") && targetPattern.MatchString(input) {
+		return input, nil
 	}
-	var metadata string
-	if p.app.DB.QueryRow("SELECT metadata FROM provider_tracks WHERE target=?", target).Scan(&metadata) != nil {
-		return Track{}, errors.New("Search for this Lossless.am song again before requesting it")
+	u, err := url.Parse(strings.TrimSpace(input))
+	if err == nil && u.Scheme == "https" && u.Host == "lossless.am" && u.User == nil {
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) == 4 && parts[0] == "app" && parts[1] == "track" && losslessSource.MatchString(parts[2]) && digits.MatchString(parts[3]) {
+			return "lossless:track:" + parts[2] + ":" + parts[3], nil
+		}
 	}
-	var previous Track
-	if json.Unmarshal([]byte(metadata), &previous) != nil {
-		return Track{}, errors.New("Invalid saved provider metadata")
+	return "", errors.New("Use a direct lossless.am/app/track/source/id song URL")
+}
+func (p losslessProvider) Track(ctx context.Context, input string) (Track, error) {
+	target, err := losslessTarget(input)
+	if err != nil {
+		return Track{}, err
 	}
-	tracks, err := p.Search(ctx, previous.Artist.Name+" "+previous.Title)
+	parts := strings.Split(target, ":")
+	resp, err := p.request(ctx, "GET", "/api/track/"+parts[3]+"?source="+url.QueryEscape(parts[2]), nil)
+	if err != nil {
+		return Track{}, err
+	}
+	defer resp.Body.Close()
+	tracks, err := p.decodeTracks(resp)
 	if err != nil {
 		return Track{}, err
 	}
@@ -92,7 +108,7 @@ func (p losslessProvider) Track(ctx context.Context, target string) (Track, erro
 			return t, nil
 		}
 	}
-	return Track{}, errors.New("Lossless.am no longer returns the selected recording")
+	return Track{}, errors.New("Lossless.am did not return the requested recording")
 }
 func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Track, profile string) (string, string, error) {
 	var qualities []string

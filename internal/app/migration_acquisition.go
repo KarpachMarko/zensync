@@ -109,7 +109,11 @@ func (a *App) acquireMigrationSongs(w http.ResponseWriter, r *http.Request, u Us
 			a.internal(w, err)
 			return
 		}
-		sourceKey := digest(sid + fmt.Sprint(track.ID) + prior + revision)
+		identity := fmt.Sprint(track.ID)
+		if track.Provider == "lossless" {
+			identity = trackTarget(track)
+		}
+		sourceKey := digest(sid + identity + prior + revision)
 		if _, err = insertTrackRequest(tx, u, sourceKey, sid, track, false); err != nil {
 			a.internal(w, err)
 			return

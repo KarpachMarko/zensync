@@ -458,12 +458,20 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 	if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE id IN (SELECT source_id FROM request_sources WHERE request_id=?)", songID, rid); e != nil {
 		return
 	}
-	providerID, _ := strconv.ParseInt(strings.TrimPrefix(target, "deezer:track:"), 10, 64)
+	provider, source, number := "deezer", "", strings.TrimPrefix(target, "deezer:track:")
+	if strings.HasPrefix(target, "lossless:track:") {
+		parts := strings.Split(target, ":")
+		if len(parts) == 4 {
+			provider, source, number = "lossless", parts[2], parts[3]
+		}
+	}
+	providerID, _ := strconv.ParseInt(number, 10, 64)
 	if providerID > 0 {
-		if _, e = tx.Exec("UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND match_state IN ('confident','manual') AND server_id=''", songID, providerID); e != nil {
+		if _, e = tx.Exec(`UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND COALESCE(NULLIF(json_extract(candidate,'$.provider'),''),'deezer')=? AND COALESCE(json_extract(candidate,'$.source'),'')=? AND match_state IN ('confident','manual') AND server_id=''`, songID, providerID, provider, source); e != nil {
 			return
 		}
 	}
+
 	if e = tx.Commit(); e != nil {
 		return
 	}
