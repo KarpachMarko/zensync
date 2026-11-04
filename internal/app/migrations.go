@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case path == "/api/v2/providers/lossless/stream":
+		a.streamLossless(w, r)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && strings.HasSuffix(path, "/recording-review") && r.Method == "POST":
 		a.recordingReview(w, r, u)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && (strings.HasSuffix(path, "/review-audio") || strings.HasSuffix(path, "/review-audio/file")):
@@ -640,11 +642,20 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			a.rememberReviewTracks(providers[i].Tracks)
 		}
 		a.rememberReviewTracks(tracks)
+		recordings := []Track{}
+		recordingMatches := map[string]RecordingMatch{}
+		for _, provider := range providers {
+			recordings = append(recordings, provider.Tracks...)
+			for key, match := range provider.Matches {
+				recordingMatches[key] = match
+			}
+		}
+		rankRecordings(source, recordings)
 		libraryMatches := map[string]RecordingMatch{}
 		for _, song := range navSongs {
 			libraryMatches[song.ID] = assessLibraryRecording(source, song)
 		}
-		send(w, 200, map[string]any{"providers": providers, "deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
+		send(w, 200, map[string]any{"recordings": recordings, "recordingMatches": recordingMatches, "providers": providers, "deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
 		return
 	}
 	var resolvedServer, resolvedCandidate string

@@ -91,13 +91,16 @@ func (s losslessSession) has(name string) bool {
 	}
 	return false
 }
-func (p losslessProvider) do(ctx context.Context, method, path string, body []byte, s losslessSession) (*http.Response, error) {
+func (p losslessProvider) do(ctx context.Context, method, path string, body []byte, s losslessSession, extra ...http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, "https://lossless.am"+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, errors.New("Invalid Lossless.am request")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", losslessUserAgent)
+	if len(extra) > 0 && extra[0].Get("Range") != "" {
+		req.Header.Set("Range", extra[0].Get("Range"))
+	}
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -114,7 +117,7 @@ func (p losslessProvider) do(ctx context.Context, method, path string, body []by
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	client.Timeout = 30 * time.Second
-	if strings.HasPrefix(path, "/api/download/") {
+	if strings.HasPrefix(path, "/api/download/") || strings.HasPrefix(path, "/api/stream/track") {
 		client.Timeout = 15 * time.Minute
 	}
 	started := time.Now()
@@ -123,7 +126,7 @@ func (p losslessProvider) do(ctx context.Context, method, path string, body []by
 		slog.Warn("Lossless.am connection failed", "method", method, "endpoint", req.URL.Path, "duration_ms", time.Since(started).Milliseconds())
 		return nil, errors.New("Lossless.am connection failed")
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode >= 300 {
 		slog.Warn("Lossless.am request rejected", "method", method, "endpoint", req.URL.Path, "status", resp.StatusCode, "duration_ms", time.Since(started).Milliseconds())
 	}
 	return resp, nil

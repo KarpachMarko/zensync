@@ -139,3 +139,34 @@ func TestFulfillmentKeepsProviderAndSourceIdentitiesSeparate(t *testing.T) {
 		t.Fatal("Deezer fulfilled a different provider")
 	}
 }
+
+func TestImportResultsRankAcrossProviderBoundaries(t *testing.T) {
+	a, _, member := albumFixture(t)
+	lossless := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, losslessSearchFixture) }))
+	defer lossless.Close()
+	u, _ := url.Parse(lossless.URL)
+	a.HTTP = &http.Client{Transport: losslessRoutingTransport{u}}
+	a.seal("lossless", "jwt_access=fixture; jwt_refresh=fixture")
+	deezer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		send(w, 200, map[string]any{"data": []Track{makeTrack(42, "Different recording")}})
+	}))
+	defer deezer.Close()
+	a.deezerURL = deezer.URL
+	mid, sid := stageAudioMigration(t, member)
+	a.DB.Exec("UPDATE source_songs SET metadata=? WHERE id=?", mustJSON(apple.Song{Title: "Song", Artist: "Artist", Album: "Album", Duration: 2}), sid)
+	w := member.call("POST", "/api/v2/imports/"+mid+"/songs/"+sid+"/candidates", `{"query":"Song"}`, "")
+	expect(t, w, 200)
+	var response struct {
+		Recordings []Track                   `json:"recordings"`
+		Matches    map[string]RecordingMatch `json:"recordingMatches"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Recordings) != 2 || response.Recordings[0].Provider != "lossless" {
+		t.Fatalf("provider grouping defeated match ordering: %s", w.Body)
+	}
+	if !response.Matches["lossless:track:main:42"].Confident || response.Matches["deezer:track:42"].Confident {
+		t.Fatal("numeric ID collision corrupted comparisons")
+	}
+}

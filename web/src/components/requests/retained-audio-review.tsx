@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Text } from "@/components/typography";
 import { useApiQuery } from "@/hooks/use-api";
-import { useDeezerPreview } from "@/hooks/use-deezer-preview";
+import { useRecordingPreview } from "@/hooks/use-recording-preview";
 import { api, time, type Track } from "@/lib/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -22,7 +22,7 @@ export function RetainedAudioReview({ path, onAccepted, disabled = false, onBusy
   });
   const client = useQueryClient();
   const [confirm, setConfirm] = useState<Candidate | null>(null);
-  const preview = useDeezerPreview({ maxDuration: Infinity, errorMessage: "Retained audio could not be played. Close and reopen review to refresh it.", resolveURL: (track) => {
+  const preview = useRecordingPreview({ maxDuration: Infinity, errorMessage: "Retained audio could not be played. Close and reopen review to refresh it.", resolveURL: (track) => {
     if (!track.preview) return null;
     const url = new URL(track.preview, window.location.origin);
     return url.origin === window.location.origin && url.pathname === "/api/v2" + path + "/file" ? url.href : null;

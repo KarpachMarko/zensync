@@ -108,7 +108,7 @@ for (const action of ["library", "deezer", "upload"] as const) {
     await page.getByRole("menuitem", { name: "Review recording", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Make It Rain", exact: true });
     await expect(dialog.getByRole("region", { name: /^Already in Navidrome/ })).toBeVisible();
-    await expect(dialog.getByRole("region", { name: /^Deezer recordings/ })).toBeVisible();
+    await expect(dialog.getByRole("region", { name: /^Provider recordings/ })).toBeVisible();
     expect(initialSearch).toBe("Ed Sheeran Make It Rain");
     expect(page.url()).toMatch(/\/activity$/);
     expect(await dialog.locator("header").evaluate((header) => header.getBoundingClientRect().height)).toBeLessThan(100);
@@ -159,7 +159,7 @@ test("import review searches lossless and preserves its source when choosing a r
   });
   await page.goto("/imports/migration?recording=source");
   const dialog = page.getByRole("dialog", { name: "Внутри головы", exact: true });
-  const results = dialog.getByRole("region", { name: /^Lossless.am recordings/ });
+  const results = dialog.getByRole("region", { name: /^Provider recordings/ });
   await expect(results.getByText("Внутри головы", { exact: true })).toBeVisible();
   await expect(results.getByRole("link", { name: /Open .* in Lossless.am/ })).toHaveAttribute("href", "https://lossless.am/app/track/main/104040942");
   await dialog.getByLabel("Search or provider song URL", { exact: true }).fill("https://lossless.am/app/track/main/104040942?l=ru");

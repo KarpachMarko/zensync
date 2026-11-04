@@ -1,3 +1,6 @@
+import { RecordingTools } from "@/components/imports/recording-tools";
+import { PreviewPlayer } from "@/components/imports/preview-player";
+import { useRecordingPreview } from "@/hooks/use-recording-preview";
 import { Actions, Row } from "@/components/layout/content";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { SearchSection } from "@/components/music/search-section";
@@ -25,6 +28,7 @@ type FoundAlbum = {
   trackCount?: number;
 };
 export function Search({ canDelete }: { canDelete: boolean }) {
+  const preview = useRecordingPreview();
   const [urlQuery, setUrlQuery] = useQueryState(
     "q",
     parseAsString.withDefault("").withOptions({ history: "push" }),
@@ -351,6 +355,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                         {t.artist.name} / {t.album.title} / {time(t.duration)} /{" "}
                         {t.provider === "lossless" ? "lossless.am" : "Deezer"}
                       </Caption>
+                      <RecordingTools track={t} playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(t)} onPreview={preview.toggle} />
                     </div>
                     <Button
                       disabled={
@@ -373,6 +378,8 @@ export function Search({ canDelete }: { canDelete: boolean }) {
           </SearchSection>
         </>
       )}
+      <PreviewPlayer preview={preview} />
+      {preview.error && <Text role="alert">{preview.error}</Text>}
       {showSongs && requested.size > 0 && (
         <Text role="status">
           Requests saved. <AppLink to="/requests">View approval status</AppLink>{" "}

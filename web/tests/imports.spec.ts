@@ -161,7 +161,7 @@ test("commit starts matching and each result has a clear next action", async ({ 
   await unresolvedDialog.getByLabel("Search or provider song URL").fill("local only");
   await unresolvedDialog.getByRole("button", { name: "Search", exact: true }).click();
   const localResults = unresolvedDialog.getByRole("region", { name: /^Already in Navidrome/ });
-  const deezerResults = unresolvedDialog.getByRole("region", { name: /^Deezer recordings/ });
+  const deezerResults = unresolvedDialog.getByRole("region", { name: /^Provider recordings/ });
   await expect(localResults.getByText("Local recording", { exact: true })).toBeVisible();
   await expect(localResults.getByText("Title differs · Album differs · Duration differs (3:00 vs 3:30)", { exact: true })).toBeVisible();
   await expect(localResults.getByRole("button", { name: "Use existing" })).toBeEnabled();
