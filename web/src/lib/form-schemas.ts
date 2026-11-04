@@ -95,7 +95,6 @@ export type ConnectionKind =
   | "shared"
   | "personal"
   | "deezer"
-  | "lossless"
   | "lossless-login";
 export const connectionSchema = (kind: ConnectionKind, ready: boolean) =>
   z
@@ -126,20 +125,6 @@ export const connectionSchema = (kind: ConnectionKind, ready: boolean) =>
             code: "custom",
             path: ["password"],
             message: "Enter your Lossless.am password (at least 8 characters).",
-          });
-        return;
-      }
-      if (kind === "lossless") {
-        if (
-          draft.arl.length < 3 ||
-          draft.arl.length > 4096 ||
-          !draft.arl.includes("=") ||
-          /[\r\n]/.test(draft.arl)
-        )
-          ctx.addIssue({
-            code: "custom",
-            path: ["arl"],
-            message: "Enter the complete session Cookie header.",
           });
         return;
       }

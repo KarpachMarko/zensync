@@ -242,9 +242,14 @@ func (a *App) connectionRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		var arl, losslessCookie string
 		_ = a.unseal("deezer", &arl)
 		_ = a.unseal("lossless", &losslessCookie)
+		session := (losslessProvider{a}).session()
+		losslessEmail := ""
+		if u.Role == "admin" {
+			losslessEmail = session.Email
+		}
 		_, binaryErr := os.Stat(a.dfiPath)
 		_, musicErr := os.Stat(a.musicDir)
-		send(w, 200, map[string]any{"url": shared.URL, "serviceUsername": shared.Username, "configured": shared.Username != "", "personalUsername": own.Username, "deezerConfigured": arl != "", "losslessConfigured": losslessCookie != "" || (losslessProvider{a}).session().has("jwt_refresh"), "downloaderReady": binaryErr == nil, "musicMounted": musicErr == nil, "downloaderVersion": "2.3.5"})
+		send(w, 200, map[string]any{"url": shared.URL, "serviceUsername": shared.Username, "configured": shared.Username != "", "servicePasswordConfigured": shared.Password != "", "personalPasswordConfigured": own.Password != "", "losslessEmail": losslessEmail, "personalUsername": own.Username, "deezerConfigured": arl != "", "losslessConfigured": losslessCookie != "" || session.has("jwt_refresh"), "downloaderReady": binaryErr == nil, "musicMounted": musicErr == nil, "downloaderVersion": "2.3.5"})
 		return
 	}
 	if r.Method != "PUT" {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/mail"
@@ -17,6 +18,10 @@ import (
 )
 
 const losslessSessionKey = "lossless.session"
+
+// The service returns HTTP 451 for Go's default User-Agent, including on login.
+// The same requests reach authentication with this browser-compatible agent.
+const losslessUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
 type losslessSession struct {
 	Email   string         `json:"email"`
@@ -92,6 +97,7 @@ func (p losslessProvider) do(ctx context.Context, method, path string, body []by
 		return nil, errors.New("Invalid Lossless.am request")
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", losslessUserAgent)
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -111,13 +117,21 @@ func (p losslessProvider) do(ctx context.Context, method, path string, body []by
 	if strings.HasPrefix(path, "/api/download/") {
 		client.Timeout = 15 * time.Minute
 	}
+	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		slog.Warn("Lossless.am connection failed", "method", method, "endpoint", req.URL.Path, "duration_ms", time.Since(started).Milliseconds())
 		return nil, errors.New("Lossless.am connection failed")
+	}
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("Lossless.am request rejected", "method", method, "endpoint", req.URL.Path, "status", resp.StatusCode, "duration_ms", time.Since(started).Milliseconds())
 	}
 	return resp, nil
 }
 func losslessStatus(status int) error {
+	if status == http.StatusUnavailableForLegalReasons {
+		return errors.New("Lossless.am refused access from the ZenSync server (HTTP 451); check provider or network restrictions")
+	}
 	if status == 401 {
 		return errors.New("Lossless.am session expired or was revoked; sign in again in Settings")
 	}
@@ -231,7 +245,7 @@ func (p losslessProvider) login(ctx context.Context, email, password string) err
 		return errors.New("Lossless.am rejected the email or password")
 	}
 	if resp.StatusCode != 200 {
-		return losslessStatus(resp.StatusCode)
+		return fmt.Errorf("Sign-in failed: %w", losslessStatus(resp.StatusCode))
 	}
 	session.merge(resp.Cookies())
 	if !session.has("jwt_access") || !session.has("jwt_refresh") {
@@ -245,7 +259,7 @@ func (p losslessProvider) login(ctx context.Context, email, password string) err
 	}
 	defer me.Body.Close()
 	if me.StatusCode != 200 {
-		return losslessStatus(me.StatusCode)
+		return fmt.Errorf("Account verification failed: %w", losslessStatus(me.StatusCode))
 	}
 	var profile struct {
 		User *json.RawMessage `json:"user"`

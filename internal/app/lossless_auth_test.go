@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -118,7 +120,7 @@ func TestLosslessPasswordLoginAndRefresh(t *testing.T) {
 		t.Fatal("rotation not saved")
 	}
 	connections := admin.call("GET", "/api/v2/connections", "", "")
-	if strings.Contains(connections.Body.String(), "new-access") || strings.Contains(connections.Body.String(), "test@example.com") {
+	if strings.Contains(connections.Body.String(), "new-access") {
 		t.Fatal("credentials exposed")
 	}
 }
@@ -164,5 +166,56 @@ func TestLosslessExpiredRefreshIsNotUsed(t *testing.T) {
 	}
 	if _, err := (losslessProvider{a}).Search(context.Background(), "Song"); err == nil {
 		t.Fatal("expired session accepted")
+	}
+}
+
+func TestLosslessLoginUsesCompatibleUserAgent(t *testing.T) {
+	a := losslessFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != losslessUserAgent {
+			w.WriteHeader(451)
+			return
+		}
+		w.WriteHeader(401)
+	})
+	err := (losslessProvider{a}).login(context.Background(), "test@example.com", "test-password")
+	if err == nil || !strings.Contains(err.Error(), "email or password") {
+		t.Fatalf("login did not reach authentication: %v", err)
+	}
+}
+
+func TestLosslessFailureLogsAreSafeAndIdentifyStage(t *testing.T) {
+	for _, endpoint := range []string{"/api/auth/login", "/api/me"} {
+		t.Run(endpoint, func(t *testing.T) {
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			defer slog.SetDefault(previous)
+			a := losslessFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == endpoint {
+					w.WriteHeader(451)
+					io.WriteString(w, "private-provider-body")
+					return
+				}
+				authCookie(w, "jwt_access", "private-access", "/")
+				authCookie(w, "jwt_refresh", "private-refresh", "/api/auth")
+			})
+			err := (losslessProvider{a}).login(context.Background(), "private@example.com", "private-password")
+			stage := "Sign-in failed"
+			if endpoint == "/api/me" {
+				stage = "Account verification failed"
+			}
+			if err == nil || !strings.Contains(err.Error(), stage) || !strings.Contains(err.Error(), "451") {
+				t.Fatalf("missing stage: %v", err)
+			}
+			output := logs.String()
+			if !strings.Contains(output, endpoint) || !strings.Contains(output, `"status":451`) {
+				t.Fatalf("missing HTTP diagnostic: %s", output)
+			}
+			for _, secret := range []string{"private@example.com", "private-password", "private-access", "private-refresh", "private-provider-body"} {
+				if strings.Contains(output, secret) || strings.Contains(err.Error(), secret) {
+					t.Fatal("credential leaked")
+				}
+			}
+		})
 	}
 }

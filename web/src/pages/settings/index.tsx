@@ -12,6 +12,7 @@ import {
 import { DeletionKeys } from "./api-keys";
 import { Connections } from "./connections";
 import { DownloadSettings } from "./downloads";
+import { MusicProviders } from "./providers";
 import { Quality } from "./quality";
 import { Users } from "./users";
 export function Settings({
@@ -29,6 +30,7 @@ export function Settings({
     { value: "api", title: "API keys" },
     ...(user.role === "admin"
       ? [
+          { value: "providers", title: "Music providers" },
           { value: "downloads", title: "Downloads" },
           { value: "users", title: "Users" },
         ]
@@ -77,6 +79,7 @@ export function Settings({
             <Route path="api" element={<DeletionKeys />} />
             {user.role === "admin" && (
               <>
+                <Route path="providers" element={<MusicProviders />} />
                 <Route path="downloads" element={<DownloadSettings />} />
                 <Route path="users" element={<Users />} />
                 <Route
