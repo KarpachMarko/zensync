@@ -223,3 +223,40 @@ func TestCancellingOldFailurePreservesNewerMigrationTaskAndWakeup(t *testing.T) 
 		t.Fatalf("newer task/rerun changed: %s %d", state, wakeups)
 	}
 }
+
+func TestRequestsUseActivityOrderingBeforeLimitingLargeQueue(t *testing.T) {
+	a, _, member := albumFixture(t)
+	var owner string
+	a.DB.QueryRow("SELECT id FROM users WHERE username='member'").Scan(&owner)
+	for i := 0; i < 216; i++ {
+		state := "queued"
+		created := "2026-11-04 12:00:00"
+		if i >= 210 {
+			state = []string{"downloading", "awaiting_scan", "importing", "validating", "blocked", "available"}[i-210]
+			created = "2000-01-01 00:00:00"
+		}
+		id := fmt.Sprintf("sort-%03d", i)
+		if _, err := a.DB.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,created) VALUES(?,?,?,?,?,'Artist',0,'[\"128\"]','approved',?)", id, owner, id, fmt.Sprintf("deezer:track:%d", i+1), id, created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.DB.Exec("INSERT INTO jobs(id,request_id,state,stage,created) VALUES(?,?,?,'stage',?)", id, id, state, created); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, endpoint := range []string{"/api/v2/requests", "/api/v2/activity"} {
+		w := member.call("GET", endpoint, "", "")
+		expect(t, w, 200)
+		var rows []struct {
+			State string `json:"state"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &rows)
+		if len(rows) != 200 {
+			t.Fatalf("wrong limit: %d", len(rows))
+		}
+		for i, state := range []string{"downloading", "awaiting_scan", "importing", "validating", "blocked", "queued"} {
+			if rows[i].State != state {
+				t.Fatalf("%s row %d=%s want %s", endpoint, i, rows[i].State, state)
+			}
+		}
+	}
+}

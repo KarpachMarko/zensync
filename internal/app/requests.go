@@ -11,13 +11,26 @@ import (
 var targetPattern = regexp.MustCompile(`^(deezer:track:[1-9][0-9]{0,19}|lossless:track:[a-zA-Z0-9_-]{1,40}:[1-9][0-9]{0,18})$`)
 
 func (a *App) listRequests(w http.ResponseWriter, u User) {
-	query := "SELECT id,owner,target,title,artist,upgrade,quality,decision,reason,created FROM requests WHERE NOT EXISTS(SELECT 1 FROM request_children c WHERE c.child_id=requests.id)"
+	query := `WITH request_rows AS (
+ SELECT r.*, CASE WHEN r.decision<>'approved' THEN r.decision ELSE (
+ SELECT CASE
+ WHEN count(*)=0 THEN 'queued'
+ WHEN sum(state='superseded')=count(*) THEN 'superseded'
+ WHEN sum(state IN ('available','completed','cancelled','superseded'))=count(*) THEN 'completed'
+ WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred','superseded'))>0 THEN
+   CASE WHEN count(DISTINCT state)=1 THEN min(state) ELSE 'running' END
+ WHEN sum(state='failed')>0 THEN 'failed'
+ ELSE 'blocked' END FROM jobs
+ WHERE (request_id=r.id AND NOT EXISTS(SELECT 1 FROM request_children WHERE parent_id=r.id))
+ OR request_id IN (SELECT child_id FROM request_children WHERE parent_id=r.id)
+ ) END AS execution_state FROM requests r
+ WHERE NOT EXISTS(SELECT 1 FROM request_children c WHERE c.child_id=r.id)`
 	args := []any{}
 	if u.Role != "admin" {
-		query += " AND owner=?"
+		query += " AND r.owner=?"
 		args = append(args, u.ID)
 	}
-	query += " ORDER BY created DESC,id LIMIT 200"
+	query += `) SELECT id,owner,target,title,artist,upgrade,quality,decision,reason,created,execution_state FROM request_rows ORDER BY ` + executionOrderSQL("execution_state") + `,created DESC,id LIMIT 200`
 	rows, e := a.DB.Query(query, args...)
 	if e != nil {
 		a.internal(w, e)
@@ -28,7 +41,7 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 	for rows.Next() {
 		var x Request
 		var q string
-		if e = rows.Scan(&x.ID, &x.Owner, &x.Target, &x.Title, &x.Artist, &x.Upgrade, &q, &x.Decision, &x.Reason, &x.Created); e != nil {
+		if e = rows.Scan(&x.ID, &x.Owner, &x.Target, &x.Title, &x.Artist, &x.Upgrade, &q, &x.Decision, &x.Reason, &x.Created, &x.State); e != nil {
 			a.internal(w, e)
 			return
 		}
@@ -41,22 +54,6 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 	}
 	rows.Close()
 	for index := range out {
-		// Include execution state so approved requests leave the active section once finished.
-		out[index].State = out[index].Decision
-		if out[index].Decision == "approved" {
-			e = a.DB.QueryRow(`SELECT CASE
- WHEN count(*)=0 THEN 'queued'
- WHEN sum(state='superseded')=count(*) THEN 'superseded'
- WHEN sum(state IN ('available','completed','cancelled','superseded'))=count(*) THEN 'completed'
- WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred','superseded'))>0 THEN
-   CASE WHEN count(DISTINCT state)=1 THEN min(state) ELSE 'running' END
- WHEN sum(state='failed')>0 THEN 'failed'
- ELSE 'blocked' END FROM jobs WHERE (request_id=? AND NOT EXISTS(SELECT 1 FROM request_children WHERE parent_id=?)) OR request_id IN (SELECT child_id FROM request_children WHERE parent_id=?)`, out[index].ID, out[index].ID, out[index].ID).Scan(&out[index].State)
-			if e != nil {
-				a.internal(w, e)
-				return
-			}
-		}
 		if strings.HasPrefix(out[index].Target, "navidrome:song:") {
 			out[index].Kind = "delete"
 			err := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE request_id=?", out[index].ID).Scan(&out[index].State, &out[index].Detail)
@@ -344,14 +341,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		query += " WHERE owner=?"
 		args = append(args, u.ID)
 	}
-	query += ` ORDER BY CASE
- WHEN state='downloading' THEN 0
- WHEN state IN ('awaiting_scan','scanning') THEN 1
- WHEN state='importing' THEN 2
- WHEN state IN ('blocked','failed','deferred') THEN 4
- WHEN state='queued' THEN 5
- WHEN state IN ('available','completed','cancelled','declined','withdrawn','superseded') THEN 6
- ELSE 3 END, created DESC, id LIMIT 200`
+	query += " ORDER BY " + executionOrderSQL("state") + ", created DESC, id LIMIT 200"
 	rows, e := a.DB.Query(query, args...)
 	if e != nil {
 		a.internal(w, e)

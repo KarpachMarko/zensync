@@ -119,3 +119,9 @@ export type TransferProgress = {
   bytesPerSecond?: number;
   updatedAt: string;
 };
+
+export function audioQualityLabel(quality: string) {
+  if (quality === "lossless") return "FLAC";
+  const native = /^(mp3|aac):(\d+)$/.exec(quality);
+  return native ? `${native[1].toUpperCase()} ${native[2]} kbps` : quality;
+}

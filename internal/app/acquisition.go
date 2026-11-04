@@ -38,6 +38,8 @@ type probe struct {
 		Tags     map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
+		Name     string            `json:"format_name"`
+		BitRate  string            `json:"bit_rate"`
 		Duration string            `json:"duration"`
 		Tags     map[string]string `json:"tags"`
 	} `json:"format"`
@@ -73,6 +75,12 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		}
 		if quality == "lossless" {
 			valid = s.Codec == "flac"
+		} else if codec, rate, ok := nativeQuality(quality); ok && t.Provider == "lossless" {
+			measured, _ := strconv.Atoi(s.BitRate)
+			if measured == 0 {
+				measured, _ = strconv.Atoi(p.Format.BitRate)
+			}
+			valid = s.Codec == codec && math.Abs(float64(measured-rate*1000)) < 10000
 		} else {
 			rate, _ := strconv.Atoi(s.BitRate)
 			wanted, _ := strconv.Atoi(quality)
@@ -460,7 +468,7 @@ func stagedAudio(stage string) ([]string, error) {
 				return errors.New("Staging limit of 1 GiB exceeded")
 			}
 			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".flac" || ext == ".mp3" {
+			if ext == ".flac" || ext == ".mp3" || ext == ".m4a" || ext == ".aac" {
 				paths = append(paths, path)
 			}
 		}

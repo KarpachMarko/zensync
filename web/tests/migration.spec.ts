@@ -162,7 +162,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.goto("/requests");
   await expect(page.getByLabel("Deezer track ID")).toHaveCount(0);
   await page
-    .getByRole("link", { name: "Search or paste a Deezer link" })
+    .getByRole("link", { name: "Search for music" })
     .click();
   await expect(
     page.getByLabel("Song, artist, album or Deezer URL"),

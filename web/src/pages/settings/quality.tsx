@@ -58,7 +58,7 @@ export function Quality({
       <SectionHeading>Your quality preference</SectionHeading>
       <Text>
         Start with your favorite format. If it is unavailable, ZenSync tries the
-        next enabled quality. Changes save automatically.
+        next enabled quality. Lossless.am keeps the best original it returns, including MP3 or AAC when lossy fallback is enabled. Changes save automatically.
       </Text>
       <div className="mt-7 mb-3 flex items-center justify-between gap-3">
         <span className="text-sm font-semibold">Preferred order</span>

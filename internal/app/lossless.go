@@ -115,14 +115,13 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 	if json.Unmarshal([]byte(profile), &qualities) != nil {
 		return "", "", errors.New("Invalid quality snapshot")
 	}
-	allowed := false
-	for _, q := range qualities {
-		if q == "lossless" {
-			allowed = true
-		}
+	if len(qualities) == 0 {
+		return "", "", errors.New("Invalid quality snapshot")
 	}
-	if !allowed {
-		return "", "", errors.New("Lossless.am only supports verified FLAC downloads; enable lossless quality and submit again")
+	for _, q := range qualities {
+		if q != "lossless" && q != "320" && q != "128" {
+			return "", "", errors.New("Unsupported quality in request")
+		}
 	}
 	if !losslessSource.MatchString(t.Source) || trackTarget(t) != target {
 		return "", "", errors.New("Invalid provider recording identity")
@@ -142,21 +141,26 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 		return "", "", err
 	}
 	defer p.app.clearTransfer(job)
-	path := filepath.Join(stage, "audio.flac")
-	// Retained validated files and explicit duration acceptances survive retries.
-	if p.app.validateAudio(path, t, "lossless") == nil {
-		rel, e := p.app.placeAudio(job, target, path, t, "lossless")
-		return rel, "lossless", e
+	existing, err := stagedAudio(stage)
+	if err != nil {
+		return "", "", err
 	}
-	p.app.jobState(job, "downloading", "Acquiring FLAC audio from Lossless.am")
+	for _, path := range existing {
+		actual, _, probeErr := p.app.nativeAudioQuality(path)
+		if probeErr == nil && nativeQualityAllowed(qualities, actual) && p.app.validateAudio(path, t, actual) == nil {
+			rel, e := p.app.placeAudio(job, target, path, t, actual)
+			return rel, actual, e
+		}
+	}
+	p.app.jobState(job, "downloading", "Acquiring best available audio from Lossless.am")
 	resp, err := p.request(ctx, "GET", "/api/download/track?"+url.Values{"id": {fmt.Sprint(t.ID)}, "source": {t.Source}}.Encode(), nil)
 	if err != nil {
 		return "", "", err
 	}
 	defer resp.Body.Close()
-	mime := strings.ToLower(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
-	if mime != "audio/flac" && mime != "audio/x-flac" {
-		return "", "", errors.New("Lossless.am did not return FLAC audio")
+	contentType := strings.ToLower(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
+	if !strings.HasPrefix(contentType, "audio/") && contentType != "application/octet-stream" && contentType != "video/mp4" {
+		return "", "", errors.New("Lossless.am did not return audio")
 	}
 	if resp.ContentLength > 1<<30 {
 		return "", "", errors.New("Lossless.am audio exceeds 1 GiB")
@@ -175,15 +179,30 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 	if n < 1024 || n > 1<<30 || (resp.ContentLength >= 0 && n != resp.ContentLength) {
 		return "", "", errors.New("Lossless.am audio is incomplete or exceeds 1 GiB")
 	}
+	actual, extension, err := p.app.nativeAudioQuality(f.Name())
+	if err != nil {
+		return "", "", err
+	}
+	if !nativeQualityAllowed(qualities, actual) {
+		return "", "", fmt.Errorf("Lossless.am returned %s, which is outside the allowed quality profile", actual)
+	}
+	path := filepath.Join(stage, "audio"+extension)
+	for _, old := range existing {
+		if old != path {
+			if err = os.Remove(old); err != nil {
+				return "", "", errors.New("Cannot replace invalid staged audio")
+			}
+		}
+	}
 	if err = os.Rename(f.Name(), path); err != nil {
 		return "", "", err
 	}
-	p.app.jobState(job, "validating", "Verifying audio, tags, duration and quality")
-	if err = p.app.validateAudio(path, t, "lossless"); err != nil {
+	p.app.jobState(job, "validating", "Verifying audio, tags, duration and actual quality")
+	if err = p.app.validateAudio(path, t, actual); err != nil {
 		return "", "", err
 	}
-	rel, err := p.app.placeAudio(job, target, path, t, "lossless")
-	return rel, "lossless", err
+	rel, err := p.app.placeAudio(job, target, path, t, actual)
+	return rel, actual, err
 }
 
 // Keep disk checks and progress bounded while an HTTP download is in flight.

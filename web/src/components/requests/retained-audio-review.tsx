@@ -4,7 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Text } from "@/components/typography";
 import { useApiQuery } from "@/hooks/use-api";
 import { useRecordingPreview } from "@/hooks/use-recording-preview";
-import { api, time, type Track } from "@/lib/api";
+import { api, time, audioQualityLabel, type Track } from "@/lib/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -55,14 +55,14 @@ export function RetainedAudioReview({ path, onAccepted, disabled = false, onBusy
       <CollapsibleContent className="space-y-2 pt-2">
         <Text className="m-0 text-xs">Compare the catalog and downloaded lengths. Listen before accepting a shorter file; it may be another edit or incomplete.</Text>
           {review.candidates.map((candidate) => <div key={candidate.quality} className="flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
-            <span className="flex-1"><strong>{candidate.quality}</strong> · Catalog {time(candidate.expected)} → downloaded {time(candidate.measured)}</span>
+            <span className="flex-1"><strong>{audioQualityLabel(candidate.quality)}</strong> · Catalog {time(candidate.expected)} → downloaded {time(candidate.measured)}</span>
             <Button variant="outline" onClick={() => play(candidate)}>Listen to downloaded file</Button>
             <Button variant="outline" disabled={disabled || !review.canAccept || mutation.isPending} onClick={() => setConfirm(candidate)}>Accept duration difference</Button>
           </div>)}
           <PreviewPlayer preview={preview} caption="Downloaded file" />
           {preview.error && <Text role="alert">{preview.error}</Text>}
           {confirm && <div className="rounded-md border border-primary p-3 text-sm">
-            <p className="m-0 mb-3">Accept the {time(confirm.measured)} {confirm.quality} file instead of the catalog's {time(confirm.expected)} recording?</p>
+            <p className="m-0 mb-3">Accept the {time(confirm.measured)} {audioQualityLabel(confirm.quality)} file instead of the catalog's {time(confirm.expected)} recording?</p>
             <div className="flex flex-wrap gap-2">
               <Button disabled={mutation.isPending} onClick={() => { void accept(confirm).catch(() => undefined); }}>{mutation.isPending ? "Accepting…" : "Accept this file and retry"}</Button>
               <Button variant="outline" disabled={mutation.isPending} onClick={() => setConfirm(null)}>Keep reviewing</Button>
