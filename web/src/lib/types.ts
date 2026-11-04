@@ -31,3 +31,14 @@ export type MusicRequest = {
   upgrade: boolean;
   quality: string[];
 };
+
+export type ActivityItem = {
+  id: string;
+  title: string;
+  state: string;
+  stage: string;
+  canCancel?: boolean;
+  canReview?: boolean;
+  canDismiss?: boolean;
+  transfer?: TransferProgress;
+};

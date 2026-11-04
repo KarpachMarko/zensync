@@ -41,6 +41,7 @@ export function Review({
   failurePath,
   requestReplacement = false,
   returnFocus,
+  showDownloadedFiles = false,
 }: {
   source: Source;
   migration: Migration;
@@ -48,6 +49,7 @@ export function Review({
   failurePath?: string;
   requestReplacement?: boolean;
   returnFocus?: HTMLElement | null;
+  showDownloadedFiles?: boolean;
 }) {
   const [updatedSource, setUpdatedSource] = useState<Source | null>(null);
   const s = updatedSource ?? source;
@@ -122,7 +124,7 @@ export function Review({
           </DialogDescription>
         </header>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3 max-sm:px-3">
-          {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <RetainedAudioReview path={failurePath ?? `/requests/${encodeURIComponent(s.requestId)}/review-audio`} onAccepted={onClose} disabled={busy} onBusyChange={setBusy} />}
+          {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <RetainedAudioReview path={failurePath ?? `/requests/${encodeURIComponent(s.requestId)}/review-audio`} onAccepted={onClose} disabled={busy} onBusyChange={setBusy} defaultOpen={showDownloadedFiles} />}
           <SearchBox
             className="my-0 gap-2"
             label="Search or Deezer song URL"

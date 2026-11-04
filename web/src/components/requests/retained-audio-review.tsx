@@ -12,7 +12,7 @@ import { toast } from "sonner";
 type Candidate = { quality: string; checksum: string; expected: number; measured: number };
 type AudioReview = { title: string; artist: string; stage: string; canAccept: boolean; candidates: Candidate[] };
 
-export function RetainedAudioReview({ path, onAccepted, disabled = false, onBusyChange }: { path: string; onAccepted: () => void; disabled?: boolean; onBusyChange?: (busy: boolean) => void }) {
+export function RetainedAudioReview({ path, onAccepted, disabled = false, onBusyChange, defaultOpen = false }: { path: string; onAccepted: () => void; disabled?: boolean; onBusyChange?: (busy: boolean) => void; defaultOpen?: boolean }) {
   const result = useApiQuery<AudioReview>(path);
   const mutation = useMutation({
     onMutate: () => onBusyChange?.(true),
@@ -49,7 +49,8 @@ export function RetainedAudioReview({ path, onAccepted, disabled = false, onBusy
       <CollapsibleTrigger asChild><Button variant="ghost" size="sm" className="h-7 px-2 text-xs">Download failure details</Button></CollapsibleTrigger>
       <CollapsibleContent><Text className="m-0 max-h-28 overflow-y-auto break-words rounded-md bg-muted/40 px-3 py-2 text-xs">{review.stage}</Text></CollapsibleContent>
     </Collapsible>
-    {review.candidates.length > 0 && <Collapsible>
+    {defaultOpen && review.candidates.length === 0 && <Text className="m-0 text-xs">No retained file is available for duration review. Search for another recording or upload your version below.</Text>}
+    {review.candidates.length > 0 && <Collapsible defaultOpen={defaultOpen}>
       <CollapsibleTrigger asChild><Button variant="outline" size="sm">Review downloaded files ({review.candidates.length})</Button></CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 pt-2">
         <Text className="m-0 text-xs">Compare the catalog and downloaded lengths. Listen before accepting a shorter file; it may be another edit or incomplete.</Text>

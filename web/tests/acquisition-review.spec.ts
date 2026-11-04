@@ -44,9 +44,9 @@ test("failed download can be listened to and its exact duration mismatch explici
     throw new Error("Unexpected API: " + path);
   });
   await page.goto("/activity");
-  await page.getByRole("button", { name: "Review recording", exact: true }).click();
+  await page.getByRole("button", { name: "Actions for Waves", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Review downloaded files", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Waves", exact: true });
-  await dialog.getByRole("button", { name: "Review downloaded files (1)" }).click();
   await expect(dialog.getByText(/Catalog 5:24 → downloaded 3:24/)).toBeVisible();
   await dialog.getByRole("button", { name: "Listen to downloaded file" }).click();
   const audio = dialog.getByLabel("Downloaded file player", { exact: true });
@@ -104,7 +104,8 @@ for (const action of ["library", "deezer", "upload"] as const) {
     });
     if (action === "upload") await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/activity");
-    await page.getByRole("button", { name: "Review recording", exact: true }).click();
+    await page.getByRole("button", { name: "Actions for Make It Rain", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Review recording", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Make It Rain", exact: true });
     await expect(dialog.getByRole("region", { name: /^Already in Navidrome/ })).toBeVisible();
     await expect(dialog.getByRole("region", { name: /^Deezer recordings/ })).toBeVisible();

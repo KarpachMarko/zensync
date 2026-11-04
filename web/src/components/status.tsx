@@ -91,10 +91,12 @@ export function ActiveProgress({
   state,
   title,
   transfer,
+  compact = false,
 }: {
   state: string;
   title: string;
   transfer?: TransferProgress;
+  compact?: boolean;
 }) {
   if (
     !state ||
@@ -117,7 +119,7 @@ export function ActiveProgress({
     return `${Math.round(value)} B`;
   }
   return (
-    <div className="mt-1.5 mb-3.5">
+    <div className={compact ? "mt-1 mb-0" : "mt-1.5 mb-3.5"}>
       <Progress
         value={known ? percent : null}
         aria-label={title + ": " + state.replaceAll("_", " ")}

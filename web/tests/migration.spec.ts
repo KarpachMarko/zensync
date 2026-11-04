@@ -328,9 +328,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   });
   await page.goto("/requests");
   await expect(page.locator("article[data-slot=request]")).toHaveCount(1);
-  await page.getByText("2 tracks · 0 available").click();
+  await page.getByRole("button", { name: "Actions for The album", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show tracks (2)", exact: true }).click();
   await expect(page.getByText("1. Album song one")).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.locator("article[data-slot=request]").getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menuitem", { name: "Approve", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
@@ -706,7 +708,8 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByText("Shared deletion song (Delete song)"),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.locator("article[data-slot=request]").getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menuitem", { name: "Approve", exact: true }).click();
   const approvalDialog = page.getByRole("alertdialog", {
     name: "Approve song deletion?",
   });
@@ -718,9 +721,10 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("button", { name: "Approve", exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByText(/queued: Queued for library removal/),
-  ).toBeVisible();
+  await expect(page.locator("article[data-slot=request]").getByText("queued", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Shared deletion song", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show details", exact: true }).click();
+  await expect(page.getByText("Queued for library removal", { exact: true })).toBeVisible();
 
   await page.goto("/settings/people");
   await inviteMember(page, "delete-member", "local-member-password");

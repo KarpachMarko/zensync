@@ -44,7 +44,8 @@ test("legacy orphan failure can be dismissed without retrying or changing music"
     throw new Error("Unexpected API: " + path);
   });
   await page.goto("/activity");
-  await page.getByRole("button", { name: "Dismiss failure", exact: true }).click();
+  await page.getByRole("button", { name: "Actions for Make It Rain", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Dismiss failure", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Dismiss failure", exact: true })).toHaveCount(0);
   await expect(page.getByText("Failure dismissed. Music files are kept.", { exact: true })).toBeVisible();
