@@ -34,6 +34,9 @@ test("migration status filters hide available by default, persist and preserve p
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/imports/migration");
+  const breadcrumb = page.getByRole("navigation", { name: "breadcrumb", exact: true });
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText("Migration");
+  await expect(breadcrumb.getByRole("link", { name: "Imports", exact: true })).toHaveAttribute("href", "/imports");
   const header = page.locator('[data-slot="migration-header"]');
   const playlistCard = header.getByRole("region", { name: "Playlists (1)", exact: true });
   await expect(playlistCard.getByRole("link", { name: /Playlist/ })).toBeVisible();
@@ -91,6 +94,9 @@ test("migration status filters hide available by default, persist and preserve p
   await expect(rows).toContainText("Ambiguous song");
 
   await page.goto("/imports/migration/playlists/playlist");
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText("Playlist");
+  await expect(breadcrumb.getByRole("link", { name: "Migration", exact: true })).toHaveAttribute("href", "/imports/migration");
+  await expect(breadcrumb.locator('[data-slot="breadcrumb-separator"]')).toHaveCount(2);
   await expect(rows).toHaveCount(3);
   await expect(page.locator('[data-slot="playlist-position"]')).toHaveText(["2", "3", "4"]);
   await filters.getByRole("checkbox", { name: "Unresolved (1)", exact: true }).uncheck();
@@ -106,5 +112,8 @@ test("migration status filters hide available by default, persist and preserve p
     return !!card && !!title && card.y > title.y + title.height;
   }).toBe(true);
   await expect(playlistCard).toBeVisible();
+  await breadcrumb.getByRole("link", { name: "Migration", exact: true }).click();
+  await expect(page).toHaveURL(/\/imports\/migration$/);
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText("Migration");
 
 });

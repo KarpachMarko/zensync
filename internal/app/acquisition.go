@@ -38,6 +38,8 @@ type probe struct {
 		Tags     map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
+		Name     string            `json:"format_name"`
+		BitRate  string            `json:"bit_rate"`
 		Duration string            `json:"duration"`
 		Tags     map[string]string `json:"tags"`
 	} `json:"format"`
@@ -73,6 +75,12 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		}
 		if quality == "lossless" {
 			valid = s.Codec == "flac"
+		} else if codec, rate, ok := nativeQuality(quality); ok && t.Provider == "lossless" {
+			measured, _ := strconv.Atoi(s.BitRate)
+			if measured == 0 {
+				measured, _ = strconv.Atoi(p.Format.BitRate)
+			}
+			valid = s.Codec == codec && math.Abs(float64(measured-rate*1000)) < 10000
 		} else {
 			rate, _ := strconv.Atoi(s.BitRate)
 			wanted, _ := strconv.Atoi(quality)
@@ -87,8 +95,8 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	for k, v := range p.Format.Tags {
 		tags[strings.ToLower(k)] = v
 	}
-	if tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
-		return errors.New("Downloaded source ID does not match the selected Deezer track")
+	if t.Provider != "lossless" && tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
+		return errors.New("Downloaded source ID does not match the selected provider track")
 	}
 	if t.ISRC != "" && !strings.EqualFold(tags["isrc"], t.ISRC) && !strings.EqualFold(tags["tsrc"], t.ISRC) {
 		return errors.New("Downloaded ISRC differs from the selected recording")
@@ -140,7 +148,7 @@ func verifiedDurationTolerance(seconds float64, isrcVerified bool) float64 {
 }
 
 func sameApprovedRecording(approved, current Track) bool {
-	if approved.ID != current.ID || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
+	if trackTarget(approved) != trackTarget(current) || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
 		return false
 	}
 	tolerance := verifiedDurationTolerance(approved.Duration, approved.ISRC != "")
@@ -460,7 +468,7 @@ func stagedAudio(stage string) ([]string, error) {
 				return errors.New("Staging limit of 1 GiB exceeded")
 			}
 			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".flac" || ext == ".mp3" {
+			if ext == ".flac" || ext == ".mp3" || ext == ".m4a" || ext == ".aac" {
 				paths = append(paths, path)
 			}
 		}

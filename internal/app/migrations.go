@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case path == "/api/v2/providers/lossless/stream":
+		a.streamLossless(w, r)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && strings.HasSuffix(path, "/recording-review") && r.Method == "POST":
 		a.recordingReview(w, r, u)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && (strings.HasSuffix(path, "/review-audio") || strings.HasSuffix(path, "/review-audio/file")):
@@ -579,14 +581,16 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 		} else {
 			navSongs = results
 		}
-		if strings.HasPrefix(q, "http") {
+		if strings.HasPrefix(q, "https://lossless.am/") {
+			// Resolved in the lossless provider section below.
+		} else if strings.HasPrefix(q, "http") {
 			if track, err := a.track(r.Context(), q); err != nil {
 				deezerError = err.Error()
 			} else {
 				tracks = append(tracks, track)
 			}
 		} else {
-			results, err := a.searchImportRecordings(r.Context(), source, q)
+			results, err := a.searchImportProvider(r.Context(), source, q, "deezer")
 			tracks = results
 			if err != nil {
 				deezerError = err.Error()
@@ -600,12 +604,58 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 				confident++
 			}
 		}
+		type providerCandidates struct {
+			ID        string                    `json:"id"`
+			Name      string                    `json:"name"`
+			Tracks    []Track                   `json:"tracks"`
+			Matches   map[string]RecordingMatch `json:"matches"`
+			Error     string                    `json:"error,omitempty"`
+			Ambiguous bool                      `json:"ambiguous"`
+		}
+		providers := []providerCandidates{{ID: "deezer", Name: "Deezer", Tracks: tracks, Error: deezerError, Matches: map[string]RecordingMatch{}, Ambiguous: confident > 1 && confidentRecording(source, tracks) == nil}}
+		if a.losslessConfigured() || strings.HasPrefix(q, "https://lossless.am/") {
+			item := providerCandidates{ID: "lossless", Name: "Lossless.am", Tracks: []Track{}, Matches: map[string]RecordingMatch{}}
+			var err error
+			if strings.HasPrefix(q, "https://lossless.am/") {
+				var t Track
+				t, err = a.track(r.Context(), q)
+				if err == nil {
+					item.Tracks = append(item.Tracks, t)
+				}
+			} else if !strings.HasPrefix(q, "http") {
+				item.Tracks, err = a.searchImportProvider(r.Context(), source, q, "lossless")
+			}
+			if err != nil {
+				item.Error = err.Error()
+			}
+			providers = append(providers, item)
+		}
+		for i := range providers {
+			matches := 0
+			for _, t := range providers[i].Tracks {
+				providers[i].Matches[trackTarget(t)] = assessRecording(source, t)
+				if providers[i].Matches[trackTarget(t)].Confident {
+					matches++
+				}
+			}
+			providers[i].Ambiguous = matches > 1 && confidentRecording(source, providers[i].Tracks) == nil
+			a.rememberReviewTracks(providers[i].Tracks)
+		}
 		a.rememberReviewTracks(tracks)
+		recordings := []Track{}
+		recordingMatches := map[string]RecordingMatch{}
+		for _, provider := range providers {
+			recordings = append(recordings, provider.Tracks...)
+			for key, match := range provider.Matches {
+				recordingMatches[key] = match
+			}
+		}
+		rankRecordings(source, recordings)
 		libraryMatches := map[string]RecordingMatch{}
 		for _, song := range navSongs {
 			libraryMatches[song.ID] = assessLibraryRecording(source, song)
 		}
-		send(w, 200, map[string]any{"deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
+		send(w, 200, map[string]any{"recordings": recordings, "recordingMatches": recordingMatches, "providers": providers, "deezer": tracks, "deezerMatches": assessments, "deezerAmbiguous": confident > 1 && confidentRecording(source, tracks) == nil, "library": navSongs, "libraryMatches": libraryMatches, "libraryError": libraryError, "deezerError": deezerError})
 		return
 	}
 	var resolvedServer, resolvedCandidate string
@@ -706,12 +756,12 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			return
 		}
 		if candidate == "" {
-			fail(w, 409, "Resolve this song to a Deezer recording first")
+			fail(w, 409, "Resolve this song to a provider recording first")
 			return
 		}
 		var t Track
 		json.Unmarshal([]byte(candidate), &t)
-		body := apple.JSON(map[string]any{"target": fmt.Sprintf("deezer:track:%d", t.ID), "title": trackLabel(t), "artist": t.Artist.Name, "upgrade": false, "sourceId": sid})
+		body := apple.JSON(map[string]any{"target": trackTarget(t), "title": trackLabel(t), "artist": t.Artist.Name, "upgrade": false, "sourceId": sid})
 		r.Body = io.NopCloser(strings.NewReader(body))
 		var prior, decision string
 		_ = a.DB.QueryRow("SELECT r.id,r.decision FROM request_sources rs JOIN requests r ON r.id=rs.request_id WHERE rs.source_id=? ORDER BY r.rowid DESC LIMIT 1", sid).Scan(&prior, &decision)
@@ -721,7 +771,11 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 		}
 		var revision string
 		_ = a.DB.QueryRow("SELECT revision FROM source_resolutions WHERE source_id=?", sid).Scan(&revision)
-		r.Header.Set("Idempotency-Key", digest(sid+fmt.Sprint(t.ID)+prior+revision))
+		identity := fmt.Sprint(t.ID)
+		if t.Provider == "lossless" {
+			identity = trackTarget(t)
+		}
+		r.Header.Set("Idempotency-Key", digest(sid+identity+prior+revision))
 		a.createVerifiedRequest(w, r, u, &t)
 		return
 	default:

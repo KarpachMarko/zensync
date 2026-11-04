@@ -1,7 +1,11 @@
-import type { Track } from "@/lib/api";
+import { requestKey, trackTarget, type Track } from "@/lib/api";
 import { useCallback, useRef, useState } from "react";
 
 export function previewURL(track: Track) {
+  if (track.provider === "lossless") {
+    if (!track.source || !/^[a-zA-Z0-9_-]{1,40}$/.test(track.source) || !Number.isSafeInteger(track.id) || track.id <= 0) return null;
+    return "/api/v2/providers/lossless/stream?target=" + encodeURIComponent(trackTarget(track));
+  }
   if (!track.preview) return null;
   try {
     const url = new URL(track.preview);
@@ -13,7 +17,8 @@ export function previewURL(track: Track) {
 }
 
 // One player per review dialog keeps comparisons from playing over each other.
-export function useDeezerPreview({ resolveURL = previewURL, maxDuration = 30, errorMessage }: { resolveURL?: (track: Track) => string | null; maxDuration?: number; errorMessage?: string } = {}) {
+export function useRecordingPreview({ resolveURL = previewURL, maxDuration, errorMessage }: { resolveURL?: (track: Track) => string | null; maxDuration?: number; errorMessage?: string } = {}) {
+  const limitFor = (track: Track | null) => maxDuration ?? (track?.provider === "lossless" ? Infinity : 30);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [active, setActive] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -37,12 +42,18 @@ export function useDeezerPreview({ resolveURL = previewURL, maxDuration = 30, er
 
   function toggle(track: Track) {
     const audio = audioRef.current;
-    const url = resolveURL(track);
+    let url = resolveURL(track);
     if (!audio || !url) return;
-    if (active?.id === track.id && !audio.paused) {
+    const sameTrack = active && trackTarget(active) === trackTarget(track);
+    if (sameTrack && !audio.paused) {
       audio.pause();
       return;
     }
+    const maxDuration = limitFor(track);
+    if (track.provider === "lossless" && url.startsWith("/api/v2/providers/lossless/stream?")) {
+      url = sameTrack && audio.src ? audio.src : url + "&sid=" + requestKey();
+    }
+    url = new URL(url, window.location.origin).href;
     setActive(track);
     setError("");
     if (audio.src !== url) {
@@ -58,7 +69,7 @@ export function useDeezerPreview({ resolveURL = previewURL, maxDuration = 30, er
       if (audio.src !== url || (cause instanceof DOMException && cause.name === "AbortError")) return;
       setPlaying(false);
       setLoading(false);
-      setError(errorMessage || "Preview could not be played. Try again or open the song in Deezer.");
+      setError(errorMessage || "Audio could not be played. Try again or open the song at its source.");
     });
   }
 
@@ -72,12 +83,13 @@ export function useDeezerPreview({ resolveURL = previewURL, maxDuration = 30, er
     audioRef.current?.pause();
     setPlaying(false);
     setLoading(false);
-    setError(errorMessage || "Preview unavailable. Open the song in Deezer to listen.");
+    setError(errorMessage || (active?.provider === "lossless" ? "Stream unavailable. Check the provider connection in Settings or open the song at its source." : "Preview unavailable. Open the song in Deezer to listen."));
   }
 
   function syncTime() {
     const audio = audioRef.current;
     if (!audio) return;
+    const maxDuration = limitFor(active);
     const limit = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(maxDuration, audio.duration) : duration;
     setDuration(limit);
     setPosition(Math.min(limit, audio.currentTime));

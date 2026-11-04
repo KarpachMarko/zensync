@@ -17,7 +17,11 @@ func (e *audioDurationMismatch) Error() string {
 	return fmt.Sprintf("Downloaded duration differs from the selected recording (expected %.3fs, measured %.3fs; tolerance %.3fs)", e.Expected, e.Measured, e.Tolerance)
 }
 func audioApprovalKey(t Track) string {
-	return digest(mustJSON([]any{t.ID, normalized(trackLabel(t)), normalized(t.Artist.Name), normalized(t.Album.Title), strings.ToUpper(t.ISRC), t.Duration}))
+	var identity any = t.ID
+	if t.Provider == "lossless" {
+		identity = trackTarget(t)
+	}
+	return digest(mustJSON([]any{identity, normalized(trackLabel(t)), normalized(t.Artist.Name), normalized(t.Album.Title), strings.ToUpper(t.ISRC), t.Duration}))
 }
 
 type reviewAudioCandidate struct {
@@ -59,13 +63,27 @@ func (a *App) reviewAcquisitionAudio(w http.ResponseWriter, r *http.Request, u U
 	_ = json.Unmarshal([]byte(metadata), &track)
 	_ = json.Unmarshal([]byte(quality), &qualities)
 	candidates := []reviewAudioCandidate{}
-	for _, q := range qualities {
+	for index, q := range qualities {
 		if q != "lossless" && q != "320" && q != "128" {
 			continue
 		}
-		paths, e := stagedAudio(filepath.Join(a.dataDir, "staging", jid, q))
+		stageQuality := q
+		if track.Provider == "lossless" {
+			if index > 0 {
+				break
+			}
+			stageQuality = "lossless"
+		}
+		paths, e := stagedAudio(filepath.Join(a.dataDir, "staging", jid, stageQuality))
 		if e != nil || len(paths) != 1 || track.ID <= 0 {
 			continue
+		}
+		if track.Provider == "lossless" {
+			actual, _, err := a.nativeAudioQuality(paths[0])
+			if err != nil || !nativeQualityAllowed(qualities, actual) {
+				continue
+			}
+			q = actual
 		}
 		var mismatch *audioDurationMismatch
 		if e = a.validateAudio(paths[0], track, q); !errors.As(e, &mismatch) {

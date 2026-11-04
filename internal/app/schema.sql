@@ -149,3 +149,5 @@ CREATE TABLE IF NOT EXISTS request_source_history (
  PRIMARY KEY(source_id,request_id)
 );
 CREATE INDEX IF NOT EXISTS request_source_history_request ON request_source_history(request_id);
+
+CREATE TABLE IF NOT EXISTS provider_tracks (target TEXT PRIMARY KEY, metadata TEXT NOT NULL);

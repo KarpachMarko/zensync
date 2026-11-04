@@ -1,8 +1,13 @@
+import {
+  executionGroup,
+  executionSections,
+  sortExecutionRows,
+} from "@/lib/execution-state";
 import { Actions } from "@/components/layout/content";
 import { DeletionDialog } from "@/components/music/deletion-dialog";
 import { AppLink } from "@/components/navigation";
 import { RequestCard } from "@/components/requests/request-card";
-import { StatusSection, finished } from "@/components/status";
+import { StatusSection } from "@/components/status";
 import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
@@ -15,7 +20,11 @@ export function Requests({ user }: { user: User }) {
     null,
   );
   const result = useApiQuery<Request[]>("/requests", { refetchInterval: 4000 });
-  const rows = result.data ?? [];
+  const requestState = (row: Request) =>
+    row.decision === "awaiting_approval"
+      ? row.decision
+      : row.state || row.decision;
+  const rows = sortExecutionRows(result.data ?? [], requestState);
   const [actionError, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const error = actionError || result.error?.message;
@@ -55,7 +64,7 @@ export function Requests({ user }: { user: User }) {
       </Text>
       <Actions className="my-[22px] mx-0">
         <Button asChild>
-          <AppLink to="/search">Search or paste a Deezer link</AppLink>
+          <AppLink to="/search">Search for music</AppLink>
         </Button>
         <AppLink to="/imports">Request from a migration</AppLink>
       </Actions>
@@ -68,15 +77,14 @@ export function Requests({ user }: { user: User }) {
           migration.
         </Text>
       ) : (
-        ["In progress", "Requested", "Completed"].map((title) => {
+        [
+          executionSections[0],
+          executionSections[1],
+          "Requested",
+          ...executionSections.slice(2),
+        ].map((title) => {
           const group = rows.filter(
-            (r) =>
-              title ===
-              (r.decision === "awaiting_approval"
-                ? "Requested"
-                : finished(r.state || r.decision)
-                  ? "Completed"
-                  : "In progress"),
+            (r) => title === executionGroup(requestState(r)),
           );
           return (
             <StatusSection key={title} title={title} count={group.length}>

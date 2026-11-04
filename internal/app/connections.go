@@ -239,11 +239,17 @@ func (a *App) connectionRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		_ = a.unseal("navidrome", &shared)
 		var own Credentials
 		_ = a.unseal("navidrome:"+u.ID, &own)
-		var arl string
+		var arl, losslessCookie string
 		_ = a.unseal("deezer", &arl)
+		_ = a.unseal("lossless", &losslessCookie)
+		session := (losslessProvider{a}).session()
+		losslessEmail := ""
+		if u.Role == "admin" {
+			losslessEmail = session.Email
+		}
 		_, binaryErr := os.Stat(a.dfiPath)
 		_, musicErr := os.Stat(a.musicDir)
-		send(w, 200, map[string]any{"url": shared.URL, "serviceUsername": shared.Username, "configured": shared.Username != "", "personalUsername": own.Username, "deezerConfigured": arl != "", "downloaderReady": binaryErr == nil, "musicMounted": musicErr == nil, "downloaderVersion": "2.3.5"})
+		send(w, 200, map[string]any{"url": shared.URL, "serviceUsername": shared.Username, "configured": shared.Username != "", "servicePasswordConfigured": shared.Password != "", "personalPasswordConfigured": own.Password != "", "losslessEmail": losslessEmail, "personalUsername": own.Username, "deezerConfigured": arl != "", "losslessConfigured": losslessCookie != "" || session.has("jwt_refresh"), "downloaderReady": binaryErr == nil, "musicMounted": musicErr == nil, "downloaderVersion": "2.3.5"})
 		return
 	}
 	if r.Method != "PUT" {
@@ -256,12 +262,48 @@ func (a *App) connectionRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		ARL      string `json:"arl"`
+		Email    string `json:"email"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
+	if in.Kind == "lossless-login" {
+		if u.Role != "admin" {
+			fail(w, 403, "Administrator required")
+			return
+		}
+		if e := (losslessProvider{a}).login(r.Context(), in.Email, in.Password); e != nil {
+			fail(w, 400, e.Error())
+			return
+		}
+		send(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if in.Kind == "lossless" {
+		if u.Role != "admin" {
+			fail(w, 403, "Administrator required")
+			return
+		}
+		cookie := strings.TrimSpace(in.ARL)
+		if len(cookie) < 3 || len(cookie) > 4096 || !strings.Contains(cookie, "=") || strings.ContainsAny(cookie, "\r\n") {
+			fail(w, 400, "Enter a complete Lossless.am session Cookie header")
+			return
+		}
+		a.losslessAuthMu.Lock()
+		defer a.losslessAuthMu.Unlock()
+		if e := a.seal("lossless", cookie); e != nil {
+			a.internal(w, e)
+			return
+		}
+		if _, e := a.DB.Exec("DELETE FROM secrets WHERE name=?", losslessSessionKey); e != nil {
+			a.internal(w, e)
+			return
+		}
+		send(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if in.Kind == "deezer" {
 		if u.Role != "admin" {
 			fail(w, 403, "Administrator required")

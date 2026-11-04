@@ -19,6 +19,8 @@ type Artist struct {
 	Role string `json:"role"`
 }
 type Track struct {
+	Provider       string   `json:"provider,omitempty"`
+	Source         string   `json:"source,omitempty"`
 	Contributors   []Artist `json:"contributors"`
 	ID             int64    `json:"id"`
 	Title          string   `json:"title"`
@@ -49,7 +51,7 @@ func (a *App) rememberReviewTracks(tracks []Track) {
 	a.reviewMu.Lock()
 	defer a.reviewMu.Unlock()
 	if a.reviewTracks == nil {
-		a.reviewTracks = map[int64]reviewRecording{}
+		a.reviewTracks = map[string]reviewRecording{}
 	}
 	for _, track := range tracks {
 		if track.ID <= 0 || track.Title == "" {
@@ -58,18 +60,22 @@ func (a *App) rememberReviewTracks(tracks []Track) {
 		if len(a.reviewTracks) >= 4096 {
 			clear(a.reviewTracks)
 		}
-		a.reviewTracks[track.ID] = reviewRecording{track: track, fetched: time.Now()}
+		a.reviewTracks[trackTarget(track)] = reviewRecording{track: track, fetched: time.Now()}
 	}
 }
 func (a *App) reviewTrack(ctx context.Context, target string) (Track, error) {
+	key := target
 	if id, err := deezerID(target); err == nil {
-		number, _ := strconv.ParseInt(id, 10, 64)
-		a.reviewMu.Lock()
-		cached, found := a.reviewTracks[number]
-		a.reviewMu.Unlock()
-		if found && time.Since(cached.fetched) < 10*time.Minute {
-			return cached.track, nil
-		}
+		key = "deezer:track:" + id
+	}
+	if normalizedTarget, err := losslessTarget(target); err == nil {
+		key = normalizedTarget
+	}
+	a.reviewMu.Lock()
+	cached, found := a.reviewTracks[key]
+	a.reviewMu.Unlock()
+	if found && time.Since(cached.fetched) < 10*time.Minute {
+		return cached.track, nil
 	}
 	return a.track(ctx, target)
 }
@@ -138,7 +144,7 @@ func (a *App) deezer(ctx context.Context, path string, out any) error {
 	}
 	return json.Unmarshal(b, out)
 }
-func (a *App) track(ctx context.Context, input string) (Track, error) {
+func (a *App) deezerTrack(ctx context.Context, input string) (Track, error) {
 	var t Track
 	id, e := a.resolveDeezerID(ctx, input)
 	if e != nil {
@@ -164,6 +170,10 @@ func (a *App) searchDeezer(ctx context.Context, q string) ([]Track, error) {
 	return out.Data, e
 }
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
+	if provider := r.URL.Query().Get("provider"); provider != "" && provider != "deezer" {
+		a.searchProvider(w, r, provider)
+		return
+	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len(q) > 500 {
 		fail(w, 400, "Search is too long")

@@ -54,7 +54,7 @@ test("review previews play one at a time, stop on close, and link to Deezer", as
   });
   await page.goto("/imports/migration?recording=source");
   const dialog = page.getByRole("dialog", { name: "Source song", exact: true });
-  const results = dialog.getByRole("region", { name: /^Deezer recordings/ });
+  const results = dialog.getByRole("region", { name: /^Provider recordings/ });
   const firstRow = results.locator('[data-slot="list-row"]').filter({ hasText: "First recording" });
   const secondRow = results.locator('[data-slot="list-row"]').filter({ hasText: "Second recording" });
   await expect(firstRow.getByRole("button", { name: "Play 30-second preview of First recording", exact: true })).toBeEnabled();

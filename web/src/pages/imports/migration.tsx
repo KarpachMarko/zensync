@@ -14,6 +14,10 @@ import {
   SectionHeading,
   Text,
 } from "@/components/typography";
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink,
+  BreadcrumbPage, BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
 import { useImportAction } from "@/hooks/use-import-action";
@@ -125,10 +129,23 @@ export function MigrationPage() {
   ).values()];
   return (
     <>
-      <div className="flex gap-[15px] mb-[22px] text-[13px] text-muted-foreground">
-        <AppLink to="/imports">Imports</AppLink>
-        {playlistId && <AppLink to={"/imports/" + id}>{m.name}</AppLink>}
-      </div>
+      <Breadcrumb className="mb-[22px]">
+        <BreadcrumbList className="m-0 list-none p-0 text-[13px]">
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild><AppLink to="/imports" end>Imports</AppLink></BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem className="min-w-0 break-words">
+            {currentPlaylist
+              ? <BreadcrumbLink asChild><AppLink to={"/imports/" + id} end>{m.name}</AppLink></BreadcrumbLink>
+              : <BreadcrumbPage>{m.name}</BreadcrumbPage>}
+          </BreadcrumbItem>
+          {currentPlaylist && <>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem className="min-w-0 break-words"><BreadcrumbPage>{currentPlaylist.name}</BreadcrumbPage></BreadcrumbItem>
+          </>}
+        </BreadcrumbList>
+      </Breadcrumb>
       <MigrationHeader
         detail={detail}
         currentPlaylist={currentPlaylist}
@@ -143,7 +160,7 @@ export function MigrationPage() {
             <strong className="text-foreground">All {m.report.songs} songs are included</strong>,
             including {m.report.unplaylisted} songs outside playlists. You do not
             need to select Library or Music to include them. Committing
-            automatically starts a scan of every song in Navidrome and Deezer.
+            automatically starts a scan of every song in Navidrome and music providers.
             Request missing audio after matching; downloads require a separate request.
           </Text>
           <div className="my-6 flex flex-wrap items-center gap-4 text-muted-foreground max-[700px]:gap-2">

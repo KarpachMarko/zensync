@@ -1,27 +1,28 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import type { useDeezerPreview } from "@/hooks/use-deezer-preview";
-import { label, time } from "@/lib/api";
+import type { useRecordingPreview } from "@/hooks/use-recording-preview";
+import { label, time, trackTarget } from "@/lib/api";
 import { Disc3Icon, LoaderCircleIcon, PauseIcon, PlayIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useState } from "react";
 
 function Cover({ url }: { url?: string }) {
   const [failed, setFailed] = useState(false);
-  const safe = url && /^https:\/\/[^/]+\.(dzcdn\.net|deezer\.com)\//.test(url);
+  const safe = url && /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am)\//.test(url);
   return <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
     {safe && !failed ? <img src={url} alt="" className="size-full object-cover" onError={() => setFailed(true)} /> : <Disc3Icon className="size-6" aria-hidden="true" />}
   </div>;
 }
 
-export function PreviewPlayer({ preview, caption = "30s preview" }: { preview: ReturnType<typeof useDeezerPreview>; caption?: string }) {
+export function PreviewPlayer({ preview, caption: customCaption }: { preview: ReturnType<typeof useRecordingPreview>; caption?: string }) {
   const track = preview.active;
+  const caption = customCaption ?? (track?.provider === "lossless" ? "Full track stream" : "30s preview");
   return <>
     <audio ref={preview.attachAudio} preload="none" aria-label={caption + " player"} className="hidden"
       onPlay={preview.started} onPause={() => preview.setPlaying(false)} onEnded={() => preview.setPlaying(false)}
       onError={preview.failed} onTimeUpdate={preview.syncTime} onLoadedMetadata={preview.syncTime}
       onWaiting={() => preview.setLoading(true)} onCanPlay={() => preview.setLoading(false)} />
     {track && <section aria-label="Preview player" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2.5">
-      <div className="sm:row-span-2"><Cover key={track.id} url={track.album.cover_medium} /></div>
+      <div className="sm:row-span-2"><Cover key={trackTarget(track)} url={track.album.cover_medium} /></div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <div className="min-w-0 truncate text-xs"><strong>{label(track)}</strong><span className="ml-2 text-muted-foreground">{track.artist.name}</span></div>

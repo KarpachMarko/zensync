@@ -137,7 +137,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("heading", { name: "Second song", exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("Search or Deezer song URL")).toBeVisible();
+  await expect(page.getByLabel("Search or provider song URL")).toBeVisible();
   await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
@@ -162,7 +162,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await page.goto("/requests");
   await expect(page.getByLabel("Deezer track ID")).toHaveCount(0);
   await page
-    .getByRole("link", { name: "Search or paste a Deezer link" })
+    .getByRole("link", { name: "Search for music" })
     .click();
   await expect(
     page.getByLabel("Song, artist, album or Deezer URL"),
@@ -359,6 +359,7 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByRole("heading", { name: "Your personal Navidrome account" }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Music providers", exact: true }).click();
   await expect(page.getByLabel("Deezer ARL cookie")).toBeVisible();
   await page.goto(migrationURL);
   page.once("dialog", (dialog) => dialog.accept());

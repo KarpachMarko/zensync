@@ -8,12 +8,8 @@ import { ExpandableSection } from "./expandable-section";
 
 import type { TransferProgress } from "@/lib/api";
 
-export const finished = (state: string) =>
-  ["available", "completed", "cancelled", "declined", "withdrawn", "superseded"].includes(
-    state,
-  );
-export const blocked = (state: string) =>
-  ["blocked", "failed", "deferred"].includes(state);
+import { finished, blocked } from "@/lib/execution-state";
+export { finished, blocked } from "@/lib/execution-state";
 
 const stateColors: Record<string, string> = {
   awaiting_approval: "bg-[#423c30] text-[#e9cb86]",

@@ -6,6 +6,8 @@ async function settingsFixture(page: Page) {
   let serviceUsername = "";
   let personalUsername = "";
   let deezerConfigured = false;
+  let losslessConfigured = false;
+  let losslessEmail = "";
   const qualityWrites: string[][] = [];
   const connections: unknown[] = [];
   await page.route("**/api/v2/**", async (route) => {
@@ -43,6 +45,11 @@ async function settingsFixture(page: Page) {
           )
             personalUsername = body.username;
           if (body.kind === "deezer") deezerConfigured = true;
+          if (body.kind === "lossless-login") {
+            losslessConfigured = true;
+            if ("email" in body && typeof body.email === "string")
+              losslessEmail = body.email;
+          }
         }
         return route.fulfill({ json: { ok: true } });
       }
@@ -53,6 +60,8 @@ async function settingsFixture(page: Page) {
           configured,
           personalUsername,
           deezerConfigured,
+          losslessConfigured,
+          losslessEmail,
           downloaderReady: true,
           musicMounted: true,
           downloaderVersion: "2.3.5",
@@ -195,10 +204,11 @@ test("connection credentials autosave only as a complete group and clear secrets
       password: "secret-service-password",
     },
   ]);
-  await expect(password).toHaveValue("");
+  await expect(password).toHaveValue("••••••••");
   await expect(
     page.getByLabel("Personal password", { exact: true }),
   ).toBeEnabled();
+  await page.getByRole("tab", { name: "Music providers", exact: true }).click();
   const arl = page.getByLabel("Deezer ARL cookie", { exact: true });
   await arl.fill("a".repeat(31));
   await arl.blur();
@@ -211,7 +221,7 @@ test("connection credentials autosave only as a complete group and clear secrets
       .filter({ hasText: "Deezer credentials saved." }),
   ).toBeVisible();
   expect(connections.at(-1)).toEqual({ kind: "deezer", arl: "a".repeat(32) });
-  await expect(arl).toHaveValue("");
+  await expect(arl).toHaveValue("••••••••");
   await expect(page.getByRole("button", { name: /Save|Test and/ })).toHaveCount(
     0,
   );
@@ -276,4 +286,159 @@ test("quality switches and reorder buttons autosave one FLAC option and persist 
     path: testInfo.outputPath("quality-mobile.png"),
     fullPage: true,
   });
+});
+
+test("lossless sign-in validates email and password, autosaves and clears the password", async ({
+  page,
+}) => {
+  const { connections } = await settingsFixture(page);
+  await page.goto("/settings/providers");
+  const email = page.getByLabel("Lossless.am email", { exact: true });
+  const password = page.getByLabel("Lossless.am password", { exact: true });
+  await email.fill("invalid");
+  await password.fill("long-password");
+  await password.blur();
+  expect(connections).toHaveLength(0);
+  await email.fill("listener@example.com");
+  await email.blur();
+  await expect(
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Lossless.am connected." }),
+  ).toBeVisible();
+  expect(connections).toEqual([
+    {
+      kind: "lossless-login",
+      email: "listener@example.com",
+      password: "long-password",
+    },
+  ]);
+  await expect(password).toHaveValue("••••••••");
+  await expect(email).toHaveValue("listener@example.com");
+});
+
+test("connections and providers are separate and saved masks never submit as credentials", async ({
+  page,
+}) => {
+  const { connections } = await settingsFixture(page);
+  await page.route("**/api/v2/connections", async (route) => {
+    if (route.request().method() === "PUT") {
+      connections.push(route.request().postDataJSON() as unknown);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        url: "http://music.local:4533",
+        serviceUsername: "service",
+        configured: true,
+        personalUsername: "listener",
+        deezerConfigured: true,
+        losslessConfigured: true,
+        losslessEmail: "listener@example.com",
+        downloaderReady: true,
+        downloaderVersion: "2.3.5",
+        musicMounted: true,
+      },
+    });
+  });
+  await page.goto("/settings/connections");
+  await expect(
+    page.getByRole("heading", { name: "Shared Navidrome server", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Your personal Navidrome account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Import Apple Music export" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Deezer ARL cookie", { exact: true }),
+  ).toHaveCount(0);
+  const shared = page.getByLabel("Service password", { exact: true });
+  await expect(shared).toHaveValue("••••••••");
+  await shared.focus();
+  await expect(shared).toHaveValue("");
+  await shared.blur();
+  await expect(shared).toHaveValue("••••••••");
+  await page
+    .getByLabel("Service username", { exact: true })
+    .fill("new-service");
+  await page.getByLabel("Service username", { exact: true }).blur();
+  await page.getByRole("tab", { name: "Music providers", exact: true }).click();
+  await expect(page).toHaveURL(/settings\/providers$/);
+  await expect(
+    page.getByRole("heading", { name: "Shared Navidrome server", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Lossless.am cookie connection", { exact: false }),
+  ).toHaveCount(0);
+  const arl = page.getByLabel("Deezer ARL cookie", { exact: true });
+  const password = page.getByLabel("Lossless.am password", { exact: true });
+  await expect(arl).toHaveValue("••••••••");
+  await expect(password).toHaveValue("••••••••");
+  await expect(
+    page.getByLabel("Lossless.am email", { exact: true }),
+  ).toHaveValue("listener@example.com");
+  await password.focus();
+  await password.blur();
+  expect(connections).toHaveLength(0);
+  await password.fill("replacement-password");
+  await password.blur();
+  await expect(password).toHaveValue("••••••••");
+  expect(connections).toEqual([
+    {
+      kind: "lossless-login",
+      email: "listener@example.com",
+      password: "replacement-password",
+    },
+  ]);
+  await page.reload();
+  await expect(password).toHaveValue("••••••••");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("settings tabs use distinct shadcn panels and preserve the active route", async ({
+  page,
+}) => {
+  await settingsFixture(page);
+  await page.goto("/settings/providers");
+  const active = page.getByRole("tab", {
+    name: "Music providers",
+    exact: true,
+  });
+  await expect(active).toHaveAttribute("data-slot", "tabs-trigger");
+  await expect(active).toHaveAttribute("data-state", "active");
+  await expect(page.locator('[data-slot="tabs"]')).toHaveCSS(
+    "flex-direction",
+    "column",
+  );
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toHaveAttribute(
+    "id",
+    (await active.getAttribute("aria-controls"))!,
+  );
+  await expect(panel).toHaveAttribute(
+    "aria-labelledby",
+    (await active.getAttribute("id"))!,
+  );
+  await expect(
+    panel.getByRole("heading", { name: "Music providers", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Connections", exact: true }).click();
+  await expect(page).toHaveURL(/settings\/connections$/);
+  await expect(
+    panel.getByRole("heading", { name: "Navidrome connections", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(active).toHaveAttribute("data-state", "active");
+  await page.reload();
+  await expect(active).toHaveAttribute("aria-selected", "true");
 });

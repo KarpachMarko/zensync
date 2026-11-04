@@ -243,12 +243,12 @@ func recordingDuration(seconds float64) string {
 }
 
 func rankRecordings(source apple.Song, tracks []Track) {
-	matches := make(map[int64]RecordingMatch, len(tracks))
+	matches := make(map[string]RecordingMatch, len(tracks))
 	for _, track := range tracks {
-		matches[track.ID] = assessRecording(source, track)
+		matches[trackTarget(track)] = assessRecording(source, track)
 	}
 	sort.SliceStable(tracks, func(i, j int) bool {
-		left, right := matches[tracks[i].ID], matches[tracks[j].ID]
+		left, right := matches[trackTarget(tracks[i])], matches[trackTarget(tracks[j])]
 		if left.Confident != right.Confident {
 			return left.Confident
 		}
@@ -329,23 +329,45 @@ func importSearchQueries(source apple.Song) []string {
 // lookups for collaborator credits are limited to two plausible candidates.
 // A user's edited query is always searched literally.
 func (a *App) searchImportRecordings(ctx context.Context, source apple.Song, query string) ([]Track, error) {
+	tracks, deezerErr := a.searchImportProvider(ctx, source, query, "deezer")
+	if !a.losslessConfigured() {
+		return tracks, deezerErr
+	}
+	extra, losslessErr := a.searchImportProvider(ctx, source, query, "lossless")
+	tracks = append(tracks, extra...)
+	rankRecordings(source, tracks)
+	if deezerErr != nil && losslessErr != nil {
+		return tracks, fmt.Errorf("Music provider searches failed: %v; %v", deezerErr, losslessErr)
+	}
+	return tracks, nil
+}
+func (a *App) losslessConfigured() bool {
+	var legacy string
+	_ = a.unseal("lossless", &legacy)
+	return legacy != "" || (losslessProvider{a}).session().has("jwt_refresh")
+}
+func (a *App) searchImportProvider(ctx context.Context, source apple.Song, query, provider string) ([]Track, error) {
+	p, err := a.mediaProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	queries := []string{query}
 	if strings.TrimSpace(query) == strings.TrimSpace(source.Artist+" "+source.Title) {
 		queries = importSearchQueries(source)
 	}
 	tracks := []Track{}
-	seen := map[int64]bool{}
+	seen := map[string]bool{}
 	verified := 0
 	for _, query := range queries {
-		results, err := a.searchDeezer(ctx, query)
+		results, err := p.Search(ctx, query)
 		if err != nil {
 			return tracks, err
 		}
 		for _, track := range results {
-			if track.ID <= 0 || track.Title == "" || seen[track.ID] {
+			if track.ID <= 0 || track.Title == "" || seen[trackTarget(track)] {
 				continue
 			}
-			seen[track.ID] = true
+			seen[trackTarget(track)] = true
 			tracks = append(tracks, track)
 		}
 		rankRecordings(source, tracks)
@@ -356,7 +378,7 @@ func (a *App) searchImportRecordings(ctx context.Context, source apple.Song, que
 				plausible = true
 				if !match.credits && len(tracks[i].Contributors) == 0 && verified < 2 {
 					verified++
-					if full, err := a.track(ctx, fmt.Sprint(tracks[i].ID)); err == nil {
+					if full, err := a.track(ctx, trackTarget(tracks[i])); err == nil {
 						tracks[i] = full
 					}
 				}

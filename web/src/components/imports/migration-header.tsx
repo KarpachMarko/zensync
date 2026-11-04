@@ -64,7 +64,7 @@ export function MigrationHeader({
           <>
             {scanning && (
               <Text role="status" className="m-0 text-xs">
-                {matchTask?.state === "queued" ? "Match scan queued. It will start automatically." : matchTask?.message || "Scanning Navidrome and Deezer…"}
+                {matchTask?.state === "queued" ? "Match scan queued. It will start automatically." : matchTask?.message || "Scanning Navidrome and music providers…"}
               </Text>
             )}
             <Actions>

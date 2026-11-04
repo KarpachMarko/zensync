@@ -1,17 +1,11 @@
 import { PageHeading } from "@/components/typography";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { User } from "@/lib/types";
-import {
-  Navigate,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { DeletionKeys } from "./api-keys";
 import { Connections } from "./connections";
 import { DownloadSettings } from "./downloads";
+import { MusicProviders } from "./providers";
 import { Quality } from "./quality";
 import { Users } from "./users";
 export function Settings({
@@ -24,13 +18,30 @@ export function Settings({
   const location = useLocation();
   const navigate = useNavigate();
   const tabs = [
-    { value: "connections", title: "Connections" },
-    { value: "quality", title: "Quality" },
-    { value: "api", title: "API keys" },
+    {
+      value: "connections",
+      title: "Connections",
+      content: <Connections admin={user.role === "admin"} />,
+    },
+    {
+      value: "quality",
+      title: "Quality",
+      content: <Quality user={user} reload={reload} />,
+    },
+    { value: "api", title: "API keys", content: <DeletionKeys /> },
     ...(user.role === "admin"
       ? [
-          { value: "downloads", title: "Downloads" },
-          { value: "users", title: "Users" },
+          {
+            value: "providers",
+            title: "Music providers",
+            content: <MusicProviders />,
+          },
+          {
+            value: "downloads",
+            title: "Downloads",
+            content: <DownloadSettings />,
+          },
+          { value: "users", title: "Users", content: <Users /> },
         ]
       : []),
   ];
@@ -39,6 +50,8 @@ export function Settings({
   const activeTab = tabs.some((tab) => tab.value === requested)
     ? requested
     : "connections";
+  if (segment !== activeTab)
+    return <Navigate to={"/settings/" + activeTab} replace />;
   return (
     <>
       <PageHeading tabIndex={-1}>Settings</PageHeading>
@@ -51,43 +64,23 @@ export function Settings({
         <TabsList
           aria-label="Settings"
           variant="line"
-          className="my-[25px] mb-2.5 h-auto flex-wrap justify-start gap-0.5 p-0 group-data-horizontal/tabs:h-auto"
+          className="my-5 h-auto max-w-full flex-wrap justify-start gap-2 p-0 group-data-[orientation=horizontal]/tabs:h-auto"
         >
           {tabs.map((tab) => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="min-h-9 flex-none rounded-[5px] px-2 py-1.5 text-sm font-normal text-muted-foreground data-active:bg-sidebar-accent data-active:text-foreground after:hidden max-[700px]:min-h-11"
+              className="min-h-9 flex-none px-3 py-1.5 max-[700px]:min-h-11"
             >
               {tab.title}
             </TabsTrigger>
           ))}
         </TabsList>
-        <Separator className="mb-2.5" />
-        <TabsContent value={activeTab} className="text-base">
-          <Routes>
-            <Route
-              path="connections"
-              element={<Connections admin={user.role === "admin"} />}
-            />
-            <Route
-              path="quality"
-              element={<Quality user={user} reload={reload} />}
-            />
-            <Route path="api" element={<DeletionKeys />} />
-            {user.role === "admin" && (
-              <>
-                <Route path="downloads" element={<DownloadSettings />} />
-                <Route path="users" element={<Users />} />
-                <Route
-                  path="people"
-                  element={<Navigate to="../users" replace />}
-                />
-              </>
-            )}
-            <Route path="*" element={<Navigate to="connections" replace />} />
-          </Routes>
-        </TabsContent>
+        {tabs.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value} className="text-base">
+            {tab.content}
+          </TabsContent>
+        ))}
       </Tabs>
     </>
   );

@@ -584,3 +584,60 @@ test("search form rejects blank input and submits a validated trimmed query", as
   ).toBeVisible();
   expect(searches).toHaveLength(2);
 });
+
+test("provider selection persists and requests namespaced lossless recordings", async ({
+  page,
+}) => {
+  await musicFixture(page, false);
+  await page.route("**/api/v2/search?**", (route) => {
+    const provider = new URL(route.request().url()).searchParams.get(
+      "provider",
+    );
+    return route.fulfill({
+      json: {
+        tracks: [
+          {
+            id: 99,
+            title: "Candidate recording",
+            duration: 120,
+            artist: { name: "Artist" },
+            album: { title: "Album" },
+            ...(provider === "lossless"
+              ? { provider: "lossless", source: "main" }
+              : {}),
+          },
+        ],
+        albums: [],
+      },
+    });
+  });
+  const targets: string[] = [];
+  await page.route("**/api/v2/requests", (route) => {
+    targets.push((route.request().postDataJSON() as { target: string }).target);
+    return route.fulfill({ status: 201, json: { id: "request" } });
+  });
+  await page.goto("/search?q=Song");
+  const candidates = page.getByRole("region", {
+    name: "Candidates for import",
+    exact: true,
+  });
+  await candidates
+    .getByRole("button", { name: "Request", exact: true })
+    .click();
+  await expect(
+    candidates.getByRole("button", { name: "Requested", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("group", { name: "Media provider" })
+    .getByRole("button", { name: "lossless.am", exact: true })
+    .click();
+  await expect(page).toHaveURL(/provider=lossless/);
+  await candidates
+    .getByRole("button", { name: "Request", exact: true })
+    .click();
+  expect(targets).toEqual(["deezer:track:99", "lossless:track:main:99"]);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "lossless.am", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});

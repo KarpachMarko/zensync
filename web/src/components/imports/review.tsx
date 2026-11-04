@@ -2,13 +2,15 @@ import { AudioUpload } from "@/components/imports/audio-upload";
 import { RetainedAudioReview } from "@/components/requests/retained-audio-review";
 import { MatchDetails } from "@/components/imports/match-details";
 import { PreviewPlayer } from "@/components/imports/preview-player";
-import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
-import { useDeezerPreview } from "@/hooks/use-deezer-preview";
+import { RecordingTools } from "@/components/imports/recording-tools";
+import { useRecordingPreview } from "@/hooks/use-recording-preview";
 import { Actions, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { SearchBox } from "@/components/search-box";
 import { ActiveProgress, StatusBadge } from "@/components/status";
 import { Caption, Text } from "@/components/typography";
+import { Badge } from "@/components/ui/badge";
+import { parseAsString, useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,13 +20,19 @@ import {
 } from "@/components/ui/dialog";
 import { useImportAction } from "@/hooks/use-import-action";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api as readAPI, label, time } from "@/lib/api";
+import { api as readAPI, label, time, trackTarget } from "@/lib/api";
 import { songGuidance, status, type Migration, type Source, type RecordingMatch } from "@/lib/migration";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+type ProviderCandidates = {
+ id: string; name: string; tracks: Track[]; matches?: Record<string, RecordingMatch>; error?: string; ambiguous?: boolean;
+};
 type Candidates = {
+ recordings?: Track[];
+ recordingMatches?: Record<string, RecordingMatch>;
+ providers?: ProviderCandidates[];
   deezer: Track[];
   library: LibrarySong[];
   libraryError?: string;
@@ -54,7 +62,8 @@ export function Review({
   const [updatedSource, setUpdatedSource] = useState<Source | null>(null);
   const s = updatedSource ?? source;
   const { act: save } = useImportAction(m.id);
-  const preview = useDeezerPreview();
+  const preview = useRecordingPreview();
+  const [providerFilter, setProviderFilter] = useQueryState("recordingProvider", parseAsString.withDefault("all"));
   const [query, setQuery] = useState(
     (s.metadata.artist + " " + s.metadata.title).trim().slice(0, 500),
   );
@@ -95,7 +104,13 @@ export function Review({
   const editable = m.state === "open";
   // Older saved candidates may predate preview metadata. Use the current
   // search result for their media URL when it is available.
-  const freshCandidate = candidates.data?.deezer.find((track) => track.id === s.candidate?.id);
+  const providerResults: ProviderCandidates[] = candidates.data?.providers ?? (candidates.data ? [{id:"deezer",name:"Deezer",tracks:candidates.data.deezer,matches:candidates.data.deezerMatches,error:candidates.data.deezerError,ambiguous:candidates.data.deezerAmbiguous}] : []);
+  const allRecordings = candidates.data?.recordings ?? providerResults.flatMap((provider) => provider.tracks);
+  const activeFilter = providerResults.some((provider) => provider.id === providerFilter) ? providerFilter : "all";
+  const activeProviders = providerResults.filter((provider) => activeFilter === "all" || provider.id === activeFilter);
+  const recordings = allRecordings.filter((track) => activeFilter === "all" || (track.provider ?? "deezer") === activeFilter);
+  const matchFor = (track: Track) => candidates.data?.recordingMatches?.[trackTarget(track)] ?? providerResults.find((provider) => provider.id === (track.provider ?? "deezer"))?.matches?.[trackTarget(track)] ?? providerResults.find((provider) => provider.id === (track.provider ?? "deezer"))?.matches?.[track.id];
+  const freshCandidate = providerResults.flatMap((provider) => provider.tracks).find((track) => s.candidate && trackTarget(track) === trackTarget(s.candidate));
   const selectedRecording = s.candidate ? {
     ...s.candidate,
     preview: freshCandidate?.preview || s.candidate.preview,
@@ -127,7 +142,7 @@ export function Review({
           {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <RetainedAudioReview path={failurePath ?? `/requests/${encodeURIComponent(s.requestId)}/review-audio`} onAccepted={onClose} disabled={busy} onBusyChange={setBusy} defaultOpen={showDownloadedFiles} />}
           <SearchBox
             className="my-0 gap-2"
-            label="Search or Deezer song URL"
+            label="Search or provider song URL"
             value={query}
             disabled={busy || candidates.isFetching}
             buttonLabel={candidates.isFetching ? "Searching…" : "Search"}
@@ -151,14 +166,14 @@ export function Review({
             <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-solid border-border px-3 py-2">
               <div className="min-w-0">
                 <h2 className="m-0 mb-1 text-xs font-semibold text-muted-foreground">{requestReplacement && !updatedSource ? "Failed recording" : "Selected recording"}</h2>
-                <strong className="text-sm">{label(s.candidate)}</strong>
+                <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{label(s.candidate)}</strong><Badge variant="outline">{s.candidate.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
                 <Caption>
                   {s.candidate.artist.name} / {s.candidate.album.title} / {time(s.candidate.duration)}
                 </Caption>
                 {selectedRecording && (
-                  <DeezerRecordingTools
+                  <RecordingTools
                     track={selectedRecording}
-                    playing={preview.playing && preview.active?.id === selectedRecording.id}
+                    playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(selectedRecording)}
                     onPreview={preview.toggle}
                   />
                 )}
@@ -186,7 +201,7 @@ export function Review({
               </Actions>
             </section>
           )}
-          {candidates.isFetching && <Text role="status" className="m-0 text-xs">Searching Navidrome and Deezer…</Text>}
+          {candidates.isFetching && <Text role="status" className="m-0 text-xs">Searching Navidrome and music providers…</Text>}
           {candidates.error && (
             <div role="alert" className="flex flex-wrap items-center gap-3 text-xs text-destructive">
               <span>{candidates.error.message} Try another query or retry the search.</span>
@@ -217,33 +232,25 @@ export function Review({
                   </Row>
                 ))}
               </section>
-              <section aria-labelledby="deezer-recordings-heading">
-                <h2 id="deezer-recordings-heading" className="m-0 border-0 border-b border-solid border-border pb-2 text-sm font-semibold">
-                  Deezer recordings <span className="text-xs font-normal text-muted-foreground">({candidates.data.deezer.length})</span>
+              <section aria-labelledby="provider-recordings-heading" className="min-w-0">
+                <h2 id="provider-recordings-heading" className="m-0 border-0 border-b border-solid border-border pb-2 text-sm font-semibold">
+                  Provider recordings <span className="text-xs font-normal text-muted-foreground">({recordings.length})</span>
                 </h2>
-                {candidates.data.deezerAmbiguous && (
-                  <Text className="my-2 text-xs">Multiple recordings match the metadata. Compare their versions before choosing.</Text>
-                )}
-                {candidates.data.deezerError ? (
-                  <Text role="alert" className="my-2 text-xs">
-                    Deezer search failed: {candidates.data.deezerError} Search again to retry.
-                  </Text>
-                ) : candidates.data.deezer.length === 0 && (
-                  <Text className="my-2 text-xs">No results. Try a shorter title, another spelling, or a direct Deezer song URL.</Text>
-                )}
-                {candidates.data.deezer.map((t) => (
-                  <Row key={t.id} className="gap-3 py-2">
+                {providerResults.length > 1 && <div role="group" aria-label="Filter recording sources" className="my-3 flex flex-wrap gap-2">
+                  {[{id:"all",name:"All sources"},...providerResults].map((provider) => <Button key={provider.id} type="button" variant={activeFilter === provider.id ? "secondary" : "outline"} size="sm" aria-pressed={activeFilter === provider.id} onClick={() => void setProviderFilter(provider.id)}>{provider.name}</Button>)}
+                </div>}
+                {providerResults.some((provider) => provider.ambiguous) && <Text className="my-2 text-xs">Multiple recordings match the metadata. Compare their versions before choosing.</Text>}
+                {activeProviders.filter((provider) => provider.error).map((provider) => <Text key={provider.id} role="alert" className="my-2 text-xs">{provider.name} search failed: {provider.error} Search again to retry.</Text>)}
+                {recordings.length === 0 && activeProviders.some((provider) => !provider.error) && <Text className="my-2 text-xs">No results. Try another source, a shorter title, another spelling, or a direct provider song URL.</Text>}
+                {recordings.map((t) => (
+                  <Row key={trackTarget(t)} className="gap-3 py-2">
                     <div className="min-w-0 break-words">
-                      <strong>{label(t)}</strong>
+                      <div className="flex flex-wrap items-center gap-2"><strong>{label(t)}</strong><Badge variant="outline">{t.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
                       <Caption>{t.artist.name} / {t.album.title} / {time(t.duration)}</Caption>
-                      <MatchDetails match={candidates.data.deezerMatches?.[t.id]} />
-                      <DeezerRecordingTools
-                        track={t}
-                        playing={preview.playing && preview.active?.id === t.id}
-                        onPreview={preview.toggle}
-                      />
+                      <MatchDetails match={matchFor(t)} />
+                      <RecordingTools track={t} playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(t)} onPreview={preview.toggle} />
                     </div>
-                    <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { target: "deezer:track:" + t.id })}>{requestReplacement ? "Use and request" : "Use this recording"}</Button>
+                    <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { target: trackTarget(t) })}>{requestReplacement ? "Use and request" : "Use this recording"}</Button>
                   </Row>
                 ))}
               </section>
@@ -254,7 +261,7 @@ export function Review({
           <PreviewPlayer preview={preview} />
           {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Text className="m-0 text-xs">{requestReplacement ? "Choosing a Deezer recording creates a replacement request; approval may be required." : "Selecting a recording does not start a download."}</Text>
+            <Text className="m-0 text-xs">{requestReplacement ? "Choosing a provider recording creates a replacement request; approval may be required." : "Selecting a recording does not start a download."}</Text>
             {editable && !s.serverId && (
               <Button
                 title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."

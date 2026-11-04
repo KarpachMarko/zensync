@@ -73,6 +73,8 @@ export async function uploadAudioFile(path: string, file: File, key: string): Pr
 }
 
 export type Track = {
+  provider?: "deezer" | "lossless";
+  source?: string;
   id: number;
   title: string;
   title_version: string;
@@ -82,6 +84,9 @@ export type Track = {
   link: string;
   preview?: string;
 };
+export function trackTarget(t: Track) {
+ return t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+}
 export type LibrarySong = {
   id: string;
   title: string;
@@ -114,3 +119,9 @@ export type TransferProgress = {
   bytesPerSecond?: number;
   updatedAt: string;
 };
+
+export function audioQualityLabel(quality: string) {
+  if (quality === "lossless") return "FLAC";
+  const native = /^(mp3|aac):(\d+)$/.exec(quality);
+  return native ? `${native[1].toUpperCase()} ${native[2]} kbps` : quality;
+}
