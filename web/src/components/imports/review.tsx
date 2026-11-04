@@ -1,4 +1,5 @@
 import { AudioUpload } from "@/components/imports/audio-upload";
+import { AcquisitionReviewButton } from "@/components/requests/acquisition-review";
 import { MatchDetails } from "@/components/imports/match-details";
 import { PreviewPlayer } from "@/components/imports/preview-player";
 import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
@@ -110,6 +111,7 @@ export function Review({
           </DialogDescription>
         </header>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3 max-sm:px-3">
+          {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <div><AcquisitionReviewButton requestId={s.requestId} label="Review failed download" onAccepted={onClose} /></div>}
           <SearchBox
             className="my-0 gap-2"
             label="Search or Deezer song URL"

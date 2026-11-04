@@ -13,10 +13,10 @@ function Cover({ url }: { url?: string }) {
   </div>;
 }
 
-export function PreviewPlayer({ preview }: { preview: ReturnType<typeof useDeezerPreview> }) {
+export function PreviewPlayer({ preview, caption = "30s preview" }: { preview: ReturnType<typeof useDeezerPreview>; caption?: string }) {
   const track = preview.active;
   return <>
-    <audio ref={preview.attachAudio} preload="none" aria-label="Deezer 30-second preview player" className="hidden"
+    <audio ref={preview.attachAudio} preload="none" aria-label={caption + " player"} className="hidden"
       onPlay={preview.started} onPause={() => preview.setPlaying(false)} onEnded={() => preview.setPlaying(false)}
       onError={preview.failed} onTimeUpdate={preview.syncTime} onLoadedMetadata={preview.syncTime}
       onWaiting={() => preview.setLoading(true)} onCanPlay={() => preview.setLoading(false)} />
@@ -25,7 +25,7 @@ export function PreviewPlayer({ preview }: { preview: ReturnType<typeof useDeeze
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <div className="min-w-0 truncate text-xs"><strong>{label(track)}</strong><span className="ml-2 text-muted-foreground">{track.artist.name}</span></div>
-          <span className="shrink-0 text-[11px] text-muted-foreground">30s preview</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{caption}</span>
         </div>
       </div>
         <div className="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1 sm:col-start-2">

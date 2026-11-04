@@ -13,7 +13,7 @@ export function previewURL(track: Track) {
 }
 
 // One player per review dialog keeps comparisons from playing over each other.
-export function useDeezerPreview() {
+export function useDeezerPreview({ resolveURL = previewURL, maxDuration = 30, errorMessage }: { resolveURL?: (track: Track) => string | null; maxDuration?: number; errorMessage?: string } = {}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [active, setActive] = useState<Track | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -37,7 +37,7 @@ export function useDeezerPreview() {
 
   function toggle(track: Track) {
     const audio = audioRef.current;
-    const url = previewURL(track);
+    const url = resolveURL(track);
     if (!audio || !url) return;
     if (active?.id === track.id && !audio.paused) {
       audio.pause();
@@ -49,16 +49,16 @@ export function useDeezerPreview() {
       audio.pause();
       audio.src = url;
       setPosition(0);
-      setDuration(30);
+      setDuration(Number.isFinite(maxDuration) ? maxDuration : track.duration);
       setLoading(true);
     }
-    if (audio.ended || audio.currentTime >= 30) audio.currentTime = 0;
+    if (audio.ended || audio.currentTime >= maxDuration) audio.currentTime = 0;
     // Start during the click so browser autoplay restrictions are respected.
     void audio.play().catch((cause: unknown) => {
       if (audio.src !== url || (cause instanceof DOMException && cause.name === "AbortError")) return;
       setPlaying(false);
       setLoading(false);
-      setError("Preview could not be played. Try again or open the song in Deezer.");
+      setError(errorMessage || "Preview could not be played. Try again or open the song in Deezer.");
     });
   }
 
@@ -72,13 +72,13 @@ export function useDeezerPreview() {
     audioRef.current?.pause();
     setPlaying(false);
     setLoading(false);
-    setError("Preview unavailable. Open the song in Deezer to listen.");
+    setError(errorMessage || "Preview unavailable. Open the song in Deezer to listen.");
   }
 
   function syncTime() {
     const audio = audioRef.current;
     if (!audio) return;
-    const limit = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(30, audio.duration) : 30;
+    const limit = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(maxDuration, audio.duration) : duration;
     setDuration(limit);
     setPosition(Math.min(limit, audio.currentTime));
     if (audio.currentTime >= limit) audio.pause();

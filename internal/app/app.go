@@ -65,6 +65,7 @@ type User struct {
 	Quality      json.RawMessage `json:"quality"`
 }
 type Request struct {
+	JobID      string            `json:"jobId,omitempty"`
 	Transfer   *TransferProgress `json:"transfer,omitempty"`
 	State      string            `json:"state"`
 	Detail     string            `json:"detail,omitempty"`

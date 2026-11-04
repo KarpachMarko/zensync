@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && (strings.HasSuffix(path, "/review-audio") || strings.HasSuffix(path, "/review-audio/file")):
+		a.reviewAcquisitionAudio(w, r, u)
 	case path == "/api/v2/settings/downloads":
 		a.downloadSettings(w, r, u)
 	case path == "/api/v2/connections":

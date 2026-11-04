@@ -8,6 +8,7 @@ export type User = {
   quality: string[];
 };
 export type MusicRequest = {
+  jobId?: string;
   transfer?: TransferProgress;
   state: string;
   kind: string;

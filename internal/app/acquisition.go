@@ -97,8 +97,22 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		return errors.New("Downloaded tags differ from the selected track; review is required")
 	}
 	tolerance := verifiedDurationTolerance(t.Duration, t.ISRC != "")
-	if !validDuration(duration) || !validDuration(t.Duration) || math.Abs(duration-t.Duration) > tolerance {
-		return fmt.Errorf("Downloaded duration differs from the selected recording (expected %.3fs, measured %.3fs; tolerance %.3fs)", t.Duration, duration, tolerance)
+	if !validDuration(duration) || !validDuration(t.Duration) {
+		return errors.New("Downloaded recording has an invalid duration")
+	}
+	var mismatch *audioDurationMismatch
+	if math.Abs(duration-t.Duration) > tolerance {
+		mismatch = &audioDurationMismatch{Expected: t.Duration, Measured: duration, Tolerance: tolerance}
+		if a.DB != nil {
+			checksum, err := hashFile(path)
+			if err != nil {
+				return err
+			}
+			var accepted float64
+			if a.DB.QueryRow("SELECT duration FROM audio_duration_approvals WHERE checksum=? AND recording=? AND quality=?", checksum, audioApprovalKey(t), quality).Scan(&accepted) == nil && math.Abs(accepted-duration) < 0.01 {
+				mismatch = nil
+			}
+		}
 	}
 	decoder := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-xerror", "-i", path, "-map", "0:a:0", "-f", "null", "-")
 	protectChild(decoder)
@@ -106,6 +120,9 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	decoder.Stderr = io.Discard
 	if e = decoder.Run(); e != nil {
 		return errors.New("Full audio decoding failed; the file was not published")
+	}
+	if mismatch != nil {
+		return mismatch
 	}
 	return nil
 }
@@ -153,6 +170,32 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 	}
 	defer a.clearTransfer(jid)
 	failures := []string{}
+	// An explicit file acceptance wins over quality fallback retries. Otherwise
+	// accepting the retained 320 file could start a fresh lossless download first.
+	if a.DB != nil {
+		for _, quality := range qualities {
+			if quality != "lossless" && quality != "320" && quality != "128" {
+				continue
+			}
+			paths, err := stagedAudio(filepath.Join(a.dataDir, "staging", jid, quality))
+			if err != nil || len(paths) != 1 {
+				continue
+			}
+			checksum, err := hashFile(paths[0])
+			if err != nil {
+				continue
+			}
+			var accepted int
+			if a.DB.QueryRow("SELECT count(*) FROM audio_duration_approvals WHERE checksum=? AND recording=? AND quality=?", checksum, audioApprovalKey(t), quality).Scan(&accepted) != nil || accepted == 0 {
+				continue
+			}
+			if err := a.validateAudio(paths[0], t, quality); err != nil {
+				return "", "", err
+			}
+			rel, err := a.placeAudio(jid, target, paths[0], t, quality)
+			return rel, quality, err
+		}
+	}
 	for _, quality := range qualities {
 		if quality != "lossless" && quality != "320" && quality != "128" {
 			return "", "", errors.New("Unsupported quality in request")

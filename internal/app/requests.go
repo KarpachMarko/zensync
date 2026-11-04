@@ -86,6 +86,10 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 			}
 		} else {
 			out[index].Kind = "track"
+			if err := a.DB.QueryRow("SELECT id,stage FROM jobs WHERE request_id=?", out[index].ID).Scan(&out[index].JobID, &out[index].Detail); err != nil && err != sql.ErrNoRows {
+				a.internal(w, err)
+				return
+			}
 			if strings.HasPrefix(out[index].Target, "upload:") {
 				out[index].Kind = "upload"
 			}
@@ -331,7 +335,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
  SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
  SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
  WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
- ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,'acquisition' AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+ ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN r.target LIKE 'deezer:track:%' THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
  UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
  UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  )`
@@ -363,6 +367,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		}
 		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
 		item["canCancel"] = kind == "migration" && (state == "queued" || state == "failed" || state == "blocked") && (owner == u.ID || u.Role == "admin")
+		item["canReview"] = kind == "acquisition" && (state == "failed" || state == "blocked")
 		if transfer := a.transfer(id, state); transfer != nil {
 			item["transfer"] = transfer
 		}

@@ -1,4 +1,5 @@
 import { Actions, Row } from "@/components/layout/content";
+import { AcquisitionReviewButton } from "@/components/requests/acquisition-review";
 import { AppLink } from "@/components/navigation";
 import {
   ActiveProgress,
@@ -22,6 +23,7 @@ export function Activity({ admin }: { admin: boolean }) {
       state: string;
       stage: string;
       canCancel?: boolean;
+      canReview?: boolean;
       transfer?: TransferProgress;
     }[]
   >("/activity", { refetchInterval: 3000 });
@@ -87,6 +89,7 @@ export function Activity({ admin }: { admin: boolean }) {
                     </div>
                     <Actions>
                       <StatusBadge state={r.state} />
+                      {r.canReview && <AcquisitionReviewButton taskId={r.id} />}
                       {(r.state === "failed" || r.state === "blocked") && (
                         <Button
                           variant="outline"

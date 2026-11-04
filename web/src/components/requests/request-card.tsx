@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { MusicRequest as Request, User } from "@/lib/types";
 import { DeclineForm } from "./decline-form";
 import { useState } from "react";
+import { AcquisitionReviewButton } from "./acquisition-review";
 export function RequestCard({
   request: r,
   user,
@@ -52,6 +53,10 @@ export function RequestCard({
         <StatusBadge state={r.state || r.decision} />
       </Row>
       <ActiveProgress state={r.state} title={r.title} transfer={r.transfer} />
+      {(r.state === "failed" || r.state === "blocked") && r.kind === "track" && <>
+        {r.detail && <Text className="text-xs break-words">{r.detail}</Text>}
+        <AcquisitionReviewButton taskId={r.jobId} requestId={r.id} />
+      </>}
       {r.kind === "album" && (
         <ExpandableSection
           compact

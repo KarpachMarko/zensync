@@ -73,6 +73,12 @@ CREATE TABLE IF NOT EXISTS assets (
  target TEXT PRIMARY KEY, file_path TEXT NOT NULL, quality TEXT NOT NULL, metadata TEXT NOT NULL,
  server_id TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS audio_duration_approvals (
+ checksum TEXT NOT NULL, recording TEXT NOT NULL, quality TEXT NOT NULL,
+ duration REAL NOT NULL, actor TEXT NOT NULL REFERENCES users(id),
+ request_id TEXT NOT NULL REFERENCES requests(id), created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(checksum,recording,quality)
+);
 INSERT OR IGNORE INTO schema_version VALUES(2);
 
 CREATE TABLE IF NOT EXISTS request_metadata (request_id TEXT PRIMARY KEY REFERENCES requests(id), metadata TEXT NOT NULL);
