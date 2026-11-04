@@ -380,6 +380,10 @@ func (a *App) uploadSourceAudio(w http.ResponseWriter, r *http.Request, u User, 
 			storedPath = previousPath
 		}
 	}
+	if err = archiveSourceRequests(tx, sid); err != nil {
+		a.internal(w, err)
+		return
+	}
 	rid := id()
 	statements := []struct {
 		query string
@@ -388,7 +392,6 @@ func (a *App) uploadSourceAudio(w http.ResponseWriter, r *http.Request, u User, 
 		{"INSERT INTO audio_uploads(target,owner,file_path,metadata,quality,checksum) VALUES(?,?,?,?,?,?) ON CONFLICT(target) DO UPDATE SET file_path=excluded.file_path", []any{target, u.ID, storedPath, mustJSON(track), "uploaded:" + format, checksum}},
 		{"INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,0,?,?,?)", []any{rid, u.ID, key, target, track.Title, track.Artist.Name, quality, decision, reason}},
 		{"INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", []any{rid, mustJSON(track)}},
-		{"DELETE FROM request_sources WHERE source_id=?", []any{sid}},
 		{"INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", []any{sid, rid}},
 		{"INSERT INTO source_resolutions(source_id,revision) VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision", []any{sid, id()}},
 		{"UPDATE source_songs SET server_id='',candidate='',match_state='manual',deferred=0,favorite_state='pending' WHERE id=?", []any{sid}},

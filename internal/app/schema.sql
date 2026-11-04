@@ -141,3 +141,11 @@ CREATE TABLE IF NOT EXISTS migration_acquisition_batches (
  fingerprint TEXT NOT NULL, result TEXT NOT NULL,
  PRIMARY KEY(owner,idem)
 );
+
+-- Former associations survive recording changes, independently of current links.
+CREATE TABLE IF NOT EXISTS request_source_history (
+ source_id TEXT NOT NULL REFERENCES source_songs(id) ON DELETE CASCADE,
+ request_id TEXT NOT NULL REFERENCES requests(id),
+ PRIMARY KEY(source_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS request_source_history_request ON request_source_history(request_id);

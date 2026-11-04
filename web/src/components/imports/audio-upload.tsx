@@ -64,7 +64,7 @@ export function AudioUpload({ source, prefix, busy, onBusyChange, onUploaded }: 
       </div>
       <CollapsibleContent className="pt-3">
         <Text className="m-0 mb-3 text-xs">
-          Upload one audio file, up to 1 GiB. It will be validated and linked to this imported song after approval and Navidrome indexing. Audio is not re-encoded; existing library files are preserved.
+          Upload one audio file, up to 1 GiB. It will be validated and linked to this song after approval and Navidrome indexing. Audio is not re-encoded; existing library files are preserved.
         </Text>
         <form noValidate onSubmit={(event) => { event.preventDefault(); void form.handleSubmit(); }}>
           <form.AppField name="file">

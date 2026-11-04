@@ -24,6 +24,7 @@ export function Activity({ admin }: { admin: boolean }) {
       stage: string;
       canCancel?: boolean;
       canReview?: boolean;
+      canDismiss?: boolean;
       transfer?: TransferProgress;
     }[]
   >("/activity", { refetchInterval: 3000 });
@@ -33,14 +34,14 @@ export function Activity({ admin }: { admin: boolean }) {
   const error = actionError || result.error?.message;
   const loading = result.isPending;
   const load = result.reload;
-  async function taskAction(id: string, cancel = false) {
+  async function taskAction(id: string, cancel = false, dismiss = false) {
     if (pendingTask) return;
     setPendingTask(id);
     setError("");
     try {
-      await api("/tasks/" + id + (cancel ? "/cancel" : ""), "POST");
+      await api("/tasks/" + id + (dismiss ? "/dismiss" : cancel ? "/cancel" : ""), "POST");
       await load();
-      toast.success(cancel ? "Migration task cancelled." : "Task queued for retry.");
+      toast.success(dismiss ? "Failure dismissed. Music files are kept." : cancel ? "Migration task cancelled." : "Task queued for retry.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -90,6 +91,9 @@ export function Activity({ admin }: { admin: boolean }) {
                     <Actions>
                       <StatusBadge state={r.state} />
                       {r.canReview && <AcquisitionReviewButton taskId={r.id} />}
+                      {r.canDismiss && <Button variant="outline" disabled={pendingTask !== null}
+                        title="Stop retrying this failed task and keep its history. Music files are kept."
+                        onClick={() => void taskAction(r.id, false, true)}>Dismiss failure</Button>}
                       {(r.state === "failed" || r.state === "blocked") && (
                         <Button
                           variant="outline"

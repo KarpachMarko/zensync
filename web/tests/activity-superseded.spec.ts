@@ -26,3 +26,30 @@ test("successful resubmission moves an old failure from Blocked into history", a
   await expect(page.getByText("superseded", { exact: true })).toBeVisible();
   await expect(page.getByText(/Previous failure:/)).toBeVisible();
 });
+
+test("legacy orphan failure can be dismissed without retrying or changing music", async ({ page }) => {
+  let dismissed = false;
+  const mutations: string[] = [];
+  await page.route("**/api/v2/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
+    if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "fixture", user: { id: "user", username: "user", role: "member", quality: ["128"] } } });
+    if (path === "/api/v2/activity") return route.fulfill({ json: [{ id: "old", title: "Make It Rain", state: dismissed ? "cancelled" : "failed", stage: dismissed ? "Dismissed failure. Previous failure: Country restriction" : "Country restriction", canDismiss: !dismissed }] });
+    if (path === "/api/v2/tasks/old/dismiss" && request.method() === "POST") {
+      mutations.push(path);
+      dismissed = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    throw new Error("Unexpected API: " + path);
+  });
+  await page.goto("/activity");
+  await page.getByRole("button", { name: "Dismiss failure", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Dismiss failure", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Failure dismissed. Music files are kept.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Completed/ }).click();
+  await expect(page.getByText("Make It Rain", { exact: true })).toBeVisible();
+  await expect(page.getByText("Dismissed failure. Previous failure: Country restriction", { exact: true })).toBeVisible();
+  expect(mutations).toEqual(["/api/v2/tasks/old/dismiss"]);
+});

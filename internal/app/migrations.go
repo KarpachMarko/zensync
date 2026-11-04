@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && strings.HasSuffix(path, "/recording-review") && r.Method == "POST":
+		a.recordingReview(w, r, u)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && (strings.HasSuffix(path, "/review-audio") || strings.HasSuffix(path, "/review-audio/file")):
 		a.reviewAcquisitionAudio(w, r, u)
 	case path == "/api/v2/settings/downloads":
@@ -66,7 +68,9 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 	case strings.HasPrefix(path, "/api/v2/imports/"):
 		a.migrationRoute(w, r, u)
 	case strings.HasPrefix(path, "/api/v2/tasks/") && r.Method == "POST":
-		if strings.HasSuffix(path, "/cancel") {
+		if strings.HasSuffix(path, "/dismiss") {
+			a.dismissAcquisitionFailure(w, r, u)
+		} else if strings.HasSuffix(path, "/cancel") {
 			a.cancelMigrationTask(w, r, u)
 		} else {
 			a.retryTask(w, r, u)
@@ -77,7 +81,7 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 	return true
 }
 func (a *App) listMigrations(w http.ResponseWriter, u User) {
-	rows, e := a.DB.Query("SELECT id,name,state,report,favorites,target_user,error,created FROM migrations WHERE owner=? ORDER BY created DESC", u.ID)
+	rows, e := a.DB.Query("SELECT id,name,state,report,favorites,target_user,error,created FROM migrations WHERE owner=? AND source<>'request-review' ORDER BY created DESC", u.ID)
 	if e != nil {
 		a.internal(w, e)
 		return
@@ -747,7 +751,7 @@ func (a *App) resolveSource(sid, serverID, candidate string) error {
 	if _, e = tx.Exec("INSERT INTO source_resolutions(source_id,revision) VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision", sid, id()); e != nil {
 		return e
 	}
-	if _, e = tx.Exec("DELETE FROM request_sources WHERE source_id=?", sid); e != nil {
+	if e = archiveSourceRequests(tx, sid); e != nil {
 		return e
 	}
 	if _, e = tx.Exec("UPDATE source_songs SET server_id=?,candidate=?,match_state='manual',deferred=0 WHERE id=?", serverID, candidate, sid); e != nil {

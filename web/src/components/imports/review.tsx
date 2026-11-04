@@ -1,5 +1,5 @@
 import { AudioUpload } from "@/components/imports/audio-upload";
-import { AcquisitionReviewButton } from "@/components/requests/acquisition-review";
+import { RetainedAudioReview } from "@/components/requests/retained-audio-review";
 import { MatchDetails } from "@/components/imports/match-details";
 import { PreviewPlayer } from "@/components/imports/preview-player";
 import { DeezerRecordingTools } from "@/components/imports/deezer-recording-tools";
@@ -35,14 +35,22 @@ type Candidates = {
 };
 
 export function Review({
-  source: s,
+  source,
   migration: m,
   onClose,
+  failurePath,
+  requestReplacement = false,
+  returnFocus,
 }: {
   source: Source;
   migration: Migration;
   onClose: () => void;
+  failurePath?: string;
+  requestReplacement?: boolean;
+  returnFocus?: HTMLElement | null;
 }) {
+  const [updatedSource, setUpdatedSource] = useState<Source | null>(null);
+  const s = updatedSource ?? source;
   const { act: save } = useImportAction(m.id);
   const preview = useDeezerPreview();
   const [query, setQuery] = useState(
@@ -51,7 +59,7 @@ export function Review({
   const [searchRequested, setSearchRequested] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const trigger = useRef(document.activeElement);
+  const trigger = useRef(returnFocus ?? document.activeElement);
   const prefix = "/imports/" + m.id + "/songs/" + s.id;
   const candidates = useQuery({
     queryKey: ["migration-candidates", m.id, s.id, query],
@@ -68,9 +76,12 @@ export function Review({
     setBusy(true);
     setError("");
     try {
-      await save("songs/" + s.id + "/" + action, body);
+      const response = await save("songs/" + s.id + "/" + action, body);
+      if (response.source) setUpdatedSource(response.source);
+      const replacing = requestReplacement && action === "resolve" && typeof body === "object" && body !== null && "target" in body;
+      if (replacing) await save("songs/" + s.id + "/acquire");
       toast.success(
-        action === "acquire" ? "Acquisition request saved." : "Song updated.",
+        action === "acquire" || replacing ? "Acquisition request saved." : "Song updated.",
       );
       onClose();
     } catch (cause) {
@@ -111,7 +122,7 @@ export function Review({
           </DialogDescription>
         </header>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3 max-sm:px-3">
-          {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <div><AcquisitionReviewButton requestId={s.requestId} label="Review failed download" onAccepted={onClose} /></div>}
+          {s.requestId && (s.jobState === "failed" || s.jobState === "blocked") && <RetainedAudioReview path={failurePath ?? `/requests/${encodeURIComponent(s.requestId)}/review-audio`} onAccepted={onClose} disabled={busy} onBusyChange={setBusy} />}
           <SearchBox
             className="my-0 gap-2"
             label="Search or Deezer song URL"
@@ -129,15 +140,15 @@ export function Review({
               onUploaded={async () => { onClose(); }}
             />
           )}
-          <Text className="m-0 max-w-none text-xs leading-5">
+          {!requestReplacement && <Text className="m-0 max-w-none text-xs leading-5">
             {songGuidance(s)}
-          </Text>
+          </Text>}
           <ActiveProgress state={s.jobState} title={s.metadata.title} />
           {error && <Text role="alert" className="m-0 text-xs">{error}</Text>}
           {s.candidate && (
             <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-solid border-border px-3 py-2">
               <div className="min-w-0">
-                <h2 className="m-0 mb-1 text-xs font-semibold text-muted-foreground">Selected recording</h2>
+                <h2 className="m-0 mb-1 text-xs font-semibold text-muted-foreground">{requestReplacement && !updatedSource ? "Failed recording" : "Selected recording"}</h2>
                 <strong className="text-sm">{label(s.candidate)}</strong>
                 <Caption>
                   {s.candidate.artist.name} / {s.candidate.album.title} / {time(s.candidate.duration)}
@@ -150,15 +161,15 @@ export function Review({
                   />
                 )}
               </div>
-              <Button
+              {(!requestReplacement || updatedSource) && <Button
                 disabled={busy || !editable || s.deferred || !!s.serverId || s.decision === "approved" || s.decision === "awaiting_approval"}
                 onClick={() => void act("acquire")}
               >
                 Request missing audio
-              </Button>
+              </Button>}
             </section>
           )}
-          {s.requestId && (
+          {s.requestId && !requestReplacement && (
             <Actions className="text-xs">
               <AppLink to="/requests">View request and approval</AppLink>
               <AppLink to="/activity">View acquisition progress</AppLink>
@@ -230,7 +241,7 @@ export function Review({
                         onPreview={preview.toggle}
                       />
                     </div>
-                    <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { target: "deezer:track:" + t.id })}>Use this recording</Button>
+                    <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { target: "deezer:track:" + t.id })}>{requestReplacement ? "Use and request" : "Use this recording"}</Button>
                   </Row>
                 ))}
               </section>
@@ -241,7 +252,7 @@ export function Review({
           <PreviewPlayer preview={preview} />
           {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Text className="m-0 text-xs">Selecting a recording does not start a download.</Text>
+            <Text className="m-0 text-xs">{requestReplacement ? "Choosing a Deezer recording creates a replacement request; approval may be required." : "Selecting a recording does not start a download."}</Text>
             {editable && !s.serverId && (
               <Button
                 title="Pause new acquisition for this song. Keep its playlist entry; running downloads continue."

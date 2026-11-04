@@ -47,8 +47,9 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 		if out[index].Decision == "approved" {
 			e = a.DB.QueryRow(`SELECT CASE
  WHEN count(*)=0 THEN 'queued'
- WHEN sum(state IN ('available','completed','cancelled'))=count(*) THEN 'completed'
- WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred'))>0 THEN
+ WHEN sum(state='superseded')=count(*) THEN 'superseded'
+ WHEN sum(state IN ('available','completed','cancelled','superseded'))=count(*) THEN 'completed'
+ WHEN sum(state NOT IN ('available','completed','cancelled','failed','blocked','deferred','superseded'))>0 THEN
    CASE WHEN count(DISTINCT state)=1 THEN min(state) ELSE 'running' END
  WHEN sum(state='failed')>0 THEN 'failed'
  ELSE 'blocked' END FROM jobs WHERE (request_id=? AND NOT EXISTS(SELECT 1 FROM request_children WHERE parent_id=?)) OR request_id IN (SELECT child_id FROM request_children WHERE parent_id=?)`, out[index].ID, out[index].ID, out[index].ID).Scan(&out[index].State)
@@ -331,7 +332,7 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	send(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) activity(w http.ResponseWriter, u User) {
-	query := `SELECT id,title,state,CASE WHEN state='superseded' THEN 'Superseded by a newer successful request. Previous failure: '||stage ELSE stage END,created,kind,owner FROM (
+	query := `SELECT id,title,state,CASE WHEN state='superseded' AND stage NOT LIKE 'Replaced by %' THEN 'Superseded by a newer successful request. Previous failure: '||stage ELSE stage END,created,kind,owner FROM (
  SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
  SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
  WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
@@ -368,6 +369,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
 		item["canCancel"] = kind == "migration" && (state == "queued" || state == "failed" || state == "blocked") && (owner == u.ID || u.Role == "admin")
 		item["canReview"] = kind == "acquisition" && (state == "failed" || state == "blocked")
+		item["canDismiss"] = kind == "acquisition" && state == "failed"
 		if transfer := a.transfer(id, state); transfer != nil {
 			item["transfer"] = transfer
 		}

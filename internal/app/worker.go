@@ -239,6 +239,21 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	jid, rid, owner, target, quality, reason, actor, upgrade := claim.jid, claim.rid, claim.owner, claim.target, claim.quality, claim.reason, claim.actor, claim.upgrade
 	var e error
+	// A legacy/stale queued claim may outlive a source replacement. Never fetch
+	// the old provider target or fulfill its former source with different audio.
+	var replaced bool
+	if e = a.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM request_source_history WHERE request_id=?) AND NOT EXISTS(SELECT 1 FROM request_sources WHERE request_id=?)`, rid, rid).Scan(&replaced); e != nil {
+		return
+	}
+	if replaced {
+		var previous string
+		_ = a.DB.QueryRow("SELECT stage FROM jobs WHERE id=?", jid).Scan(&previous)
+		if !strings.HasPrefix(previous, "Replaced by ") {
+			previous = "Replaced by a new recording choice for the imported song. Previous task: " + previous
+		}
+		a.jobState(jid, "superseded", previous)
+		return
+	}
 	if upgrade {
 		a.jobState(jid, "blocked", "Asset replacement is not enabled; existing audio is retained")
 		return
