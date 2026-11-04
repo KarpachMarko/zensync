@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS events (
  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS requests_owner ON requests(owner,created);
+CREATE INDEX IF NOT EXISTS requests_owner_target ON requests(owner,target);
 CREATE INDEX IF NOT EXISTS events_owner ON events(owner,id);
 CREATE TABLE IF NOT EXISTS secrets (name TEXT PRIMARY KEY, value BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -126,4 +127,11 @@ CREATE TABLE IF NOT EXISTS audio_uploads (
  target TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id),
  file_path TEXT NOT NULL, metadata TEXT NOT NULL, quality TEXT NOT NULL,
  checksum TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS migration_acquisition_batches (
+ owner TEXT NOT NULL REFERENCES users(id), idem TEXT NOT NULL,
+ migration_id TEXT NOT NULL REFERENCES migrations(id) ON DELETE CASCADE,
+ fingerprint TEXT NOT NULL, result TEXT NOT NULL,
+ PRIMARY KEY(owner,idem)
 );

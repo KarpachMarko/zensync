@@ -294,6 +294,12 @@ func (a *App) migrationRoute(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	switch parts[1] {
+	case "acquire":
+		if len(parts) != 2 {
+			fail(w, 404, "Endpoint unavailable")
+			return
+		}
+		a.acquireMigrationSongs(w, r, u, m)
 	case "commit":
 		if m.State != "staged" {
 			send(w, 200, map[string]bool{"ok": true})

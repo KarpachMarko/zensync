@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
 import { useImportAction } from "@/hooks/use-import-action";
 import { recordingAction, status, type Detail, type Source } from "@/lib/migration";
-import { useState } from "react";
+import { requestKey } from "@/lib/api";
+import { useRef, useState } from "react";
 import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -44,8 +45,11 @@ export function MigrationPage() {
     refetchInterval: 4000,
   });
   const detail = result.data;
+  const [requesting, setRequesting] = useState(false);
+  const batchAttempt = useRef<{ selection: string; key: string } | null>(null);
   const error = actionError || result.error?.message;
   async function action(path: string, body?: unknown) {
+    batchAttempt.current = null;
     setBusy(true);
     setError("");
 
@@ -62,21 +66,27 @@ export function MigrationPage() {
     }
   }
   async function acquireSelected() {
+    if (busy || selectedVisible.length === 0) return;
     setBusy(true);
+    setRequesting(true);
     setError("");
-    let saved = 0;
+    const sourceIds = selectedVisible.map((song) => song.id).sort();
+    const selection = JSON.stringify(selectedVisible
+      .map((song) => [song.id, song.candidate?.id] as const)
+      .sort(([left], [right]) => left.localeCompare(right)));
+    if (batchAttempt.current?.selection !== selection) batchAttempt.current = { selection, key: requestKey() };
     try {
-      for (const song of selectedVisible) {
-        const sid = song.id;
-        await save("songs/" + sid + "/acquire");
-        saved++;
-      }
+      const response = await save("acquire", { sourceIds }, batchAttempt.current.key);
       setSelected(new Set());
-      toast.success(`${saved} acquisition requests saved.`);
+      batchAttempt.current = null;
+      const bulk = response.bulk;
+      const summary = bulk ? `${bulk.created} song requests saved.${bulk.existing ? ` ${bulk.existing} already requested.` : ""}${bulk.skipped ? ` ${bulk.skipped} no longer ready and skipped.` : ""}` : "Song requests saved.";
+      toast.success(summary + " You can close this page; requests are saved on the server.");
     } catch (e) {
-      setError(`${saved} requests saved. ${(e as Error).message}`);
+      setError((e as Error).message);
     } finally {
       setBusy(false);
+      setRequesting(false);
     }
   }
   if (!detail)
@@ -242,6 +252,7 @@ export function MigrationPage() {
             shown={shown.length}
             total={shownSongs.length}
             selected={selectedVisible.length}
+            requesting={requesting}
             busy={busy}
             onRequest={() => void acquireSelected()}
           />
@@ -368,6 +379,8 @@ export function MigrationPage() {
           source={currentSource}
           migration={m}
           onClose={() => {
+            // A reviewed/resolved recording starts a fresh bulk submission.
+            batchAttempt.current = null;
             if (sourceId) navigate("/imports/" + id, { replace: true });
             else void setRecordingId(null, { history: "replace" });
           }}

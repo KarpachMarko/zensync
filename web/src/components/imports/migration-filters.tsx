@@ -8,7 +8,7 @@ import { useId } from "react";
 
 export function MigrationFilters({
   counts, hidden, onStatusesChange, query, onQueryChange, shown, total,
-  selected, busy, onRequest,
+  selected, busy, requesting, onRequest,
 }: {
   counts: Map<string, number>;
   hidden: string[];
@@ -19,6 +19,7 @@ export function MigrationFilters({
   total: number;
   selected: number;
   busy: boolean;
+  requesting: boolean;
   onRequest: () => void;
 }) {
   const inputId = useId();
@@ -44,7 +45,7 @@ export function MigrationFilters({
           </div>
           <Input id={inputId} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Title, artist or status" />
         </div>
-        <Button className="max-sm:w-full" disabled={busy || selected === 0} onClick={onRequest}>Request selected ({selected})</Button>
+        <Button className="max-sm:w-full" disabled={busy || selected === 0} onClick={onRequest}>{requesting ? "Saving requests…" : `Request selected (${selected})`}</Button>
       </div>
       <MigrationStatusFilter counts={counts} hidden={hidden} onChange={onStatusesChange} className="border-0 p-0" />
       <p className="m-0 text-xs text-muted-foreground" role="status">

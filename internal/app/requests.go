@@ -188,24 +188,7 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 		a.internal(w, e)
 		return
 	}
-	rid := id()
-	decision, reason := "awaiting_approval", ""
-	if !in.Upgrade && (u.Role == "admin" || u.Direct) {
-		decision, reason = "approved", "Allowed without approval"
-	}
-	_, e = tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, in.Target, in.Title, in.Artist, in.Upgrade, string(u.Quality), decision, reason)
-	if e == nil {
-		_, e = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", rid, mustJSON(verified))
-	}
-	if e == nil && in.SourceID != "" {
-		_, e = tx.Exec("INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", in.SourceID, rid)
-	}
-	if e == nil && decision == "approved" {
-		_, e = tx.Exec("INSERT OR IGNORE INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
-	}
-	if e == nil {
-		e = audit(tx, u.ID, u.ID, "request.created", rid)
-	}
+	rid, e := insertTrackRequest(tx, u, key, in.SourceID, verified, in.Upgrade)
 	if e == nil {
 		e = tx.Commit()
 	}
@@ -223,6 +206,30 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 		}
 	}
 	send(w, 201, response)
+}
+
+// Callers validate the server-fetched recording and handle idempotency before
+// insertion. Single and bulk requests share approval, quality and job creation.
+func insertTrackRequest(tx *sql.Tx, u User, key, sourceID string, track Track, upgrade bool) (string, error) {
+	rid := id()
+	decision, reason := "awaiting_approval", ""
+	if !upgrade && (u.Role == "admin" || u.Direct) {
+		decision, reason = "approved", "Allowed without approval"
+	}
+	_, err := tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?)", rid, u.ID, key, fmt.Sprintf("deezer:track:%d", track.ID), trackLabel(track), track.Artist.Name, upgrade, string(u.Quality), decision, reason)
+	if err == nil {
+		_, err = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", rid, mustJSON(track))
+	}
+	if err == nil && sourceID != "" {
+		_, err = tx.Exec("INSERT INTO request_sources(source_id,request_id) VALUES(?,?)", sourceID, rid)
+	}
+	if err == nil && decision == "approved" {
+		_, err = tx.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for acquisition')", id(), rid)
+	}
+	if err == nil {
+		err = audit(tx, u.ID, u.ID, "request.created", rid)
+	}
+	return rid, err
 }
 func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	rid := strings.TrimPrefix(r.URL.Path, "/api/v2/requests/")
@@ -320,8 +327,11 @@ func (a *App) decide(w http.ResponseWriter, r *http.Request, u User) {
 	send(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) activity(w http.ResponseWriter, u User) {
-	query := `SELECT id,title,state,stage,created,kind,owner FROM (
- SELECT j.id,r.title,j.state,j.stage,j.created,r.owner,'acquisition' AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+	query := `SELECT id,title,state,CASE WHEN state='superseded' THEN 'Superseded by a newer successful request. Previous failure: '||stage ELSE stage END,created,kind,owner FROM (
+ SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
+ SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
+ WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
+ ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,'acquisition' AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
  UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
  UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  )`
@@ -336,7 +346,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
  WHEN state='importing' THEN 2
  WHEN state IN ('blocked','failed','deferred') THEN 4
  WHEN state='queued' THEN 5
- WHEN state IN ('available','completed','cancelled','declined','withdrawn') THEN 6
+ WHEN state IN ('available','completed','cancelled','declined','withdrawn','superseded') THEN 6
  ELSE 3 END, created DESC, id LIMIT 200`
 	rows, e := a.DB.Query(query, args...)
 	if e != nil {

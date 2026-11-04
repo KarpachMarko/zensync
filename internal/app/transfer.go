@@ -48,6 +48,7 @@ type transferOutput struct {
 	lastBytes int64
 	lastAt    time.Time
 	lastTotal int64
+	failure   string
 }
 
 func (s *transferOutput) Write(p []byte) (int, error) {
@@ -71,6 +72,27 @@ func (s *transferOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 func (s *transferOutput) event(line []byte, now time.Time) {
+	if bytes.HasPrefix(line, []byte("ZENSYNC_RESULT ")) {
+		var result struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(line[len("ZENSYNC_RESULT "):], &result) != nil {
+			return
+		}
+		switch result.Code {
+		case "geo_blocked":
+			s.failure = "Deezer denied this recording for the configured account's country"
+		case "license_required":
+			s.failure = "The configured Deezer account cannot stream this quality"
+		case "unavailable":
+			s.failure = "Deezer returned no downloadable recording for the configured account"
+		case "timeout":
+			s.failure = "Downloader timed out"
+		case "provider_error":
+			s.failure = "Deezer/downloader failed before a valid recording was produced"
+		}
+		return
+	}
 	prefix := []byte("ZENSYNC_TRANSFER ")
 	if !bytes.HasPrefix(line, prefix) {
 		return

@@ -2,6 +2,8 @@
 
 Import matching searches the existing Navidrome library first, then Deezer. A confident Deezer match makes a song **Ready to request**. It never starts a download: requesting missing audio and approval remain separate steps.
 
+**Request selected** submits the whole selection in one request. The server atomically saves all eligible acquisition requests and any approved download jobs before confirming success. After confirmation, the page can be closed; approval and acquisition use the persistent server queue and continue across browser navigation and server restarts. Retrying the same submission does not create duplicate requests. Songs that became available, deferred or unresolved before submission are skipped and counted in the confirmation. Individual recording-review requests continue to use the same approval and quality rules.
+
 ## Why a single result used to require review
 
 The original matcher required the complete title, artist and album strings to agree, with only case/whitespace normalization, and duration within two seconds. The search itself used one query containing all imported artist and title credits. The number of returned results did not establish confidence.

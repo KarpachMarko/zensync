@@ -4,8 +4,65 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
+
+func TestSuccessfulNewerRequestSupersedesOnlyEquivalentOlderFailures(t *testing.T) {
+	a, _, member := albumFixture(t)
+	var owner, other string
+	a.DB.QueryRow("SELECT id FROM users WHERE username='member'").Scan(&owner)
+	a.DB.QueryRow("SELECT id FROM users WHERE username='admin'").Scan(&other)
+	add := func(id, who, target, quality, state string, upgrade bool) {
+		t.Helper()
+		if _, err := a.DB.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision) VALUES(?,?,?,?,?,'Artist',?,?,'approved')", id, who, id, target, id, upgrade, quality); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.DB.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,?,'Provider metadata changed since approval')", id, id, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("old-failure", owner, "deezer:track:42", `["320"]`, "failed", false)
+	add("new-success", owner, "deezer:track:42", `["320"]`, "available", false)
+	add("later-failure", owner, "deezer:track:42", `["320"]`, "failed", false)
+	add("upgrade-failure", owner, "deezer:track:42", `["320"]`, "failed", true)
+	add("quality-failure", owner, "deezer:track:42", `["lossless"]`, "failed", false)
+	add("own-failure", owner, "deezer:track:43", `["320"]`, "failed", false)
+	add("other-success", other, "deezer:track:43", `["320"]`, "available", false)
+	response := member.call("GET", "/api/v2/activity", "", "")
+	expect(t, response, 200)
+	var rows []struct {
+		ID    string `json:"id"`
+		State string `json:"state"`
+		Stage string `json:"stage"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		switch row.ID {
+		case "old-failure":
+			if row.State != "superseded" || !strings.Contains(row.Stage, "Previous failure:") {
+				t.Fatalf("obsolete failure still blocked: %+v", row)
+			}
+		case "new-success":
+			if row.State != "available" {
+				t.Fatal(row)
+			}
+		case "other-success":
+			t.Fatal("another user's activity leaked")
+		default:
+			if row.State != "failed" {
+				t.Fatalf("unrelated failure hidden: %+v", row)
+			}
+		}
+	}
+	var state string
+	a.DB.QueryRow("SELECT state FROM jobs WHERE id='old-failure'").Scan(&state)
+	if state != "failed" {
+		t.Fatal("original execution history was overwritten")
+	}
+}
 
 func TestCancelObsoleteMigrationTaskPreservesImportedLibrary(t *testing.T) {
 	a, admin, member := albumFixture(t)
@@ -97,9 +154,11 @@ func TestActivityPrioritizesActiveStagesBeforeLimitingLargeQueue(t *testing.T) {
 	if err := a.DB.QueryRow("SELECT id FROM users WHERE username='member'").Scan(&owner); err != nil {
 		t.Fatal(err)
 	}
+	nextTarget := 0
 	add := func(job, state, created string) {
 		t.Helper()
-		if _, err := a.DB.Exec(`INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision) VALUES(?,?,?,?,?,'Artist',0,'["128"]','approved')`, job, owner, job, "deezer:track:42", job); err != nil {
+		nextTarget++
+		if _, err := a.DB.Exec(`INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision) VALUES(?,?,?,?,?,'Artist',0,'["128"]','approved')`, job, owner, job, fmt.Sprintf("deezer:track:%d", nextTarget), job); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := a.DB.Exec("INSERT INTO jobs(id,request_id,state,stage,created) VALUES(?,?,?,?,?)", job, job, state, state, created); err != nil {

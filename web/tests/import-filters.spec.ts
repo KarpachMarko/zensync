@@ -27,7 +27,8 @@ test("migration status filters hide available by default, persist and preserve p
     if (path === "/api/v2/imports/migration") return route.fulfill({ json: detail });
     if (path.endsWith("/acquire")) {
       requested.push(path);
-      return route.fulfill({ json: { id: "request" } });
+      expect(route.request().postDataJSON()).toEqual({ sourceIds: ["Ready song"] });
+      return route.fulfill({ json: { bulk: { created: 1, existing: 0, skipped: 0 } } });
     }
     throw new Error("Unexpected API: " + path);
   });
@@ -97,7 +98,7 @@ test("migration status filters hide available by default, persist and preserve p
   await expect(filters.getByRole("checkbox", { name: "Ready to request (2)", exact: true })).toBeChecked();
   await page.getByRole("checkbox", { name: "Select ready songs", exact: true }).check();
   await page.getByRole("button", { name: "Request selected (1)", exact: true }).click();
-  expect(requested).toEqual(["/api/v2/imports/migration/songs/Ready song/acquire"]);
+  expect(requested).toEqual(["/api/v2/imports/migration/acquire"]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => {
     const card = await playlistCard.boundingBox();

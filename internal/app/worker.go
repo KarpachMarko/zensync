@@ -317,7 +317,7 @@ func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 			return
 		}
 		var approved Track
-		if json.Unmarshal([]byte(approvedJSON), &approved) != nil || approved.ID != t.ID || normalized(trackLabel(approved)) != normalized(trackLabel(t)) || normalized(approved.Artist.Name) != normalized(t.Artist.Name) || normalized(approved.Album.Title) != normalized(t.Album.Title) || approved.Duration != t.Duration {
+		if json.Unmarshal([]byte(approvedJSON), &approved) != nil || !sameApprovedRecording(approved, t) {
 			a.jobState(jid, "failed", "Provider metadata changed since approval; review and submit a fresh request")
 			return
 		}

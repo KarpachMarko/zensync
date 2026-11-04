@@ -31,10 +31,11 @@ type probe struct {
 		Disposition struct {
 			AttachedPic int `json:"attached_pic"`
 		} `json:"disposition"`
-		Codec   string            `json:"codec_name"`
-		Type    string            `json:"codec_type"`
-		BitRate string            `json:"bit_rate"`
-		Tags    map[string]string `json:"tags"`
+		Codec    string            `json:"codec_name"`
+		Duration string            `json:"duration"`
+		Type     string            `json:"codec_type"`
+		BitRate  string            `json:"bit_rate"`
+		Tags     map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
 		Duration string            `json:"duration"`
@@ -62,13 +63,13 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		return errors.New("Invalid audio probe output")
 	}
 	duration, _ := strconv.ParseFloat(p.Format.Duration, 64)
-	if t.Duration <= 0 || math.Abs(duration-t.Duration) > 3 {
-		return errors.New("Downloaded duration differs from the selected recording")
-	}
 	valid := false
 	for _, s := range p.Streams {
 		if s.Type != "audio" {
 			continue
+		}
+		if seconds, err := strconv.ParseFloat(s.Duration, 64); err == nil && validDuration(seconds) {
+			duration = seconds
 		}
 		if quality == "lossless" {
 			valid = s.Codec == "flac"
@@ -89,11 +90,15 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	if tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
 		return errors.New("Downloaded source ID does not match the selected Deezer track")
 	}
-	if t.ISRC != "" && tags["isrc"] != t.ISRC && tags["tsrc"] != t.ISRC {
+	if t.ISRC != "" && !strings.EqualFold(tags["isrc"], t.ISRC) && !strings.EqualFold(tags["tsrc"], t.ISRC) {
 		return errors.New("Downloaded ISRC differs from the selected recording")
 	}
 	if normalized(tags["title"]) != normalized(trackLabel(t)) || !artistMatches(t, tags["artist"]) || normalized(tags["album"]) != normalized(t.Album.Title) {
 		return errors.New("Downloaded tags differ from the selected track; review is required")
+	}
+	tolerance := verifiedDurationTolerance(t.Duration, t.ISRC != "")
+	if !validDuration(duration) || !validDuration(t.Duration) || math.Abs(duration-t.Duration) > tolerance {
+		return fmt.Errorf("Downloaded duration differs from the selected recording (expected %.3fs, measured %.3fs; tolerance %.3fs)", t.Duration, duration, tolerance)
 	}
 	decoder := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-xerror", "-i", path, "-map", "0:a:0", "-f", "null", "-")
 	protectChild(decoder)
@@ -103,6 +108,32 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		return errors.New("Full audio decoding failed; the file was not published")
 	}
 	return nil
+}
+
+func validDuration(seconds float64) bool {
+	return seconds > 0 && !math.IsNaN(seconds) && !math.IsInf(seconds, 0)
+}
+
+func verifiedDurationTolerance(seconds float64, isrcVerified bool) float64 {
+	limit := 3.0
+	if isrcVerified {
+		limit = 5
+	}
+	return math.Min(limit, math.Max(1, seconds*0.05))
+}
+
+func sameApprovedRecording(approved, current Track) bool {
+	if approved.ID != current.ID || (approved.ISRC != "" && !strings.EqualFold(approved.ISRC, current.ISRC)) {
+		return false
+	}
+	tolerance := verifiedDurationTolerance(approved.Duration, approved.ISRC != "")
+	if !validDuration(approved.Duration) || !validDuration(current.Duration) || math.Abs(approved.Duration-current.Duration) > tolerance {
+		return false
+	}
+	// Compare identity/versions with the same normalization used for review;
+	// duration was checked explicitly above against the approved snapshot.
+	source := apple.Song{Title: trackLabel(approved), Artist: approved.Artist.Name, Album: approved.Album.Title, Duration: current.Duration}
+	return assessRecording(source, current).Confident
 }
 func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile, arl string) (string, string, error) {
 	root, e := os.Lstat(a.musicDir)
@@ -170,10 +201,12 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 		protectChild(cmd)
 		cmd.Dir = stage
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + stage, "TMPDIR=" + stage, "DFI_NO_PAUSE=1", "ZENSYNC_PROGRESS=1"}
-		cmd.Stdout = &transferOutput{app: a, job: jid}
+		output := &transferOutput{app: a, job: jid}
+		cmd.Stdout = output
 		cmd.Stderr = io.Discard
 		cmd.WaitDelay = 5 * time.Second
 		started := time.Now()
+		monitorFailure := ""
 		e = cmd.Start()
 		if e == nil {
 			done := make(chan error, 1)
@@ -190,6 +223,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 						limitErr = diskHeadroom(stage, 32<<20)
 					}
 					if limitErr != nil {
+						monitorFailure = "Downloader stopped because staging safety or free-storage limits were exceeded"
 						cancel()
 						<-done
 						e = limitErr
@@ -207,11 +241,38 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 			return "", "", ctx.Err()
 		}
 		if e != nil {
+			reason := output.failure
+			if reason == "" {
+				var exit *exec.ExitError
+				if errors.As(e, &exit) {
+					reason = fmt.Sprintf("d-fi exited with code %d; check the configured ARL/account and connectivity", exit.ExitCode())
+				} else {
+					reason = "d-fi could not run; check its executable and configuration"
+				}
+			}
+			if monitorFailure != "" {
+				reason = monitorFailure
+			}
+			if runCtx.Err() == context.DeadlineExceeded {
+				reason = "Downloader timed out"
+			}
+			failures = append(failures, quality+": "+reason)
 			continue
 		}
 		paths, scanErr := stagedAudio(stage)
 		e = scanErr
 		if e != nil || len(paths) != 1 {
+			reason := output.failure
+			if reason == "" {
+				if scanErr != nil {
+					reason = "Downloader output failed staging safety checks"
+				} else if len(paths) > 1 {
+					reason = "d-fi produced multiple audio files; none was accepted"
+				} else {
+					reason = "d-fi produced no audio file; check account access to this exact recording"
+				}
+			}
+			failures = append(failures, quality+": "+reason)
 			continue
 		}
 		a.jobState(jid, "validating", "Verifying audio, tags, duration and quality")
