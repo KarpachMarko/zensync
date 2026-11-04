@@ -169,6 +169,58 @@ func TestPlacedLookupConcurrentWorkersShareLibraryBrowse(t *testing.T) {
 	}
 }
 
+func TestPlacedLookupBroadShortTitleRanksWholeLibraryBeforeByteChecks(t *testing.T) {
+	for _, sizeMode := range []string{"current", "stale", "omitted"} {
+		t.Run(sizeMode, func(t *testing.T) {
+			a, rel, data := lookupFixture(t)
+			track := makeTrack(42, "У У У")
+			track.Artist.Name = "nkeeei"
+			track.Album.Title = "ПРИЯТНО ПОЗНАКОМИТЬСЯ"
+			track.Duration = 157
+			songs := make([]Song, 0, 3001)
+			for i := range 3000 {
+				// Even exact-size, same-title decoys must not outrank the
+				// matching artist/album when its indexed size is stale.
+				songs = append(songs, Song{ID: fmt.Sprintf("noise-%04d", i), Title: track.Title, Artist: "Someone else", Size: int64(len(data))})
+			}
+			size := int64(len(data))
+			if sizeMode == "stale" {
+				size += 17
+			} else if sizeMode == "omitted" {
+				size = 0
+			}
+			songs = append(songs, Song{ID: "target", Title: "у у у", Artist: "nkeeei, Uniqe, ARTEM SHILOVETS, Mayot · Коробько Никита Михайлович", Album: track.Album.Title, Duration: 157, Path: "Virtual artist/Virtual album/02 - у у у.flac", Size: size})
+			c, traffic := lookupServer(t, songs, map[string][]byte{"target": data}, func(string, Song) bool { return true }, false)
+			id, report, err := a.findPlacedWithReport(context.Background(), c, rel, mustJSON(track), false)
+			if err != nil || id != "target" || report.limited || report.checked != 1 {
+				t.Fatalf("broad short-title lookup: id=%q report=%+v err=%v", id, report, err)
+			}
+			if traffic.queries[""] != 31 || len(traffic.downloads) != 1 || traffic.downloads["target"] != 1 {
+				t.Fatalf("expected metadata pagination followed by one original check: queries=%v downloads=%v", traffic.queries, traffic.downloads)
+			}
+		})
+	}
+}
+
+func TestPlacedLookupShortTitleUsesArtistQualifiedSearch(t *testing.T) {
+	a, rel, data := lookupFixture(t)
+	track := makeTrack(42, "У У У")
+	track.Artist.Name = "nkeeei"
+	songs := []Song{{ID: "target", Title: "у у у", Artist: "nkeeei", Size: int64(len(data))}}
+	for i := range 300 {
+		songs = append(songs, Song{ID: fmt.Sprint(i), Title: "У меня", Artist: "Someone else"})
+	}
+	c, traffic := lookupServer(t, songs, map[string][]byte{"target": data}, func(query string, song Song) bool {
+		return query == track.Title || query == "nkeeei У У У" && song.ID == "target"
+	}, false)
+	if id, err := a.findPlaced(context.Background(), c, rel, mustJSON(track)); err != nil || id != "target" {
+		t.Fatalf("artist-qualified lookup: %q %v", id, err)
+	}
+	if traffic.queries["nkeeei У У У"] != 1 || traffic.queries[""] != 0 || len(traffic.downloads) != 1 {
+		t.Fatalf("artist query did not avoid broad downloads/browse: %+v", traffic)
+	}
+}
+
 func TestPlacedLookupRejectsDifferentBytesAndReportsDownloadPermissions(t *testing.T) {
 	for _, denied := range []bool{false, true} {
 		t.Run(fmt.Sprint(denied), func(t *testing.T) {
@@ -360,5 +412,55 @@ func TestRealNavidromeAssetVerificationUnicode(t *testing.T) {
 	track.Title = "Provider tags completely unlike the indexed tags"
 	if id, err := a.findPlaced(ctx, c, rel, mustJSON(track)); err != nil || id != expected {
 		t.Fatalf("real metadata fallback: %q %v", id, err)
+	}
+}
+
+func TestRealNavidromeAssetVerificationShortTitle(t *testing.T) {
+	base := os.Getenv("ZENSYNC_TEST_NAV_URL")
+	if base == "" {
+		t.Skip("run scripts/test-navidrome.py")
+	}
+	a, _, _ := lookupFixture(t)
+	a.musicDir = os.Getenv("ZENSYNC_TEST_MUSIC")
+	c := Credentials{URL: base, Username: "navadmin", Password: os.Getenv("ZENSYNC_TEST_NAV_PASSWORD")}
+	track := makeTrack(42, "У У У")
+	track.Artist.Name = "nkeeei"
+	track.Album.Title = "ПРИЯТНО ПОЗНАКОМИТЬСЯ"
+	rel := "nkeeei/ПРИЯТНО ПОЗНАКОМИТЬСЯ/02 - У У У.flac"
+	file := filepath.Join(a.musicDir, rel)
+	if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=duration=2", "-metadata", "title="+track.Title, "-metadata", "artist="+track.Artist.Name, "-metadata", "album="+track.Album.Title, file).CombinedOutput(); err != nil {
+		t.Fatalf("fixture: %s %v", output, err)
+	}
+	defer os.Remove(file)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if _, err := a.nav(ctx, c, "startScan", nil); err != nil {
+		t.Fatal(err)
+	}
+	var expected string
+	for ctx.Err() == nil {
+		songs, err := a.navSearch(ctx, c, "nkeeei У У У", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(songs) == 1 {
+			expected = songs[0].ID
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if expected == "" {
+		t.Fatal("Navidrome did not index short-title fixture")
+	}
+	songs, err := a.navSearch(ctx, c, track.Title, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Navidrome bare short-title search returned %d songs; artist-qualified search returned one", len(songs))
+	if id, err := a.findPlaced(ctx, c, rel, mustJSON(track)); err != nil || id != expected {
+		t.Fatalf("real short-title lookup: %q %v", id, err)
 	}
 }

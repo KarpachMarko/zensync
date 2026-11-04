@@ -71,12 +71,16 @@ func navTitleWords(title string) string {
 	}, title)), " ")
 }
 
-func placedSearchQueries(title string) []string {
-	base, _ := titleCredits(title)
+func placedSearchQueries(t Track) []string {
+	base, _ := titleCredits(t.Title)
 	words := strings.Fields(navTitleWords(base))
+	qualified := ""
+	if artist := strings.TrimSpace(artistNames(t.Artist.Name)[0]); artist != "" {
+		qualified = artist + " " + t.Title
+	}
 	queries := []string{}
 	seen := map[string]bool{}
-	for _, query := range []string{title, strings.Join(words, " "), strings.Join(words[:min(4, len(words))], " "), strings.Join(words[:min(2, len(words))], " ")} {
+	for _, query := range []string{t.Title, qualified, strings.Join(words, " "), strings.Join(words[:min(4, len(words))], " "), strings.Join(words[:min(2, len(words))], " ")} {
 		if query = strings.TrimSpace(query); query != "" && !seen[strings.ToLower(query)] {
 			seen[strings.ToLower(query)] = true
 			queries = append(queries, query)
@@ -108,14 +112,24 @@ func placedCandidateScore(s Song, t Track, rel string, size int64) int {
 	score := 0
 	path := strings.ReplaceAll(s.Path, "\\", "/")
 	if path == rel || strings.HasSuffix(path, "/"+rel) {
-		score += 16
+		score += 128
 	}
 	if s.Size == size {
-		score += 8
+		score += 64
 	}
 	title, candidate := navTitleWords(t.Title), navTitleWords(s.Title)
 	if title != "" && candidate != "" && (strings.HasPrefix(title, candidate) || strings.HasPrefix(candidate, title)) {
-		score += 4
+		score += 8
+		if title == candidate {
+			score += 8
+		}
+		primary := navTitleWords(artistNames(t.Artist.Name)[0])
+		if primary != "" && strings.Contains(" "+navTitleWords(s.Artist)+" ", " "+primary+" ") {
+			score += 64
+		}
+		if album := navTitleWords(t.Album.Title); album != "" && album == navTitleWords(s.Album) {
+			score += 16
+		}
 	}
 	// Older Subsonic responses can omit size. Duration is only a discovery hint;
 	// it can never establish that this is the original file.
@@ -143,8 +157,15 @@ func (a *App) findPlacedWithReport(ctx context.Context, c Credentials, rel, meta
 	checked := map[string]bool{}
 	matches := []string{}
 	verify := func(songs []Song) error {
+		scores := make(map[string]int, len(songs))
+		for _, song := range songs {
+			scores[song.ID] = placedCandidateScore(song, t, rel, info.Size())
+		}
 		sort.SliceStable(songs, func(i, j int) bool {
-			return placedCandidateScore(songs[i], t, rel, info.Size()) > placedCandidateScore(songs[j], t, rel, info.Size())
+			if scores[songs[i].ID] == scores[songs[j].ID] {
+				return songs[i].ID < songs[j].ID
+			}
+			return scores[songs[i].ID] > scores[songs[j].ID]
 		})
 		for _, song := range songs {
 			if song.ID == "" || checked[song.ID] {
@@ -186,25 +207,24 @@ func (a *App) findPlacedWithReport(ctx context.Context, c Credentials, rel, meta
 		}
 		return "", report, nil
 	}
-	for _, query := range placedSearchQueries(t.Title) {
-		for offset := 0; offset < 10000; offset += 100 {
-			var count int
-			songs, err := a.navSearch(ctx, c, query, offset, &count)
-			if err != nil {
-				return result(err)
-			}
+	// Small complete search results keep the common case cheap. Broad results
+	// must not consume the byte-verification budget page by page: the actual
+	// file may be thousands of rows later. Rank them with the full metadata
+	// index instead. Reserve at least 190 checks for that global ranking.
+	byID := map[string]Song{}
+	for _, query := range placedSearchQueries(t) {
+		var count int
+		songs, err := a.navSearch(ctx, c, query, 0, &count)
+		if err != nil {
+			return result(err)
+		}
+		for _, song := range songs {
+			byID[song.ID] = song
+		}
+		if count < 100 && report.checked+len(songs) <= 10 {
 			if err := verify(songs); err != nil || len(matches) > 1 || len(matches) == 1 && !unique {
 				return result(err)
 			}
-			if count < 100 || report.limited {
-				break
-			}
-			if offset+100 == 10000 {
-				report.limited = true
-			}
-		}
-		if report.limited {
-			break
 		}
 	}
 	// search3 is a text search, not a physical-path lookup. A short title made
@@ -215,11 +235,16 @@ func (a *App) findPlacedWithReport(ctx context.Context, c Credentials, rel, meta
 	}
 	report.librarySongs = len(index.songs)
 	report.limited = report.limited || index.limited
-	candidates := []Song{}
 	for _, song := range index.songs {
 		if placedCandidateScore(song, t, rel, info.Size()) > 0 {
-			candidates = append(candidates, song)
+			if _, exists := byID[song.ID]; !exists {
+				byID[song.ID] = song
+			}
 		}
+	}
+	candidates := make([]Song, 0, len(byID))
+	for _, song := range byID {
+		candidates = append(candidates, song)
 	}
 	return result(verify(candidates))
 }
