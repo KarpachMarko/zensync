@@ -5,6 +5,7 @@ import { FieldLabel } from "./forms";
 import { Text } from "./typography";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import {
   FileUpload,
@@ -206,6 +207,33 @@ export function CheckboxField({
         onBlur={field.handleBlur}
       />
       {label}
+    </FieldLabel>
+  );
+}
+
+export function TextareaField({
+  label,
+  ...props
+}: Omit<
+  ComponentProps<typeof Textarea>,
+  "value" | "defaultValue" | "onChange" | "onBlur" | "name"
+> & { label: string }) {
+  const field = useFieldContext<string>();
+  const id = useId();
+  return (
+    <FieldLabel htmlFor={id}>
+      <span id={id + "-label"}>{label}</span>
+      <Textarea
+        {...props}
+        id={id}
+        name={field.name}
+        aria-labelledby={id + "-label"}
+        aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
+        value={field.state.value}
+        onChange={(event) => field.handleChange(event.target.value)}
+        onBlur={field.handleBlur}
+      />
+      <ValidationErrors errors={field.state.meta.errors} />
     </FieldLabel>
   );
 }

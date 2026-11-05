@@ -177,3 +177,10 @@ CREATE TABLE IF NOT EXISTS compatibility_albums (
  id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL UNIQUE
 );
 INSERT OR IGNORE INTO schema_version VALUES(6);
+
+-- Reviewed metadata stays separate from source tags and acquisition identity.
+CREATE TABLE IF NOT EXISTS metadata_edits (
+ song_id TEXT PRIMARY KEY, metadata TEXT NOT NULL,
+ actor TEXT NOT NULL REFERENCES users(id), updated TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO schema_version VALUES(7);
