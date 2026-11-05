@@ -2,7 +2,7 @@ import { PageHeading } from "@/components/typography";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { User } from "@/lib/types";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { DeletionKeys } from "./api-keys";
+import { ApiKeys } from "./api-keys";
 import { Connections } from "./connections";
 import { DownloadSettings } from "./downloads";
 import { MusicProviders } from "./providers";
@@ -28,7 +28,7 @@ export function Settings({
       title: "Quality",
       content: <Quality user={user} reload={reload} />,
     },
-    { value: "api", title: "API keys", content: <DeletionKeys /> },
+    { value: "api", title: "API keys", content: <ApiKeys /> },
     ...(user.role === "admin"
       ? [
           {

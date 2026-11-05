@@ -151,3 +151,15 @@ CREATE TABLE IF NOT EXISTS request_source_history (
 CREATE INDEX IF NOT EXISTS request_source_history_request ON request_source_history(request_id);
 
 CREATE TABLE IF NOT EXISTS provider_tracks (target TEXT PRIMARY KEY, metadata TEXT NOT NULL);
+
+-- One credential store for native and compatibility integrations. Existing keys
+-- retain their original privilege, token hash and identifier.
+CREATE TABLE IF NOT EXISTS api_keys (
+ id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id),
+ token_hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+ scopes TEXT NOT NULL, expires INTEGER, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO api_keys(id,owner,token_hash,label,scopes,created)
+ SELECT id,owner,token_hash,'Deletion key','["deletion:request"]',created FROM deletion_api_keys;
+DROP TABLE deletion_api_keys;
+INSERT OR IGNORE INTO schema_version VALUES(5);

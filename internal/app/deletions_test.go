@@ -267,11 +267,11 @@ func TestDeletionBearerScopeAndRevocation(t *testing.T) {
 	f := newDeletionFixture(t)
 	w := f.member.call("POST", "/api/v2/deletion-api-keys", "{}", "")
 	expect(t, w, 201)
-	var key map[string]string
+	var key APIKey
 	json.Unmarshal(w.Body.Bytes(), &key)
 	bearer := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
-		r.Header.Set("Authorization", "Bearer "+key["token"])
+		r.Header.Set("Authorization", "Bearer "+key.Token)
 		r.Header.Set("Idempotency-Key", "bearer-delete-key")
 		w := httptest.NewRecorder()
 		f.a.Handler().ServeHTTP(w, r)
@@ -282,7 +282,7 @@ func TestDeletionBearerScopeAndRevocation(t *testing.T) {
 	expect(t, bearer("PUT", "/api/v2/users/anything/permissions", `{"directDelete":true}`), 403)
 	expect(t, bearer("POST", "/api/v2/requests/"+rid, `{"decision":"approved"}`), 403)
 	expect(t, f.member.call("PUT", "/api/v2/users/"+f.userID(t, f.member)+"/permissions", `{"directDelete":true}`, ""), 403)
-	expect(t, f.member.call("DELETE", "/api/v2/deletion-api-keys/"+key["id"], "", ""), 200)
+	expect(t, f.member.call("DELETE", "/api/v2/deletion-api-keys/"+key.ID, "", ""), 200)
 	expect(t, bearer("POST", "/api/v2/deletion-requests", `{"songId":"song-1"}`), 401)
 	assertFile(t, f.path, true)
 }

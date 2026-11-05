@@ -105,7 +105,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 4 {
+		if e == nil && version > 5 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -192,7 +192,7 @@ func (a *App) Handler() http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-			a.deletionBearer(w, r)
+			a.apiKeyBearer(w, r)
 			return
 		}
 		if r.Method != "GET" && !sameHostOrigin(r) {
@@ -238,8 +238,8 @@ func (a *App) Handler() http.Handler {
 			}
 			http.SetCookie(w, &http.Cookie{Name: "zensync_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 			send(w, 200, map[string]bool{"ok": true})
-		case (r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/")):
-			a.deletionKeyRoutes(w, r, u)
+		case r.URL.Path == "/api/v2/api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/api-keys/") || r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/"):
+			a.apiKeyRoutes(w, r, u)
 		case r.URL.Path == "/api/v2/deletion-requests" && r.Method == "POST":
 			a.createDeletionRequest(w, r, u)
 		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && strings.HasSuffix(r.URL.Path, "/permissions") && r.Method == "PUT":
