@@ -20,7 +20,15 @@ func env(key, fallback string) string {
 	return fallback
 }
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	var level slog.Level
+	levelErr := level.UnmarshalText([]byte(strings.ToUpper(env("ZENSYNC_LOG_LEVEL", "info"))))
+	if levelErr != nil {
+		level = slog.LevelInfo
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	if levelErr != nil {
+		slog.Warn("Invalid ZENSYNC_LOG_LEVEL; using INFO")
+	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		c := http.Client{Timeout: 3 * time.Second}
 		r, e := c.Get("http://127.0.0.1:8080/readyz")
@@ -33,9 +41,10 @@ func main() {
 		}
 		return
 	}
+	slog.Info("ZenSync starting", "log_level", level.String())
 	data := env("ZENSYNC_DATA_DIR", "./data")
 	if e := os.MkdirAll(data, 0700); e != nil {
-		slog.Error("data directory unavailable")
+		slog.Error("data directory unavailable", "error", e)
 		os.Exit(1)
 	}
 	a, e := app.Open(filepath.Join(data, "zensync.db"))
@@ -43,6 +52,7 @@ func main() {
 		slog.Error("startup failed", "error", e)
 		os.Exit(1)
 	}
+	slog.Info("Database and runtime initialized")
 	defer a.DB.Close()
 	unlock, err := a.AcquireWorkerLock()
 	if err != nil {
@@ -83,10 +93,13 @@ func main() {
 	defer stop()
 	go func() {
 		<-ctx.Done()
+		slog.Info("Shutdown requested")
 		workerStop()
 		c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = server.Shutdown(c)
+		if err := server.Shutdown(c); err != nil {
+			slog.Error("HTTP shutdown failed", "error", err)
+		}
 	}()
 	slog.Info("ZenSync listening", "address", server.Addr)
 	if e = server.ListenAndServe(); e != nil && e != http.ErrServerClosed {
@@ -95,4 +108,5 @@ func main() {
 	}
 	workerStop()
 	<-workerDone
+	slog.Info("ZenSync stopped")
 }

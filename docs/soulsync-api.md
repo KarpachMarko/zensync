@@ -28,6 +28,6 @@ Artist following/watchlist scans are not implemented yet and return an explicit 
 
 ## Diagnostics
 
-Failed API calls emit structured warning logs to the application’s standard output with `request_id`, HTTP method, path, status, reason and elapsed milliseconds. The same ID is returned as `X-Request-Id`. Authorization headers, cookies, query strings and request bodies are excluded; long path identifiers are redacted.
+Every API call, including a successful `/api/v1/system/status`, emits a structured completion log to standard output. Logs include `request_id`, method, path, status, response bytes, elapsed milliseconds and authentication type; authenticated requests also include `user_id` and `api_key_id` (identifiers, never tokens). The same request ID is returned as `X-Request-Id`. Successful requests use INFO, client errors WARN, and server errors ERROR. Authorization headers, cookies, query strings and request/response bodies are excluded; long path identifiers are redacted. See [logging configuration](logging.md) for debug diagnostics.
 
 For Docker, inspect `docker compose logs --tail=100 zensync` after attempting a connection (or `docker logs <container>` if running without Compose). A bad key yields 401, a missing scope or forbidden profile yields 403, and an unsupported compatibility route yields a structured 404/501. CI retains failing Playwright traces and screenshots as the `playwright-failures` artifact.

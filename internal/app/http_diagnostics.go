@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,6 +13,9 @@ type apiResponse struct {
 	status        int
 	reason        string
 	compatibility bool
+	bytes         int64
+	request       *http.Request
+	writeFailed   bool
 }
 
 func (w *apiResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -26,7 +30,10 @@ func (w *apiResponse) Write(data []byte) (int, error) {
 	if w.status == 0 {
 		w.WriteHeader(200)
 	}
-	return w.ResponseWriter.Write(data)
+	n, err := w.ResponseWriter.Write(data)
+	w.bytes += int64(n)
+	w.writeFailed = w.writeFailed || err != nil
+	return n, err
 }
 func (w *apiResponse) apiError(status int, message string) {
 	w.reason = message
@@ -54,18 +61,84 @@ func (w *apiResponse) apiError(status int, message string) {
 	}
 }
 
-// Query strings, credentials, cookies, request bodies are
-// deliberately excluded. ResponseController can still reach the underlying writer.
+// Request metadata contains identifiers only; never credentials or payloads.
+type requestMetadata struct{ id, actor, key, auth string }
+type requestMetadataKey struct{}
+type diagnosticLoggerKey struct{}
+
+func requestLogger(ctx context.Context) *slog.Logger {
+	logger := slog.Default()
+	if contextual, ok := ctx.Value(diagnosticLoggerKey{}).(*slog.Logger); ok {
+		logger = contextual
+	}
+	if meta, ok := ctx.Value(requestMetadataKey{}).(*requestMetadata); ok {
+		logger = logger.With("request_id", meta.id, "auth", meta.auth)
+		if meta.actor != "" {
+			logger = logger.With("user_id", meta.actor)
+		}
+		if meta.key != "" {
+			logger = logger.With("api_key_id", meta.key)
+		}
+	}
+	return logger
+}
+func setRequestActor(r *http.Request, actor, key string) {
+	if meta, ok := r.Context().Value(requestMetadataKey{}).(*requestMetadata); ok {
+		meta.actor = actor
+		meta.key = key
+		meta.auth = "session"
+		if key != "" {
+			meta.auth = "api_key"
+		}
+	}
+}
+func (w *apiResponse) logInternal(err error) {
+	requestLogger(w.request.Context()).Error("database operation failed", "error", err)
+}
+
+// Completion logs cover successful and rejected API calls. Query strings,
+// headers, cookies and request/response bodies are excluded. Health probes are
+// debug-level to keep routine container checks out of the default access log.
 func apiDiagnostics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
-		response := &apiResponse{ResponseWriter: w, compatibility: strings.HasPrefix(r.URL.Path, "/api/v1/")}
-		requestID := id()[:16]
-		w.Header().Set("X-Request-Id", requestID)
-		next.ServeHTTP(response, r)
-		if response.status >= 400 {
-			slog.Warn("API request failed", "request_id", requestID, "method", r.Method, "path", diagnosticPath(r.URL.Path), "status", response.status, "reason", response.reason, "duration_ms", time.Since(started).Milliseconds())
+		meta := &requestMetadata{id: id()[:16], auth: "anonymous"}
+		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			meta.auth = "api_key"
+		} else if _, err := r.Cookie("zensync_session"); err == nil {
+			meta.auth = "session"
 		}
+		r = r.WithContext(context.WithValue(r.Context(), requestMetadataKey{}, meta))
+		response := &apiResponse{ResponseWriter: w, compatibility: strings.HasPrefix(r.URL.Path, "/api/v1/"), request: r}
+		w.Header().Set("X-Request-Id", meta.id)
+		path := diagnosticPath(r.URL.Path)
+		requestLogger(r.Context()).Debug("API request started", "method", r.Method, "path", path)
+		defer func() {
+			panicValue := recover()
+			if panicValue != nil {
+				response.status = 500
+				response.reason = "Unhandled handler panic"
+			}
+			if response.status == 0 {
+				response.status = 200
+			}
+			level := slog.LevelInfo
+			message := "API request completed"
+			if response.status >= 500 {
+				level = slog.LevelError
+				message = "API request failed"
+			} else if response.status >= 400 || response.writeFailed {
+				level = slog.LevelWarn
+				message = "API request failed"
+			} else if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+				level = slog.LevelDebug
+			}
+			requestLogger(r.Context()).Log(r.Context(), level, message, "method", r.Method, "path", path, "status", response.status, "response_bytes", response.bytes, "reason", response.reason, "write_failed", response.writeFailed, "cancelled", r.Context().Err() != nil, "duration_ms", time.Since(started).Milliseconds())
+			if panicValue != nil {
+				panic(panicValue)
+			}
+		}()
+		next.ServeHTTP(response, r)
 	})
 }
 func diagnosticPath(path string) string {

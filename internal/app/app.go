@@ -161,7 +161,11 @@ func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) boo
 	return true
 }
 func (a *App) internal(w http.ResponseWriter, e error) {
-	slog.Error("database operation failed", "error", e)
+	if target, ok := w.(interface{ logInternal(error) }); ok {
+		target.logInternal(e)
+	} else {
+		slog.Error("database operation failed", "error", e)
+	}
 	fail(w, 500, "Unable to complete operation")
 }
 
@@ -230,6 +234,7 @@ func (a *App) Handler() http.Handler {
 			fail(w, 401, "Sign in required")
 			return
 		}
+		setRequestActor(r, u.ID, "")
 		if r.Method != "GET" && r.Header.Get("X-CSRF-Token") != csrf {
 			fail(w, 403, "Invalid CSRF token")
 			return
@@ -331,6 +336,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
+	setRequestActor(r, uid, "")
+	requestLogger(r.Context()).Info("Sign-in succeeded")
 	http.SetCookie(w, &http.Cookie{Name: "zensync_session", Value: token, Path: "/", HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 	send(w, 200, map[string]string{"csrf": csrf})
 }

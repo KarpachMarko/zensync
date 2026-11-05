@@ -119,7 +119,9 @@ func (a *App) deezer(ctx context.Context, path string, out any) error {
 	if e != nil {
 		return errors.New("invalid Deezer request")
 	}
+	started := time.Now()
 	resp, e := a.HTTP.Do(req)
+	logIntegrationRequest(ctx, "deezer", req.Method, req.URL.Path, started, resp, e)
 	if e != nil {
 		return errors.New("Deezer metadata is unavailable; try again later")
 	}

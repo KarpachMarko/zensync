@@ -51,6 +51,7 @@ func (a *App) apiKeyRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 404, "API key not found")
 			return
 		}
+		requestLogger(r.Context()).Info("API key revoked", "revoked_key_id", key)
 		send(w, 200, map[string]bool{"ok": true})
 		return
 	}
@@ -153,17 +154,18 @@ func (a *App) apiKeyRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.internal(w, e)
 		return
 	}
+	requestLogger(r.Context()).Info("API key created", "created_key_id", key.ID, "scopes", key.Scopes, "expires", key.Expires)
 	send(w, 201, key)
 }
 
 func (a *App) apiKeyBearer(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	var u User
-	var scopes, quality string
+	var scopes, quality, keyID string
 	e := a.DB.QueryRow(`SELECT u.id,u.username,u.role,u.direct,u.quality,
- EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=u.id),k.scopes
+ EXISTS(SELECT 1 FROM delete_permissions p WHERE p.user_id=u.id),k.scopes,k.id
  FROM api_keys k JOIN users u ON u.id=k.owner
- WHERE k.token_hash=? AND (k.expires IS NULL OR k.expires>?)`, digest(token), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &quality, &u.DirectDelete, &scopes)
+ WHERE k.token_hash=? AND (k.expires IS NULL OR k.expires>?)`, digest(token), time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Role, &u.Direct, &quality, &u.DirectDelete, &scopes, &keyID)
 	if e == sql.ErrNoRows {
 		fail(w, 401, "Invalid or expired API key")
 		return
@@ -172,6 +174,7 @@ func (a *App) apiKeyBearer(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
+	setRequestActor(r, u.ID, keyID)
 	u.Quality = json.RawMessage(quality)
 	// A key always acts as its owner, including when a compatibility client sends a profile.
 	if profile := r.Header.Get("X-Profile-Id"); profile != "" && profile != u.ID && !(strings.HasPrefix(r.URL.Path, "/api/v1/") && profile == "1") {

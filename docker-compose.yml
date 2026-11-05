@@ -3,6 +3,8 @@ services:
     build: .
     image: zensync:local
     container_name: zensync-webui
+    environment:
+      ZENSYNC_LOG_LEVEL: ${ZENSYNC_LOG_LEVEL:-info}
     ports:
       - "8080:8080"
     volumes:

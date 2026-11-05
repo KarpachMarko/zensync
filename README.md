@@ -29,6 +29,10 @@ See [deployment and first-migration instructions](docs/deployment.md) and the [s
 
 Phase 2 adds followed-artist new-release notifications, without automatic downloads. Public playlist links and extra import formats are outside phase 1. ZenSync is not a playback engine, client gateway or ongoing playlist/favorites editor.
 
+## Logs
+
+Every API request is logged as structured JSON, including successful calls. View logs with `docker compose logs -f zensync`. Set `ZENSYNC_LOG_LEVEL=debug` for upstream request timing and health probes. See [logging and diagnostics](docs/logging.md).
+
 ## Development
 
 Use **pnpm** for frontend dependencies and scripts. See [frontend structure and component conventions](web/README.md).

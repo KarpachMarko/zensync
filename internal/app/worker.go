@@ -18,17 +18,33 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
+		slog.Info("Background worker started")
+		defer slog.Info("Background worker stopped")
+		cleanupErr := filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
 			if e == nil && !d.IsDir() && d.Name() == "d-fi.config.json" {
 				return os.Remove(path)
 			}
 			return nil
 		})
+		if cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+			slog.Warn("Staging cleanup failed", "error", cleanupErr)
+		}
 		// Remote journals are reconciled on retry; never blindly replay an uncertain favorite.
-		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='queued',message='Resuming after restart' WHERE state='running'")
-		_, _ = a.DB.Exec("UPDATE jobs SET state='failed',stage='Interrupted during acquisition. Retry to reconcile staged files and library placement.' WHERE state IN ('downloading','validating','importing')")
-		_, _ = a.DB.Exec("UPDATE jobs SET state='queued',stage='Queued for acquisition' WHERE state='blocked' AND stage='Integration not configured'")
-		_, _ = a.DB.Exec("UPDATE jobs SET state='queued',stage='Queued after restart' WHERE state='checking'")
+		for _, recovery := range []struct{ name, query string }{
+			{"migration_tasks_resumed", "UPDATE migration_tasks SET state='queued',message='Resuming after restart' WHERE state='running'"},
+			{"interrupted_acquisitions", "UPDATE jobs SET state='failed',stage='Interrupted during acquisition. Retry to reconcile staged files and library placement.' WHERE state IN ('downloading','validating','importing')"},
+			{"blocked_acquisitions_resumed", "UPDATE jobs SET state='queued',stage='Queued for acquisition' WHERE state='blocked' AND stage='Integration not configured'"},
+			{"checking_acquisitions_resumed", "UPDATE jobs SET state='queued',stage='Queued after restart' WHERE state='checking'"},
+		} {
+			result, err := a.DB.Exec(recovery.query)
+			if err != nil {
+				slog.Error("Worker recovery failed", "step", recovery.name, "error", err)
+				continue
+			}
+			if count, err := result.RowsAffected(); err == nil && count > 0 {
+				slog.Info("Worker recovery applied", "step", recovery.name, "records", count)
+			}
+		}
 		var work sync.WaitGroup
 		defer work.Wait()
 		maintenanceDone := make(chan struct{}, 1)
@@ -118,6 +134,10 @@ func (a *App) runMigrationTask(ctx context.Context) {
 	if count, err := claim.RowsAffected(); err != nil || count != 1 {
 		return
 	}
+	started := time.Now()
+	logger := slog.With("task_id", tid, "migration_id", mid, "action", action, "user_id", owner)
+	ctx = context.WithValue(ctx, diagnosticLoggerKey{}, logger)
+	logger.Info("Migration task started")
 	if action == "match" {
 		e = a.matchMigration(ctx, owner, mid)
 	} else {
@@ -127,7 +147,11 @@ func (a *App) runMigrationTask(ctx context.Context) {
 		_, _ = a.DB.Exec("UPDATE migration_tasks SET state='cancelled',message='Migration no longer open' WHERE id=?", tid)
 		return
 	}
-	slog.Info("migration task finished", "task_id", tid, "migration_id", mid, "action", action, "success", e == nil)
+	if e != nil {
+		logger.Warn("Migration task failed", "reason", e.Error(), "duration_ms", time.Since(started).Milliseconds())
+	} else {
+		logger.Info("Migration task finished", "duration_ms", time.Since(started).Milliseconds())
+	}
 	state, message := "completed", "Finished"
 	if e != nil {
 		state, message = "failed", e.Error()
@@ -238,6 +262,11 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 }
 func (a *App) executeAcquisition(ctx context.Context, claim *acquisitionClaim) {
 	jid, rid, owner, target, quality, reason, actor, upgrade := claim.jid, claim.rid, claim.owner, claim.target, claim.quality, claim.reason, claim.actor, claim.upgrade
+	started := time.Now()
+	logger := slog.With("job_id", jid, "acquisition_request_id", rid, "user_id", owner)
+	ctx = context.WithValue(ctx, diagnosticLoggerKey{}, logger)
+	logger.Info("Acquisition started")
+	defer func() { logger.Info("Acquisition attempt finished", "duration_ms", time.Since(started).Milliseconds()) }()
 	var e error
 	// A legacy/stale queued claim may outlive a source replacement. Never fetch
 	// the old provider target or fulfill its former source with different audio.
