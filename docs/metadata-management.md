@@ -1,22 +1,30 @@
-# Metadata management (initial implementation)
+# Library metadata and duplicate resolution
 
-Administrators can open **Metadata** in the sidebar, search the shared library, edit a song's title/artist/album, search for covers or lyrics, preview candidates, and explicitly save their selection. Saved records survive reloads. **Restore source metadata** removes the local review record.
+The Library root has **Songs**, **Playlists**, **Artists** and **Albums** views. Select a playlist or album to browse songs. An artist opens their albums and offers **Show all songs**. The view, collection, filter and editor are reflected in the URL; browser history restores collection navigation. Artist song loading visits ten albums per page. Album listing loads 100 albums per page; a filter applies to each loaded page, so continue loading for matches farther into a large catalog.
 
-## Scope
+Playlist browsing uses the signed-in user's linked personal Navidrome account. Other library views use the configured shared account. Members retain the existing deletion-request workflow. Administrators can edit metadata on every shared song row, including search results. Direct deletion retains its existing permission and confirmation flow.
 
-Edits are stored in SQLite separately from source metadata. They do **not** rewrite audio tags, download artwork, create LRC files, rename files, change acquisition matching, or update Navidrome. The Library and duplicate audit continue to use source metadata. Artist and album names can be edited per song; there is no bulk artist/album editor yet. Saved records include the last editing administrator and update time. Restoring source metadata removes selected covers and lyrics too.
+## Compact editor
 
-This is a review workspace, not yet a tag publishing pipeline. A follow-up should add file identity checks, backups, format-specific tag writing, artwork/lyrics sidecars, job recovery, scan verification and a reviewable change summary before applying changes to shared files. Metadata review records are keyed by Navidrome song ID; changing the configured Navidrome server should be accompanied by clearing/reconciling those records.
+**Edit metadata** opens one shared dialog, using TanStack Form and Zod. Details, Artwork and Lyrics have separate tabs. Artist and album fields suggest existing library names, support free text, and offer keyboard navigation. Suggestions share the bounded 50,000-song index and can be incomplete for larger libraries.
 
-## Duplicate candidates
+**Save changes** queues a file-tag update. Fields include title, artist, album, optional album artist, artwork URL, plain lyrics and synced LRC. Synced text takes priority in the embedded lyrics tag; both selected forms remain in the review record. Blank lyrics preserve existing embedded lyrics. Embedded artwork is preserved unless a replacement is selected. New cover embedding supports MP3, FLAC and M4A, with JPEG/PNG images from Cover Art Archive / archive.org. Artwork redirects are checked, image downloads are capped at 20 MiB, and dimensions at 50 megapixels.
 
-The audit uses the existing shared Navidrome song index (cached for 30 seconds), capped at 50,000 songs. A partial scan is explicitly marked. It groups:
+The worker remuxes audio without re-encoding, verifies the encoded audio packet hash, preserves file permissions, atomically replaces the file and requests a Navidrome scan. It supports MP3, FLAC, M4A, OGG, OPUS, WAV and AIFF text-tag updates, subject to the container's supported tag fields. Paths do not change. Navidrome may assign new IDs depending on its persistent-ID configuration; confirm library and playlist membership after the scan. No live Navidrome compatibility benchmark or custom persistent-ID configuration support is claimed.
 
-- Distinct artist IDs with matching normalized names.
-- Distinct album IDs with matching normalized artist and album names.
-- Distinct song IDs with matching normalized artist/title and known durations within two seconds.
+The status panel reports queued/running/completed/failed operations and per-song progress. Completed means file tags were updated and a scan was requested; Navidrome may still be scanning. Refresh the library or duplicate candidates afterward. Failed operations expose their error and offer **Retry update**. Merges may partially complete; retry resumes remaining files. A failed scan request can be retried without rewriting already-completed files. Only one metadata operation can be queued/running at a time.
 
-Normalization ignores case, spaces and punctuation, retaining letters, numbers and Unicode marks. It preserves edition labels such as “live” or “remaster”. It does not do acoustic fingerprinting, transliteration, edit-distance matching or duplicate file hashing. Albums and artists without IDs cannot be compared reliably and are excluded from those groups. Songs with unknown durations are excluded. Duplicate groups are suggestions: editions, compilations and different artists sharing a name are expected false positives. No automatic merging or deletion is performed.
+Recovery files live outside the music library under `metadata-backups/{job-id}-{song-id-digest}/original.{extension}`. The `metadata_files` journal records the source path and before/after hashes, allowing recovery from interruption between replacement and progress recording. An externally changed file is never replayed over on retry. Keep these backups; automatic cleanup and a one-click rollback UI are not implemented. To restore manually, stop ZenSync, verify the journal and backup checksum, restore the original file to the recorded path, then rescan Navidrome. The previous review-record DELETE API only discards the stored review; it does not undo published tags and is blocked while an operation is active.
+
+## Utilities: Review duplicates
+
+**Utilities → Review duplicates** finds distinct library IDs with matching normalized names. Artist candidates compare artist names; album candidates compare artist and album names. Song candidates additionally require known durations within two seconds. Normalization ignores case, spaces and punctuation while retaining Unicode letters/numbers/marks and version labels. It is a candidate heuristic, without fingerprints or fuzzy matching.
+
+- Extra songs can be deleted through the existing shared-library deletion and recovery workflow.
+- For albums, choose the destination under **Keep album**, then merge another candidate into it. A confirmation shows source, destination and affected song count. Source tracks retain their track titles and artists; album name, album artist and destination grouping tags (including MusicBrainz release ID, version and date) are copied so Navidrome can regroup the album.
+- For artists, choose **Keep artist**, then merge another candidate into it. Source songs adopt the canonical artist/album-artist credits and destination artist identifiers, preserving distinct album titles. Multi-valued artist fields are updated as well.
+
+The audit uses the shared Navidrome index cached for 30 seconds and capped at 50,000 songs. Partial scans are labeled and cannot be used for merges. No merge or deletion happens without explicit user action. Editions and artists sharing a name can be legitimate; inspect candidates before confirming. Custom Navidrome album-grouping rules (for example folder-based IDs) may still require configuration or manual reconciliation. Operations are bound to the Navidrome server URL configured when queued and stop if it changes.
 
 ## Provider research and decisions
 
@@ -32,17 +40,21 @@ Reviewed November 5, 2026. There is no universal best lyrics provider: catalog c
 
 API access does not itself establish redistribution rights for artwork or lyrics. The implementation retains source references and makes no claim that content is freely licensed. Provider quality and permitted uses should be assessed before a public distribution or publishing workflow.
 
-## API and operational behavior
+## API and provider behavior
 
-All endpoints require an administrator session. Writes require the normal same-origin and CSRF protections.
+All `/metadata/*` endpoints require an administrator session. Writes use the existing same-origin and CSRF protections.
 
-- `GET /api/v2/metadata/duplicates`: candidate groups, scanned song count, partial-scan flag.
-- `GET /api/v2/metadata/songs/{id}`: source defaults or saved edit, plus `saved` flag.
-- `PUT /api/v2/metadata/songs/{id}`: replace the reviewed metadata record after verifying the source song exists. Fields: `title`, `artist`, `album`, `coverUrl`, `lyrics`, `syncedLyrics`, `lyricsSource`. Title and artist are required. Cover URLs must use HTTPS.
-- `DELETE /api/v2/metadata/songs/{id}`: discard the reviewed record.
-- `GET /api/v2/metadata/lyrics?q=…`: LRCLIB results (up to 20), including plain and synced lyrics.
-- `GET /api/v2/metadata/covers?q=…`: front cover candidates with release source URLs.
+- `GET /api/v2/library/browse?view=playlists|artists|albums&id=…&q=…&offset=…`: collections or songs; artists support `contents=songs`. Authenticated library access is unchanged.
+- `GET /api/v2/metadata/suggestions?field=artist|album&q=…`: up to 20 existing names, plus a partial-index flag.
+- `GET /api/v2/metadata/duplicates`: candidate groups with member song details/counts, scanned count and partial-scan flag.
+- `GET /api/v2/metadata/songs/{id}`: source defaults or saved edit, with source duration and saved flag.
+- `PUT /api/v2/metadata/songs/{id}`: validate and save the review record, queue tag updates; returns `202` and job ID.
+- `POST /api/v2/metadata/merge`: `{kind: "artist"|"album", source, target}`. Returns `202`, job ID and affected song count.
+- `GET /api/v2/metadata/jobs`: latest 20 metadata operations and progress.
+- `POST /api/v2/metadata/jobs`: `{id}` retries a failed operation if no metadata operation is active.
+- `GET /api/v2/metadata/lyrics?q=…`: up to 20 LRCLIB results.
+- `GET /api/v2/metadata/covers?q=…`: front artwork for the first five MusicBrainz releases with available art.
 
-Provider requests have fixed server-side destinations, a 25-second search deadline, bounded JSON reads, an identifying User-Agent, a shared sequential queue paced at one second, and cooldowns for 429/503 responses including Retry-After seconds or dates. The browser caches provider searches for five minutes and does not automatically retry failed searches. Artwork previews load directly from the selected provider URL. Search requests only run after explicit submission; their query text is sent to the named external service.
+Provider requests have fixed starting destinations, a 25-second search deadline, bounded JSON reads, client identification, a sequential one-second queue, and cooldowns for 429/503 respecting Retry-After seconds or dates. Metadata requests follow at most five HTTPS redirects restricted to MusicBrainz, LRCLIB, Cover Art Archive and archive.org hosts. This fixes Cover Art Archive's HTTP 307 responses without changing the shared client's redirect policy. Provider searches use React Query caching and no automatic error retries. Queries are sent only after explicit search submission. Artwork previews load from the provider URL.
 
-Tests cover normalization, distinct identities, duration/version separation, permissions/CSRF, persistence/reset, URL validation, provider decoding/query escaping, cancellation and cooldown handling, plus browser flows for edits, lyrics selection, duplicate review, provider errors and member access.
+Regression coverage includes native library browsing, suggestions, duplicate identities/durations, permissions/CSRF, queuing, actual file tags and audio preservation, MP3/FLAC/M4A cover embedding, album/artist grouping tags, restart recovery, changed-file protection, redirect handling and provider cooldowns. Playwright covers all library paths, compact/mobile editing, autocomplete, provider selection, deletion, merge confirmation and member access.

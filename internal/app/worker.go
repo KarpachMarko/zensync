@@ -82,6 +82,7 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 					go func() {
 						defer work.Done()
 						a.runDeletion(ctx)
+						a.runMetadata(ctx)
 						a.runMigrationTask(ctx)
 						a.refreshAlbums()
 						maintenanceDone <- struct{}{}

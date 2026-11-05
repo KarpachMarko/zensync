@@ -12,7 +12,7 @@ Search also includes an experimental lossless.am provider for individual FLAC so
 
 See [deployment and first-migration instructions](docs/deployment.md) and the [song deletion API](docs/deletion-api.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
 
-Administrators can review possible duplicate artists, albums and songs, save metadata corrections, and search LRCLIB lyrics and MusicBrainz/Cover Art Archive artwork in the new **Metadata** workspace. This initial version stores review records in ZenSync; file tags and Navidrome metadata are unchanged. See [metadata management and provider research](docs/metadata-management.md).
+The Library supports song, playlist, artist and album browsing, with compact metadata editing and existing deletion actions on song rows. Administrators can search LRCLIB lyrics and MusicBrainz/Cover Art Archive artwork, publish file-tag updates with recovery copies, and resolve duplicate artists, albums and songs from **Utilities → Review duplicates**. See [library metadata, duplicate resolution and provider research](docs/metadata-management.md).
 
 ## Phase 1
 

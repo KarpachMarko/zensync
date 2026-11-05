@@ -109,7 +109,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 7 {
+		if e == nil && version > 8 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}

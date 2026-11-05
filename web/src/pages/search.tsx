@@ -1,3 +1,4 @@
+import { MetadataJobs } from "@/components/music/metadata-jobs";
 import { RecordingTools } from "@/components/imports/recording-tools";
 import { PreviewPlayer } from "@/components/imports/preview-player";
 import { useRecordingPreview } from "@/hooks/use-recording-preview";
@@ -27,7 +28,13 @@ type FoundAlbum = {
   artist: { name: string };
   trackCount?: number;
 };
-export function Search({ canDelete }: { canDelete: boolean }) {
+export function Search({
+  canDelete,
+  canEdit = false,
+}: {
+  canDelete: boolean;
+  canEdit?: boolean;
+}) {
   const preview = useRecordingPreview();
   const [urlQuery, setUrlQuery] = useQueryState(
     "q",
@@ -145,6 +152,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
   return (
     <>
       <PageHeading tabIndex={-1}>Search</PageHeading>
+      {canEdit && <MetadataJobs />}
       <Text>
         Find music in your library, on Deezer or on lossless.am. Deezer also
         supports song and album links.
@@ -216,6 +224,7 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                   key={song.id}
                   song={song}
                   canDelete={canDelete}
+                  canEdit={canEdit}
                 />
               ))}
               {moreLibrary && (
@@ -355,7 +364,15 @@ export function Search({ canDelete }: { canDelete: boolean }) {
                         {t.artist.name} / {t.album.title} / {time(t.duration)} /{" "}
                         {t.provider === "lossless" ? "lossless.am" : "Deezer"}
                       </Caption>
-                      <RecordingTools track={t} playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(t)} onPreview={preview.toggle} />
+                      <RecordingTools
+                        track={t}
+                        playing={
+                          preview.playing &&
+                          !!preview.active &&
+                          trackTarget(preview.active) === trackTarget(t)
+                        }
+                        onPreview={preview.toggle}
+                      />
                     </div>
                     <Button
                       disabled={

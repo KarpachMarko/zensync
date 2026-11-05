@@ -1,4 +1,5 @@
 import {
+  AutocompleteField,
   CheckboxField,
   FileField,
   TextField,
@@ -10,6 +11,12 @@ import { fieldContext, formContext } from "./form-context";
 export const { useAppForm } = createFormHook({
   fieldContext,
   formContext,
-  fieldComponents: { TextField, FileField, CheckboxField, TextareaField },
+  fieldComponents: {
+    AutocompleteField,
+    TextField,
+    FileField,
+    CheckboxField,
+    TextareaField,
+  },
   formComponents: {},
 });

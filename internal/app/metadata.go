@@ -19,6 +19,7 @@ import (
 
 // Metadata edits are a review layer, independent of acquisition and file identity.
 type MetadataEdit struct {
+	AlbumArtist  string `json:"albumArtist,omitempty"`
 	Title        string `json:"title"`
 	Artist       string `json:"artist"`
 	Album        string `json:"album"`
@@ -30,6 +31,8 @@ type MetadataEdit struct {
 type duplicateMember struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	Song  *Song  `json:"song,omitempty"`
+	Count int    `json:"count,omitempty"`
 }
 type duplicateGroup struct {
 	Kind    string            `json:"kind"`
@@ -55,10 +58,18 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 		if buckets[k] == nil {
 			buckets[k] = map[string]duplicateMember{}
 		}
-		buckets[k][id] = duplicateMember{id, label}
+		buckets[k][id] = duplicateMember{ID: id, Label: label}
 	}
 	tracks := map[string][]Song{}
+	counts := map[string]int{}
+	songByID := map[string]Song{}
 	for _, s := range songs {
+		counts["artist:"+s.ArtistID]++
+		counts["album:"+s.AlbumID]++
+		counts["song:"+s.ID]++
+		copy := s
+		copy.Path = ""
+		songByID[s.ID] = copy
 		add("artist", metadataKey(s.Artist), s.ArtistID, s.Artist)
 		if metadataKey(s.Artist) != "" && metadataKey(s.Album) != "" {
 			add("album", metadataKey(s.Artist)+":"+metadataKey(s.Album), s.AlbumID, s.Artist+" — "+s.Album)
@@ -103,6 +114,14 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 		if kind == "song" {
 			reason = "Matching artist and title, duration within two seconds; editions may differ"
 		}
+		for i := range members {
+			members[i].Count = counts[kind+":"+members[i].ID]
+			if kind == "song" {
+				copy := songByID[members[i].ID]
+				members[i].Song = &copy
+			}
+		}
+
 		groups = append(groups, duplicateGroup{kind, reason, members})
 	}
 	return groups
@@ -114,6 +133,19 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v2/metadata")
+	if path == "/merge" && r.Method == "POST" {
+		a.mergeMetadata(w, r, u)
+		return
+	}
+	if path == "/jobs" {
+		a.metadataJobRoutes(w, r)
+		return
+	}
+	if path == "/suggestions" && r.Method == "GET" {
+		a.metadataSuggestions(w, r)
+		return
+	}
+
 	if path == "/duplicates" && r.Method == "GET" {
 		c, e := a.shared()
 		if e != nil {
@@ -148,6 +180,15 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			return
 		}
 		if r.Method == "DELETE" {
+			var busy int
+			if e := a.DB.QueryRow("SELECT count(*) FROM metadata_jobs WHERE state IN ('queued','running')").Scan(&busy); e != nil {
+				a.internal(w, e)
+				return
+			}
+			if busy > 0 {
+				fail(w, 409, "Wait for the pending tag operation before discarding its review record")
+				return
+			}
 			if _, e := a.DB.Exec("DELETE FROM metadata_edits WHERE song_id=?", sid); e != nil {
 				a.internal(w, e)
 				return
@@ -170,7 +211,7 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			return
 		}
 		if r.Method == "GET" {
-			edit := MetadataEdit{Title: remote.Song.Title, Artist: remote.Song.Artist, Album: remote.Song.Album}
+			edit := MetadataEdit{Title: remote.Song.Title, Artist: remote.Song.Artist, Album: remote.Song.Album, AlbumArtist: remote.Song.AlbumArtist}
 			var raw string
 			e = a.DB.QueryRow("SELECT metadata FROM metadata_edits WHERE song_id=?", sid).Scan(&raw)
 			saved := e == nil
@@ -194,7 +235,7 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		edit.Title = strings.TrimSpace(edit.Title)
 		edit.Artist = strings.TrimSpace(edit.Artist)
 		edit.Album = strings.TrimSpace(edit.Album)
-		if edit.Title == "" || edit.Artist == "" || len(edit.Title) > 500 || len(edit.Artist) > 500 || len(edit.Album) > 500 || len(edit.Lyrics) > 200000 || len(edit.SyncedLyrics) > 200000 || len(edit.LyricsSource) > 500 || len(edit.CoverURL) > 2000 {
+		if edit.Title == "" || edit.Artist == "" || len(edit.Title) > 500 || len(edit.Artist) > 500 || len(edit.Album) > 500 || len(edit.AlbumArtist) > 500 || len(edit.Lyrics) > 200000 || len(edit.SyncedLyrics) > 200000 || len(edit.LyricsSource) > 500 || len(edit.CoverURL) > 2000 {
 			fail(w, 400, "Invalid metadata or lyrics too long")
 			return
 		}
@@ -205,12 +246,12 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 				return
 			}
 		}
-		_, e = a.DB.Exec("INSERT INTO metadata_edits(song_id,metadata,actor) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE SET metadata=excluded.metadata,actor=excluded.actor,updated=CURRENT_TIMESTAMP", sid, mustJSON(edit), u.ID)
+		jid, e := a.queueMetadata([]metadataChange{{Song: remote.Song, Edit: edit}}, u)
 		if e != nil {
-			a.internal(w, e)
+			fail(w, 409, e.Error())
 			return
 		}
-		send(w, 200, map[string]bool{"ok": true})
+		send(w, 202, map[string]string{"id": jid})
 		return
 	}
 	fail(w, 404, "Endpoint unavailable")
@@ -237,7 +278,16 @@ func (a *App) metadataJSON(ctx context.Context, endpoint string, out any) error 
 	}
 	req.Header.Set("User-Agent", "ZenSync/0.1 (https://github.com/KarpachMarko/zensync)")
 	req.Header.Set("Accept", "application/json")
-	res, e := a.HTTP.Do(req)
+	client := *a.HTTP
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		host := next.URL.Hostname()
+		allowed := host == "musicbrainz.org" || host == "coverartarchive.org" || host == "lrclib.net" || host == "archive.org" || strings.HasSuffix(host, ".archive.org")
+		if len(via) >= 5 || next.URL.Scheme != "https" || next.URL.User != nil || (next.URL.Port() != "" && next.URL.Port() != "443") || !allowed {
+			return errors.New("Metadata provider returned an unsafe redirect")
+		}
+		return nil
+	}
+	res, e := client.Do(req)
 	if e != nil {
 		return errors.New("Metadata provider is unavailable")
 	}
@@ -350,4 +400,40 @@ func (a *App) metadataCovers(w http.ResponseWriter, r *http.Request, q string) {
 		}
 	}
 	send(w, 200, rows)
+}
+
+func (a *App) metadataSuggestions(w http.ResponseWriter, r *http.Request) {
+	c, e := a.shared()
+	if e != nil {
+		fail(w, 400, e.Error())
+		return
+	}
+	index, e := a.indexedNavSongs(r.Context(), c)
+	if e != nil {
+		fail(w, 502, e.Error())
+		return
+	}
+	field := r.URL.Query().Get("field")
+	if field != "artist" && field != "album" {
+		fail(w, 400, "Choose artist or album suggestions")
+		return
+	}
+	q := strings.ToLower(r.URL.Query().Get("q"))
+	seen := map[string]bool{}
+	values := []string{}
+	for _, song := range index.songs {
+		value := song.Artist
+		if field == "album" {
+			value = song.Album
+		}
+		if value != "" && !seen[value] && strings.Contains(strings.ToLower(value), q) {
+			seen[value] = true
+			values = append(values, value)
+		}
+	}
+	sort.Strings(values)
+	if len(values) > 20 {
+		values = values[:20]
+	}
+	send(w, 200, map[string]any{"values": values, "limited": index.limited})
 }

@@ -1,8 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
-
-async function fixture(page: Page, admin = true, coversAvailable = false) {
-  let saved = false;
-  let edit = {
+import type { MetadataEdit, DuplicateGroup } from "../src/lib/metadata";
+const song = {
+  id: "one",
+  title: "Song",
+  artist: "Band",
+  album: "Album",
+  duration: 120,
+};
+async function fixture(page: Page, admin = true) {
+  let saved: MetadataEdit = {
     title: "Song",
     artist: "Band",
     album: "Album",
@@ -11,12 +17,15 @@ async function fixture(page: Page, admin = true, coversAvailable = false) {
     syncedLyrics: "",
     lyricsSource: "",
   };
+  let puts = 0;
+  const merges: unknown[] = [];
+  const deletes: unknown[] = [];
   await page.route("**/api/v2/**", async (route) => {
     const url = new URL(route.request().url());
-    const path = url.pathname;
-    if (path === "/api/v2/setup")
+    const p = url.pathname;
+    if (p === "/api/v2/setup")
       return route.fulfill({ json: { required: false } });
-    if (path === "/api/v2/session")
+    if (p === "/api/v2/session")
       return route.fulfill({
         json: {
           user: {
@@ -28,52 +37,97 @@ async function fixture(page: Page, admin = true, coversAvailable = false) {
           csrf: "csrf",
         },
       });
-    if (path === "/api/v2/library")
+    if (p === "/api/v2/library")
+      return route.fulfill({ json: { songs: [song], nextOffset: -1 } });
+    if (p === "/api/v2/library/browse") {
+      const view = url.searchParams.get("view"),
+        id = url.searchParams.get("id");
+      const collection =
+        view === "artists" && !id
+          ? { id: "artist", name: "Band", songCount: 1 }
+          : view === "playlists"
+            ? { id: "playlist", name: "Favorites", songCount: 1 }
+            : { id: "album", name: "Album", artist: "Band", songCount: 1 };
+      const showSongs =
+        !!id &&
+        (view !== "artists" || url.searchParams.get("contents") === "songs");
       return route.fulfill({
         json: {
-          songs: [
-            {
-              id: "one",
-              title: "Song",
-              artist: "Band",
-              album: "Album",
-              duration: 120,
-            },
-          ],
+          collections: showSongs ? [] : [collection],
+          songs: showSongs ? [song] : [],
+          name: id
+            ? view === "artists"
+              ? "Band"
+              : view === "playlists"
+                ? "Favorites"
+                : "Album"
+            : "",
           nextOffset: -1,
         },
       });
-    if (path === "/api/v2/metadata/songs/one") {
-      if (route.request().method() === "PUT") {
-        edit = route.request().postDataJSON() as typeof edit;
-        saved = true;
-        return route.fulfill({ json: { ok: true } });
-      }
-      if (route.request().method() === "DELETE") {
-        saved = false;
-        edit = { ...edit, title: "Song", lyrics: "", syncedLyrics: "" };
-        return route.fulfill({ json: { ok: true } });
-      }
-      return route.fulfill({ json: { edit, saved } });
     }
-    if (path === "/api/v2/metadata/duplicates")
+    if (p === "/api/v2/metadata/jobs") return route.fulfill({ json: [] });
+    if (p === "/api/v2/metadata/suggestions")
       return route.fulfill({
         json: {
-          scanned: 50000,
-          limited: true,
-          groups: [
-            {
-              kind: "song",
-              reason: "Matching artist and title, duration within two seconds",
-              members: [
-                { id: "one", label: "Band — Song" },
-                { id: "two", label: "Band — Song (another file)" },
-              ],
-            },
-          ],
+          values:
+            url.searchParams.get("field") === "artist"
+              ? ["Band", "Canonical band"]
+              : ["Album", "Canonical album"],
+          limited: false,
         },
       });
-    if (path === "/api/v2/metadata/lyrics")
+    if (p === "/api/v2/metadata/songs/one") {
+      if (route.request().method() === "PUT") {
+        saved = route.request().postDataJSON() as MetadataEdit;
+        puts++;
+        return route.fulfill({ status: 202, json: { id: "job" } });
+      }
+      return route.fulfill({
+        json: { edit: saved, saved: puts > 0, duration: 120 },
+      });
+    }
+    if (p === "/api/v2/deletion-requests") {
+      deletes.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id: "deletion" } });
+    }
+    if (p === "/api/v2/metadata/merge") {
+      merges.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 202,
+        json: { id: "merge-job", songs: 3 },
+      });
+    }
+    if (p === "/api/v2/metadata/duplicates") {
+      const groups: DuplicateGroup[] = [
+        {
+          kind: "song",
+          reason: "Matching title and duration",
+          members: [
+            { id: "one", label: "Song", song },
+            { id: "two", label: "Song", song: { ...song, id: "two" } },
+          ],
+        },
+        ...(["album", "artist"] as const).map((kind) => ({
+          kind,
+          reason: "Matching normalized names",
+          members: [
+            {
+              id: `${kind}-one`,
+              label: kind === "album" ? "Band — Album" : "Band",
+              count: 3,
+            },
+            {
+              id: `${kind}-two`,
+              label: kind === "album" ? "Band — Album!" : "band",
+              count: 3,
+            },
+          ],
+        })),
+      ];
+      return route.fulfill({ json: { scanned: 6, limited: false, groups } });
+    }
+    if (p === "/api/v2/metadata/lyrics")
       return route.fulfill({
         json: [
           {
@@ -82,13 +136,12 @@ async function fixture(page: Page, admin = true, coversAvailable = false) {
             trackName: "Song",
             albumName: "Album",
             duration: 120,
-            plainLyrics: "Test words",
-            syncedLyrics: "[00:01]Test words",
-            instrumental: false,
+            plainLyrics: "Words",
+            syncedLyrics: "[00:01]Words",
           },
         ],
       });
-    if (path === "/api/v2/metadata/covers" && coversAvailable)
+    if (p === "/api/v2/metadata/covers")
       return route.fulfill({
         json: [
           {
@@ -100,108 +153,185 @@ async function fixture(page: Page, admin = true, coversAvailable = false) {
           },
         ],
       });
-    if (path === "/api/v2/metadata/covers")
-      return route.fulfill({
-        status: 502,
-        json: { error: "Metadata provider is busy; try again later" },
-      });
     return route.fulfill({ json: [] });
   });
-  return { saved: () => saved, edit: () => edit };
-}
-
-test("metadata edits, lyrics selection, persistence and reset", async ({
-  page,
-}) => {
-  const state = await fixture(page);
-  await page.goto("/metadata");
-  await page.getByRole("button", { name: "Edit Song", exact: true }).click();
-  await expect(page).toHaveURL(/song=one/);
-  await page.getByLabel("Title", { exact: true }).fill("Corrected song");
-  await page.getByLabel("Search lyrics", { exact: true }).fill("Band Song");
-  await page.getByLabel("Search lyrics", { exact: true }).press("Enter");
-  await page.getByText("Preview lyrics", { exact: true }).click();
-  await expect(
-    page.getByText("[00:01]Test words", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Use lyrics", exact: true }).click();
-  await expect(page.getByLabel("Plain lyrics", { exact: true })).toHaveValue(
-    "Test words",
-  );
-  expect(state.saved()).toBe(false);
-  await page
-    .getByRole("button", { name: "Save metadata", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Restore source metadata", exact: true }),
-  ).toBeVisible();
-  expect(state.edit().title).toBe("Corrected song");
-  expect(state.edit().lyricsSource).toBe("LRCLIB:123");
-  await page.reload();
-  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(
-    "Corrected song",
-  );
-  await page.getByLabel("Search covers", { exact: true }).press("Enter");
-  await expect(page.getByRole("alert")).toContainText("provider is busy");
-  await page
-    .getByRole("button", { name: "Restore source metadata", exact: true })
-    .click();
-  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Song");
-});
-
-test("duplicate candidates disclose partial scans and support review", async ({
-  page,
-}) => {
-  await fixture(page);
-  await page.goto("/metadata?tab=duplicates");
-  await expect(page.getByText(/Partial scan/)).toBeVisible();
-  await expect(
-    page.getByText(/Nothing is merged or deleted automatically/),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Review", exact: true })
-    .first()
-    .click();
-  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Song");
-});
-
-test("members cannot open metadata management", async ({ page }) => {
-  await fixture(page, false);
-  await page.goto("/metadata");
-  await expect(page.getByRole("alert")).toContainText(
-    "requires an administrator",
-  );
-  await expect(
-    page.getByRole("link", { name: "Metadata", exact: true }),
-  ).toHaveCount(0);
-});
-
-test("cover candidates fill the editor and persist after explicit save", async ({
-  page,
-}) => {
-  const state = await fixture(page, true, true);
   await page.route("https://archive.org/cover.jpg", (route) =>
     route.fulfill({
-      status: 200,
       contentType: "image/svg+xml",
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" />',
     }),
   );
-  await page.goto("/metadata?song=one");
-  await page.getByLabel("Search covers", { exact: true }).press("Enter");
+  return { edit: () => saved, puts: () => puts, merges, deletes };
+}
+test("library root switches all four views and every song list offers edit and delete", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/library");
+  await expect(page.getByRole("tab")).toHaveCount(4);
   await expect(
-    page.getByRole("link", { name: "Release details" }),
-  ).toHaveAttribute("href", "https://musicbrainz.org/release/release");
-  await page.getByRole("button", { name: "Use cover", exact: true }).click();
-  await expect(page.getByLabel("Cover URL", { exact: true })).toHaveValue(
-    "https://archive.org/cover.jpg",
-  );
-  expect(state.saved()).toBe(false);
+    page.getByRole("button", { name: "Edit metadata: Song", exact: true }),
+  ).toBeVisible();
+  for (const view of ["Playlists", "Albums", "Artists"]) {
+    await page.getByRole("tab", { name: view, exact: true }).click();
+    if (view === "Playlists")
+      await page.getByRole("link", { name: "Favorites", exact: true }).click();
+    else {
+      await page
+        .getByRole("link", {
+          name: view === "Artists" ? "Band" : "Album — Band",
+          exact: true,
+        })
+        .click();
+      if (view === "Artists")
+        await page
+          .getByRole("link", { name: "Album — Band", exact: true })
+          .click();
+    }
+    await expect(
+      page.getByRole("button", { name: "Edit metadata: Song", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Delete song: Song", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Edit metadata: Song", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+});
+test("compact TanStack editor supports keyboard autocomplete and provider selection before save", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  await page.goto("/library");
   await page
-    .getByRole("button", { name: "Save metadata", exact: true })
+    .getByRole("button", { name: "Edit metadata: Song", exact: true })
+    .click();
+  await page.getByLabel("Title", { exact: true }).fill("Corrected");
+  await page.getByRole("combobox", { name: "Artist", exact: true }).fill("Can");
+  await page
+    .getByRole("option", { name: "Canonical band", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Restore source metadata" }),
+    page.getByRole("combobox", { name: "Artist", exact: true }),
+  ).toHaveValue("Canonical band");
+  await page.getByRole("combobox", { name: "Album", exact: true }).fill("Can");
+  await page
+    .getByRole("combobox", { name: "Album", exact: true })
+    .press("ArrowDown");
+  await page
+    .getByRole("combobox", { name: "Album", exact: true })
+    .press("ArrowDown");
+  await page
+    .getByRole("combobox", { name: "Album", exact: true })
+    .press("Enter");
+  await expect(
+    page.getByRole("combobox", { name: "Album", exact: true }),
+  ).toHaveValue("Canonical album");
+  await page.getByRole("tab", { name: "Lyrics", exact: true }).click();
+  await page.getByLabel("Search lyrics", { exact: true }).press("Enter");
+  await page.getByRole("button", { name: "Use lyrics", exact: true }).click();
+  await expect(page.getByLabel("Plain lyrics", { exact: true })).toHaveValue(
+    "Words",
+  );
+  await page.getByRole("tab", { name: "Artwork", exact: true }).click();
+  await page.getByLabel("Search covers", { exact: true }).press("Enter");
+  await page.getByRole("button", { name: "Use cover", exact: true }).click();
+  expect(state.puts()).toBe(0);
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(state.edit()).toMatchObject({
+    title: "Corrected",
+    artist: "Canonical band",
+    album: "Canonical album",
+    lyricsSource: "LRCLIB:123",
+    coverUrl: "https://archive.org/cover.jpg",
+  });
+});
+test("utilities resolve duplicate songs and confirm album and artist merges", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  await page.goto("/utilities");
+  await page
+    .getByRole("button", { name: "Review duplicates", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Delete song: Song", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete song", exact: true })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(state.deletes).toEqual([{ songId: "one" }]);
+  for (const kind of ["album", "artist"]) {
+    await page
+      .getByRole("button", { name: `Merge into selected ${kind}`, exact: true })
+      .click();
+    expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
+    await page
+      .getByRole("button", { name: "Confirm merge", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  expect(state.merges).toEqual([
+    { kind: "album", source: "album-two", target: "album-one" },
+    { kind: "artist", source: "artist-two", target: "artist-one" },
+  ]);
+});
+test("members retain deletion requests but cannot edit metadata or use utilities", async ({
+  page,
+}) => {
+  await fixture(page, false);
+  await page.goto("/library");
+  await expect(
+    page.getByRole("button", { name: /Edit metadata:/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Request deletion: Song", exact: true }),
   ).toBeVisible();
-  expect(state.edit().coverUrl).toBe("https://archive.org/cover.jpg");
+  await expect(
+    page.getByRole("link", { name: "Utilities", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/utilities");
+  await expect(page.getByRole("alert")).toContainText(
+    "require an administrator",
+  );
+});
+
+test("artist songs and compact editor work on mobile", async ({ page }) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/library/artists?collection=artist");
+  await page
+    .getByRole("button", { name: "Show all songs", exact: true })
+    .click();
+  await expect(page).toHaveURL(/contents=songs/);
+  await page
+    .getByRole("button", { name: "Edit metadata: Song", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations().map((animation) => animation.finished),
+    );
+  });
+  await page.screenshot({
+    path: "/tmp/zensync-compact-metadata-editor.png",
+    animations: "disabled",
+  });
+  const box = await dialog.boundingBox();
+  expect(box?.width).toBeLessThanOrEqual(390);
+  expect(box?.height).toBeLessThan(360);
+  await page.getByLabel("Title", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
 });

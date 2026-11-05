@@ -1,3 +1,7 @@
+import { Autocomplete } from "./ui/autocomplete";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useFieldContext } from "@/hooks/form-context";
 import { cn } from "@/lib/utils";
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
@@ -95,7 +99,10 @@ export function FileField({
   accept,
   onFileValidate,
   description,
-}: Pick<ComponentProps<typeof FileUpload>, "accept" | "disabled" | "onFileValidate"> & {
+}: Pick<
+  ComponentProps<typeof FileUpload>,
+  "accept" | "disabled" | "onFileValidate"
+> & {
   label: string;
   description?: string;
 }) {
@@ -106,7 +113,9 @@ export function FileField({
   const file = field.state.value;
   return (
     <div className="mb-[18px] flex flex-col gap-[7px]">
-      <span id={id + "-label"} className="text-sm">{label}</span>
+      <span id={id + "-label"} className="text-sm">
+        {label}
+      </span>
       <FileUpload
         label={label}
         name={field.name}
@@ -127,16 +136,23 @@ export function FileField({
         {!file && (
           <FileUploadDropzone
             aria-label="Drop file here"
-            aria-describedby={rejection || invalid ? id + "-error" : id + "-help"}
+            aria-describedby={
+              rejection || invalid ? id + "-error" : id + "-help"
+            }
             className="gap-3 border-border py-7 text-center data-dragging:border-primary data-dragging:bg-accent"
           >
-            <UploadIcon className="size-6 text-muted-foreground" aria-hidden="true" />
+            <UploadIcon
+              className="size-6 text-muted-foreground"
+              aria-hidden="true"
+            />
             <span className="text-sm">Drag and drop your file here</span>
             <span id={id + "-help"} className="text-xs text-muted-foreground">
               {description ?? "Choose one file"}
             </span>
             <FileUploadTrigger asChild>
-              <Button variant="outline" type="button">Choose file</Button>
+              <Button variant="outline" type="button">
+                Choose file
+              </Button>
             </FileUploadTrigger>
           </FileUploadDropzone>
         )}
@@ -155,7 +171,9 @@ export function FileField({
                 {file.name}
               </AttachmentTitle>
               <AttachmentDescription id={id + "-metadata"} aria-live="polite">
-                {file.name.split(".").pop()?.toUpperCase()} · {formatFileSize(file.size)} · {disabled ? "Uploading…" : "Ready to import"}
+                {file.name.split(".").pop()?.toUpperCase()} ·{" "}
+                {formatFileSize(file.size)} ·{" "}
+                {disabled ? "Uploading…" : "Ready to import"}
               </AttachmentDescription>
             </AttachmentContent>
             <AttachmentActions className="pr-2">
@@ -213,15 +231,16 @@ export function CheckboxField({
 
 export function TextareaField({
   label,
+  labelClassName,
   ...props
 }: Omit<
   ComponentProps<typeof Textarea>,
   "value" | "defaultValue" | "onChange" | "onBlur" | "name"
-> & { label: string }) {
+> & { label: string; labelClassName?: string }) {
   const field = useFieldContext<string>();
   const id = useId();
   return (
-    <FieldLabel htmlFor={id}>
+    <FieldLabel htmlFor={id} className={labelClassName}>
       <span id={id + "-label"}>{label}</span>
       <Textarea
         {...props}
@@ -234,6 +253,50 @@ export function TextareaField({
         onBlur={field.handleBlur}
       />
       <ValidationErrors errors={field.state.meta.errors} />
+    </FieldLabel>
+  );
+}
+
+export function AutocompleteField({
+  label,
+  fieldName,
+}: {
+  label: string;
+  fieldName: "artist" | "album";
+}) {
+  const field = useFieldContext<string>();
+  const id = useId();
+  const query = useDebouncedValue(field.state.value, 200);
+  const suggestions = useQuery({
+    queryKey: ["api", "/metadata/suggestions", fieldName, query],
+    queryFn: ({ signal }) =>
+      api<{ values: string[]; limited: boolean }>(
+        `/metadata/suggestions?field=${fieldName}&q=${encodeURIComponent(query)}`,
+        "GET",
+        undefined,
+        undefined,
+        signal,
+      ),
+    staleTime: 30000,
+  });
+  return (
+    <FieldLabel htmlFor={id} className="m-0 gap-1 text-xs">
+      <span id={id + "-label"}>{label}</span>
+      <Autocomplete
+        id={id}
+        aria-labelledby={id + "-label"}
+        className="h-8 min-h-8 py-1 text-sm"
+        value={field.state.value}
+        onValueChange={field.handleChange}
+        onBlur={field.handleBlur}
+        options={suggestions.data?.values ?? []}
+      />
+      <ValidationErrors errors={field.state.meta.errors} />
+      {suggestions.error && (
+        <span className="text-xs text-muted-foreground">
+          Suggestions unavailable; type a name.
+        </span>
+      )}
     </FieldLabel>
   );
 }

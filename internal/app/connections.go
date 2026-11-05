@@ -115,6 +115,7 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 type Song struct {
+	AlbumArtist string  `json:"albumArtist"`
 	ArtistID    string  `json:"artistId"`
 	AlbumID     string  `json:"albumId"`
 	ID          string  `json:"id"`
@@ -129,21 +130,46 @@ type Song struct {
 	Size        int64   `json:"size"`
 }
 type RemotePlaylist struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Owner   string `json:"owner"`
-	Comment string `json:"comment"`
-	Public  bool   `json:"public"`
-	Entries []Song `json:"entry"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Owner     string `json:"owner"`
+	Comment   string `json:"comment"`
+	Public    bool   `json:"public"`
+	Entries   []Song `json:"entry"`
+	SongCount int    `json:"songCount"`
+}
+type navAlbum struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SongCount int    `json:"songCount"`
+	Songs     []Song `json:"song"`
 }
 type NavResponse struct {
+	Artists struct {
+		Index []struct {
+			Artists []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				AlbumCount int    `json:"albumCount"`
+			} `json:"artist"`
+		} `json:"index"`
+	} `json:"artists"`
+	Artist struct {
+		Name   string     `json:"name"`
+		Albums []navAlbum `json:"album"`
+	} `json:"artist"`
+	Album navAlbum `json:"album"`
+
 	AlbumList struct {
 		Albums []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Year     int    `json:"year"`
-			CoverArt string `json:"coverArt"`
-			Created  string `json:"created"`
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Artist    string `json:"artist"`
+			SongCount int    `json:"songCount"`
+			Year      int    `json:"year"`
+			CoverArt  string `json:"coverArt"`
+			Created   string `json:"created"`
 		} `json:"album"`
 	} `json:"albumList2"`
 	Type          string `json:"type"`

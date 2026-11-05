@@ -100,11 +100,9 @@ for (const directDelete of [true, false]) {
     await expect(
       page.getByRole("button", { name: action, exact: true }),
     ).toBeVisible();
-    await page
-      .locator("main")
-      .getByLabel("Search music", { exact: true })
-      .fill("Owned recording");
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const globalSearch = page.getByRole("complementary").getByLabel("Search music", { exact: true });
+    await globalSearch.fill("Owned recording");
+    await globalSearch.press("Enter");
     await expect(page).toHaveURL(/search\?q=Owned(?:%20|\+)recording/);
     const existing = page.getByRole("region", {
       name: "Existing library",

@@ -26,8 +26,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Brand } from "./content";
 
 const navigation = [
-  { to: "/library/songs", label: "Library", icon: "library" },
-  { to: "/metadata", label: "Metadata", icon: "settings" },
+  { to: "/library", label: "Library", icon: "library" },
+  { to: "/utilities", label: "Utilities", icon: "settings" },
   { to: "/search", label: "Search", icon: "search" },
   { to: "/imports", label: "Imports", icon: "imports" },
   { to: "/requests", label: "Requests", icon: "requests" },
@@ -111,7 +111,7 @@ export function WorkspaceSidebar({
               <SidebarMenu>
                 {navigation
                   .filter(
-                    (item) => item.to !== "/metadata" || user.role === "admin",
+                    (item) => item.to !== "/utilities" || user.role === "admin",
                   )
                   .map(({ to, label, icon }) => (
                     <SidebarMenuItem key={to}>

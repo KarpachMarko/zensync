@@ -61,6 +61,8 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 		a.connectionRoutes(w, r, u)
 	case path == "/api/v2/search" && r.Method == "GET":
 		a.search(w, r)
+	case path == "/api/v2/library/browse" && r.Method == "GET":
+		a.browseLibrary(w, r, u)
 	case path == "/api/v2/library" && r.Method == "GET":
 		a.library(w, r)
 	case path == "/api/v2/imports" && r.Method == "GET":

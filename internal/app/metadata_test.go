@@ -64,8 +64,16 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 	body := `{"title":"Edited","artist":"Band","album":"Album","lyrics":"Words","lyricsSource":"LRCLIB:123"}`
 	expect(t, member.call("PUT", path, body, ""), 403)
 	longEdit := MetadataEdit{Title: "Edited", Artist: "Band", Album: "Album", Lyrics: strings.Repeat("words ", 4000)}
-	expect(t, admin.call("PUT", path, mustJSON(longEdit), ""), 200)
-	expect(t, admin.call("PUT", path, body, ""), 200)
+	expect(t, admin.call("PUT", path, mustJSON(longEdit), ""), 202)
+	expect(t, admin.call("DELETE", path, "", ""), 409)
+	expect(t, admin.call("PUT", path, body, ""), 409)
+	if _, e = a.DB.Exec("UPDATE metadata_jobs SET state='failed'"); e != nil {
+		t.Fatal(e)
+	}
+	expect(t, admin.call("PUT", path, body, ""), 202)
+	if _, e = a.DB.Exec("UPDATE metadata_jobs SET state='failed'"); e != nil {
+		t.Fatal(e)
+	}
 	got := admin.call("GET", path, "", "")
 	expect(t, got, 200)
 	if !strings.Contains(got.Body.String(), `"title":"Edited"`) || !strings.Contains(got.Body.String(), `"saved":true`) {

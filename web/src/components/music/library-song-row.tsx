@@ -1,3 +1,4 @@
+import { parseAsString, useQueryState } from "nuqs";
 import { Actions, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
 import { Caption, Text } from "@/components/typography";
@@ -10,10 +11,13 @@ import { DeletionDialog } from "./deletion-dialog";
 export function LibrarySongRow({
   song,
   canDelete,
+  canEdit = false,
 }: {
   song: LibrarySong;
   canDelete: boolean;
+  canEdit?: boolean;
 }) {
+  const [, setEditSong] = useQueryState("editSong", parseAsString);
   const { api } = useApiMutation();
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -43,6 +47,16 @@ export function LibrarySongRow({
           </Caption>
         </div>
         <Actions>
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={`Edit metadata: ${song.title}`}
+              onClick={() => void setEditSong(song.id)}
+            >
+              Edit metadata
+            </Button>
+          )}
           <Button
             variant="outline"
             type="button"
