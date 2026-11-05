@@ -1,3 +1,4 @@
+import { Metadata } from "@/pages/metadata";
 import { AppShell } from "@/components/layout/app-shell";
 import { AuthLayout } from "@/components/layout/content";
 import { Text } from "@/components/typography";
@@ -36,6 +37,10 @@ export function App() {
     <AppShell user={user} onSignOut={signOut} onError={setError}>
       {error && <Text role="alert">{error}</Text>}
       <Routes>
+        <Route
+          path="/metadata"
+          element={<Metadata admin={user.role === "admin"} />}
+        />
         <Route path="/requests" element={<Requests user={user} />} />
         <Route
           path="/activity"

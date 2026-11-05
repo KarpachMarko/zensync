@@ -115,6 +115,8 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 type Song struct {
+	ArtistID    string  `json:"artistId"`
+	AlbumID     string  `json:"albumId"`
 	ID          string  `json:"id"`
 	Title       string  `json:"title"`
 	Artist      string  `json:"artist"`

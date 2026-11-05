@@ -24,6 +24,8 @@ import (
 var schema string
 
 type App struct {
+	metadataMu     sync.Mutex
+	metadataNext   time.Time
 	compatMu       sync.Mutex
 	started        time.Time
 	losslessAuthMu sync.Mutex
@@ -107,7 +109,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 6 {
+		if e == nil && version > 7 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -243,6 +245,8 @@ func (a *App) Handler() http.Handler {
 			return
 		}
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/v2/metadata/"):
+			a.metadataRoutes(w, r, u)
 		case r.URL.Path == "/api/v2/session" && r.Method == "GET":
 			send(w, 200, map[string]any{"user": u, "csrf": csrf})
 		case r.URL.Path == "/api/v2/session" && r.Method == "DELETE":
