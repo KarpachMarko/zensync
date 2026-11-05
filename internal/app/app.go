@@ -24,6 +24,8 @@ import (
 var schema string
 
 type App struct {
+	compatMu       sync.Mutex
+	started        time.Time
 	losslessAuthMu sync.Mutex
 	transferMu     sync.Mutex
 	transfers      map[string]TransferProgress
@@ -105,7 +107,7 @@ func Open(path string) (*App, error) {
 	if _, e = tx.Exec(schema); e == nil {
 		var version int
 		e = tx.QueryRow("SELECT max(version) FROM schema_version").Scan(&version)
-		if e == nil && version > 4 {
+		if e == nil && version > 6 {
 			e = errors.New("database schema is newer than this application")
 		}
 	}
@@ -118,7 +120,7 @@ func Open(path string) (*App, error) {
 		db.Close()
 		return nil, e
 	}
-	a := &App{DB: db, HTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}, deezerURL: "https://api.deezer.com", metadataInterval: 250 * time.Millisecond}
+	a := &App{started: time.Now(), DB: db, HTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}, deezerURL: "https://api.deezer.com", metadataInterval: 250 * time.Millisecond}
 	if e = a.initRuntime(path); e != nil {
 		db.Close()
 		return nil, e
@@ -139,6 +141,10 @@ func send(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func fail(w http.ResponseWriter, status int, msg string) {
+	if target, ok := w.(interface{ apiError(int, string) }); ok {
+		target.apiError(status, msg)
+		return
+	}
 	send(w, status, map[string]string{"error": msg})
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -155,7 +161,11 @@ func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) boo
 	return true
 }
 func (a *App) internal(w http.ResponseWriter, e error) {
-	slog.Error("database operation failed", "error", e)
+	if target, ok := w.(interface{ logInternal(error) }); ok {
+		target.logInternal(e)
+	} else {
+		slog.Error("database operation failed", "error", e)
+	}
 	fail(w, 500, "Unable to complete operation")
 }
 
@@ -176,7 +186,7 @@ func secureRequest(r *http.Request) bool {
 }
 
 func (a *App) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return apiDiagnostics(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.Path == "/healthz" {
@@ -191,8 +201,12 @@ func (a *App) Handler() http.Handler {
 			}
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") && !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			fail(w, 401, "A Bearer API key is required")
+			return
+		}
 		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-			a.deletionBearer(w, r)
+			a.apiKeyBearer(w, r)
 			return
 		}
 		if r.Method != "GET" && !sameHostOrigin(r) {
@@ -220,6 +234,7 @@ func (a *App) Handler() http.Handler {
 			fail(w, 401, "Sign in required")
 			return
 		}
+		setRequestActor(r, u.ID, "")
 		if r.Method != "GET" && r.Header.Get("X-CSRF-Token") != csrf {
 			fail(w, 403, "Invalid CSRF token")
 			return
@@ -238,8 +253,8 @@ func (a *App) Handler() http.Handler {
 			}
 			http.SetCookie(w, &http.Cookie{Name: "zensync_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 			send(w, 200, map[string]bool{"ok": true})
-		case (r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/")):
-			a.deletionKeyRoutes(w, r, u)
+		case r.URL.Path == "/api/v2/api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/api-keys/") || r.URL.Path == "/api/v2/deletion-api-keys" || strings.HasPrefix(r.URL.Path, "/api/v2/deletion-api-keys/"):
+			a.apiKeyRoutes(w, r, u)
 		case r.URL.Path == "/api/v2/deletion-requests" && r.Method == "POST":
 			a.createDeletionRequest(w, r, u)
 		case strings.HasPrefix(r.URL.Path, "/api/v2/users/") && strings.HasSuffix(r.URL.Path, "/permissions") && r.Method == "PUT":
@@ -267,7 +282,7 @@ func (a *App) Handler() http.Handler {
 		default:
 			fail(w, 404, "Endpoint unavailable")
 		}
-	})
+	}))
 }
 
 func (a *App) authenticate(r *http.Request) (User, string, error) {
@@ -321,6 +336,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
+	setRequestActor(r, uid, "")
+	requestLogger(r.Context()).Info("Sign-in succeeded")
 	http.SetCookie(w, &http.Cookie{Name: "zensync_session", Value: token, Path: "/", HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 	send(w, 200, map[string]string{"csrf": csrf})
 }

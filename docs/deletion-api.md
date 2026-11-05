@@ -1,6 +1,6 @@
 # Song deletion requests
 
-The database upgrades automatically to schema version 3 on startup; older ZenSync binaries will reject this database. Back up the database and data directory before upgrading.
+The database upgrades automatically to schema version 6 on startup; older ZenSync binaries will reject this database. Back up the database and data directory before upgrading.
 
 All signed-in users can request removal of a song from the shared library. Administrators and members with the separate **Allow deleting music without approval** grant receive automatic approval. Direct acquisition permission does not grant deletion permission. Administrators grant/revoke deletion permission in Settings → Users; members cannot approve requests or change grants. Other users' requests appear in the administrator's Requests page. Owners can withdraw their own pending requests; administrators approve or decline them there.
 
@@ -10,7 +10,7 @@ ZenSync verifies the original audio against Navidrome and snapshots its path and
 
 ## External client authentication
 
-Create a key in **Settings → API keys**. Send `Authorization: Bearer <token>` over HTTPS (or your trusted local connection). The key is shown once, stored only as a hash, belongs to its creator, and can be revoked immediately. It authorizes submitting deletion requests and polling their own status, including when its owner is an administrator. It cannot approve requests, administer users, download music, or access other users' requests. Permission checks use the owner's current deletion grant.
+Create a key in **Settings → API keys**. Send `Authorization: Bearer <token>` over HTTPS (or your trusted local connection). The key is shown once, stored only as a hash, belongs to its creator, and can be revoked immediately. Select the `deletion:request` scope to submit deletion requests and poll their own status, including when the owner is an administrator. The same key can request downloads or read music when you select those additional scopes. It cannot approve requests, administer users, or access other users' requests. Permission checks use the owner's current deletion grant.
 
 A client such as Wavio needs to implement these calls; its existing wishlist removal is unrelated to file deletion. These are native ZenSync `/api/v2` endpoints, not the SoulSync compatibility API. Bearer calls have no cookie, Origin or CSRF requirement. Cross-origin browser CORS support is not enabled; native clients and server integrations can call directly.
 
@@ -44,16 +44,14 @@ Returns HTTP 201 with `{"id":"<request ID>"}`. Repeating the same owner/key/song
 
 ## Session API for administration
 
-The existing `/api/v2/session` login establishes an HttpOnly session cookie and returns a CSRF token. Mutating session calls require a matching `Origin` and `X-CSRF-Token` header. These endpoints reject deletion Bearer keys:
+The existing `/api/v2/session` login establishes an HttpOnly session cookie and returns a CSRF token. Mutating session calls require a matching `Origin` and `X-CSRF-Token` header. Administration requires a browser session. A unified API key with `requests:read` can also list its owner’s requests:
 
 - `GET /api/v2/requests`: own requests, or all requests for admins. Deletions have `kind: "delete"`, `target: "navidrome:song:<id>"`, and `state`/`detail` after approval.
 - `POST /api/v2/requests/<id>`: `{"decision":"approved","reason":""}` or `declined` with a required reason (admin only); `withdrawn` (pending request owner only).
 - `PUT /api/v2/users/<user ID>/permissions`: `{"directDelete":true}` (admin only). Set false to revoke. This does not change acquisition permission.
 - `POST /api/v2/users`: optional `directDelete` boolean when creating a member.
 - `POST /api/v2/tasks/<job ID>`: retry a failed task (owner/admin); automatic deletion permission is rechecked before file removal.
-- `GET /api/v2/deletion-api-keys`: list your key IDs and creation times.
-- `POST /api/v2/deletion-api-keys`: create a key; returns `id`, one-time `token`, and `scope: "deletion:request"`. Maximum 10 keys per account.
-- `DELETE /api/v2/deletion-api-keys/<key ID>`: revoke your key.
+- Manage unified keys through `/api/v2/api-keys`; select `deletion:request` alongside any other needed scopes. See [API keys](api-keys.md). The former `/deletion-api-keys` routes remain aliases over the same keys. Existing keys keep their tokens and deletion-only access.
 
 ## Removal and recovery
 

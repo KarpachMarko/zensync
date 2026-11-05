@@ -794,7 +794,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
       }),
   ).not.toBeChecked();
   await page.goto("/settings/api");
-  await page.getByRole("button", { name: "Create deletion API key" }).click();
+  await page.getByLabel("Label", { exact: true }).fill("Migration test app");
+  await page
+    .getByRole("checkbox", { name: "Request song deletion and read its status" })
+    .check();
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
   await expect(
     page.getByLabel("Copy this key now. It is shown only once."),
   ).toHaveValue(/^[0-9a-f]{64}$/);
@@ -802,9 +806,11 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
   await expect(
     page.getByLabel("Copy this key now. It is shown only once."),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Revoke Migration test app", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Revoke", exact: true }),
+    page.getByRole("button", { name: "Revoke Migration test app", exact: true }),
   ).toHaveCount(0);
   expect(errors).toEqual([]);
 });

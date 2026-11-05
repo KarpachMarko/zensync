@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/mail"
@@ -122,12 +121,9 @@ func (p losslessProvider) do(ctx context.Context, method, path string, body []by
 	}
 	started := time.Now()
 	resp, err := client.Do(req)
+	logIntegrationRequest(ctx, "lossless", method, req.URL.Path, started, resp, err)
 	if err != nil {
-		slog.Warn("Lossless.am connection failed", "method", method, "endpoint", req.URL.Path, "duration_ms", time.Since(started).Milliseconds())
 		return nil, errors.New("Lossless.am connection failed")
-	}
-	if resp.StatusCode >= 300 {
-		slog.Warn("Lossless.am request rejected", "method", method, "endpoint", req.URL.Path, "status", resp.StatusCode, "duration_ms", time.Since(started).Milliseconds())
 	}
 	return resp, nil
 }

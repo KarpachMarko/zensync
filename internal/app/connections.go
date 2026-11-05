@@ -135,6 +135,15 @@ type RemotePlaylist struct {
 	Entries []Song `json:"entry"`
 }
 type NavResponse struct {
+	AlbumList struct {
+		Albums []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Year     int    `json:"year"`
+			CoverArt string `json:"coverArt"`
+			Created  string `json:"created"`
+		} `json:"album"`
+	} `json:"albumList2"`
 	Type          string `json:"type"`
 	Status        string `json:"status"`
 	Version       string `json:"version"`
@@ -184,7 +193,9 @@ func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params
 		copy.Timeout = 3 * time.Minute
 		client = &copy
 	}
+	started := time.Now()
 	resp, e := client.Do(req)
+	logIntegrationRequest(ctx, "navidrome", req.Method, req.URL.Path, started, resp, e)
 	if e != nil {
 		return nil, errors.New("Navidrome connection failed; check URL and connectivity")
 	}
@@ -204,6 +215,7 @@ func (a *App) nav(ctx context.Context, c Credentials, endpoint string, params ur
 		Response NavResponse `json:"subsonic-response"`
 	}
 	if e = json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&envelope); e != nil {
+		requestLogger(ctx).Warn("Integration response invalid", "service", "navidrome", "endpoint", endpoint)
 		return out, errors.New("invalid Navidrome response")
 	}
 	out = envelope.Response
@@ -212,6 +224,7 @@ func (a *App) nav(ctx context.Context, c Credentials, endpoint string, params ur
 		if out.Error != nil {
 			code = out.Error.Code
 		}
+		requestLogger(ctx).Warn("Integration operation rejected", "service", "navidrome", "endpoint", endpoint, "code", code)
 		return out, fmt.Errorf("Navidrome rejected %s (code %d); verify account permissions", endpoint, code)
 	}
 	return out, nil
