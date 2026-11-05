@@ -174,13 +174,17 @@ func (a *App) apiKeyBearer(w http.ResponseWriter, r *http.Request) {
 	}
 	u.Quality = json.RawMessage(quality)
 	// A key always acts as its owner, including when a compatibility client sends a profile.
-	if profile := r.Header.Get("X-Profile-Id"); profile != "" && profile != u.ID {
+	if profile := r.Header.Get("X-Profile-Id"); profile != "" && profile != u.ID && !(strings.HasPrefix(r.URL.Path, "/api/v1/") && profile == "1") {
 		fail(w, 403, "Profile does not belong to this API key")
 		return
 	}
 	var allowed []string
 	if e = json.Unmarshal([]byte(scopes), &allowed); e != nil {
 		a.internal(w, e)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		a.soulSyncRoutes(w, r, u, allowed)
 		return
 	}
 	path := r.URL.Path

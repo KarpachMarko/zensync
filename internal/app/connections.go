@@ -135,6 +135,15 @@ type RemotePlaylist struct {
 	Entries []Song `json:"entry"`
 }
 type NavResponse struct {
+	AlbumList struct {
+		Albums []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Year     int    `json:"year"`
+			CoverArt string `json:"coverArt"`
+			Created  string `json:"created"`
+		} `json:"album"`
+	} `json:"albumList2"`
 	Type          string `json:"type"`
 	Status        string `json:"status"`
 	Version       string `json:"version"`

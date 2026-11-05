@@ -41,6 +41,7 @@ export function ApiKeys() {
     <div className="max-w-[780px]">
       <SectionHeading>API keys</SectionHeading>
       <Text>Give each app one key with the scopes it needs. Download and deletion requests follow your current account permissions and approval rules.</Text>
+      <Text className="text-sm">For Wavio, select the SoulSync integration and enter your ZenSync server URL and this key. Keep the default profile ID (1). The default scopes cover connecting, searching, and requesting downloads.</Text>
       {result.error && <Text role="alert">{result.error.message}</Text>}
       {token && (
         <FieldLabel>

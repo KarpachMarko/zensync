@@ -163,3 +163,17 @@ INSERT OR IGNORE INTO api_keys(id,owner,token_hash,label,scopes,created)
  SELECT id,owner,token_hash,'Deletion key','["deletion:request"]',created FROM deletion_api_keys;
 DROP TABLE deletion_api_keys;
 INSERT OR IGNORE INTO schema_version VALUES(5);
+
+CREATE TABLE IF NOT EXISTS compatibility_wishlist (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL REFERENCES users(id),
+ target TEXT NOT NULL, track_data TEXT NOT NULL, request_id TEXT REFERENCES requests(id),
+ created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(owner,target)
+);
+CREATE TABLE IF NOT EXISTS compatibility_downloads (
+ request_id TEXT PRIMARY KEY REFERENCES requests(id), owner TEXT NOT NULL REFERENCES users(id),
+ track_data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS compatibility_albums (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL UNIQUE
+);
+INSERT OR IGNORE INTO schema_version VALUES(6);

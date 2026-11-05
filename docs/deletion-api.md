@@ -1,6 +1,6 @@
 # Song deletion requests
 
-The database upgrades automatically to schema version 5 on startup; older ZenSync binaries will reject this database. Back up the database and data directory before upgrading.
+The database upgrades automatically to schema version 6 on startup; older ZenSync binaries will reject this database. Back up the database and data directory before upgrading.
 
 All signed-in users can request removal of a song from the shared library. Administrators and members with the separate **Allow deleting music without approval** grant receive automatic approval. Direct acquisition permission does not grant deletion permission. Administrators grant/revoke deletion permission in Settings → Users; members cannot approve requests or change grants. Other users' requests appear in the administrator's Requests page. Owners can withdraw their own pending requests; administrators approve or decline them there.
 

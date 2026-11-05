@@ -20,6 +20,6 @@ Send `Authorization: Bearer <token>` to use a key. Bearer requests need no brows
 
 A single key may have all these scopes. Deletion is a native ZenSync extension; it does not need a second credential. See [deletion API](deletion-api.md) for request bodies and idempotency requirements.
 
-SoulSync compatibility remains a separate adapter over these services, as described in [the compatibility assessment](assessment.md). This change establishes shared, user-bound Bearer credentials; it does not add `/api/v1` SoulSync endpoints or claim full compatibility. `X-Profile-Id`, when provided, must match the key owner’s ZenSync user ID; another profile is rejected rather than falling back to an administrator. Native apps can use `/api/v2` scopes for additional functionality.
+Wavio can use the [SoulSync compatibility API](soulsync-api.md) under `/api/v1` with the same key. Its default `X-Profile-Id: 1` means the default profile within the key owner’s account. Other profile values must match the owner’s ZenSync user ID; another user is always rejected. Native `/api/v2` requests require the actual owner ID when a profile header is sent. Native apps can use additional `/api/v2` functionality with the same credential.
 
 Existing deletion keys migrate automatically, retaining their identifier, token hash, creation time and deletion-only scope, with label “Deletion key” and no expiration. The former `/api/v2/deletion-api-keys` management routes are aliases over the unified store; legacy creation with `{}` still creates a deletion-scoped key.

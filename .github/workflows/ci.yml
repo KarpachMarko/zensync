@@ -25,6 +25,14 @@ jobs:
       - run: pnpm --dir web run build
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: pnpm --dir web run test:e2e
+      - name: Upload browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failures
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - run: docker build -t zensync:test -t zensync:migration-test .
       - run: docker pull deluan/navidrome:0.64.2
       - run: python3 scripts/test-navidrome.py
