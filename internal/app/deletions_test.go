@@ -313,3 +313,66 @@ func TestDeletionDirectGrantExecutesWithoutApproval(t *testing.T) {
 		t.Fatal(state)
 	}
 }
+
+func TestSongPathResolutionWithDuplicateCopies(t *testing.T) {
+	for _, scenario := range []struct {
+		name, reported, exactData string
+		wantExact, wantError      bool
+	}{
+		{"exact real path", "exact", "original audio", true, false},
+		{"exact path byte mismatch", "exact", "different audio", false, true},
+		{"different mounts remain ambiguous", "/other-container/Artist/Album/song.mp3", "original audio", false, true},
+		{"missing exact path must not fall back", "exact", "missing", false, true},
+		{"different mounts unique copy", "/other-container/Artist/Album/song.mp3", "unique", true, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			a, err := Open(filepath.Join(t.TempDir(), "db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.DB.Close()
+			a.musicDir = t.TempDir()
+			for _, rel := range []string{"Artist/Album/song.mp3", "Album/song.mp3", "song.mp3"} {
+				if scenario.exactData == "unique" && rel != "Artist/Album/song.mp3" {
+					continue
+				}
+				if (scenario.exactData == "different audio" || scenario.exactData == "missing") && rel == "Album/song.mp3" {
+					continue
+				}
+				if scenario.exactData == "missing" && rel == "Artist/Album/song.mp3" {
+					continue
+				}
+				path := filepath.Join(a.musicDir, rel)
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				data := "original audio"
+				if rel == "Artist/Album/song.mp3" && scenario.exactData != "unique" {
+					data = scenario.exactData
+				}
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "audio/mpeg")
+				w.Write([]byte("original audio"))
+			}))
+			defer server.Close()
+			reported := scenario.reported
+			if reported == "exact" {
+				reported = filepath.Join(a.musicDir, "Artist/Album/song.mp3")
+			}
+			got, _, err := a.deletionPath(context.Background(), Credentials{URL: server.URL}, Song{ID: "song", Path: reported})
+			if err != nil && strings.Contains(err.Error(), "deletion") {
+				t.Fatal("Shared path lookup must not describe metadata updates as deletion")
+			}
+			if scenario.wantError && err == nil {
+				t.Fatalf("Must not choose an arbitrary duplicate: %s", got)
+			}
+			if scenario.wantExact && (err != nil || got != "Artist/Album/song.mp3") {
+				t.Fatalf("Exact real path should win: %q %v", got, err)
+			}
+		})
+	}
+}

@@ -640,3 +640,73 @@ func TestRealNavidromeScreenshotReview(t *testing.T) {
 	}
 	t.Fatal("Screenshot fixtures were not indexed")
 }
+
+func TestMetadataMergeUpdatesExactCopyOnly(t *testing.T) {
+	a, admin, songs := metadataLibraryFixture(t)
+	original := filepath.Join(a.musicDir, songs["two"].Path)
+	data, err := os.ReadFile(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"Artist/Album/two.flac", "Album/two.flac"} {
+		path := filepath.Join(a.musicDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Report an exact Navidrome path while retaining the fixture's original
+	// download endpoint. All three local candidates initially have equal bytes.
+	transport := a.HTTP.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	a.HTTP.Transport = metadataTransport(func(req *http.Request) (*http.Response, error) {
+		response, err := transport.RoundTrip(req)
+		if err != nil || !strings.HasSuffix(req.URL.Path, "/getSong.view") {
+			return response, err
+		}
+		var remote struct {
+			Response NavResponse `json:"subsonic-response"`
+		}
+		err = json.NewDecoder(response.Body).Decode(&remote)
+		response.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		rel := remote.Response.Song.Path
+		if remote.Response.Song.ID == "two" {
+			rel = "Artist/Album/two.flac"
+		}
+		remote.Response.Song.Path = filepath.Join(a.musicDir, rel)
+		raw, err := json.Marshal(remote)
+		if err != nil {
+			return nil, err
+		}
+		response.Body = io.NopCloser(bytes.NewReader(raw))
+		response.ContentLength = int64(len(raw))
+		return response, nil
+	})
+	expect(t, admin.call("POST", "/api/v2/metadata/merge", `{"kind":"album","source":"album-two","target":"album-one"}`, ""), 202)
+	a.runMetadata(context.Background())
+	var state, message string
+	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+	if state != "completed" {
+		t.Fatalf("%s: %s", state, message)
+	}
+	for _, rel := range []string{"two.flac", "Album/two.flac"} {
+		unchanged, err := os.ReadFile(filepath.Join(a.musicDir, rel))
+		if err != nil || !bytes.Equal(unchanged, data) {
+			t.Fatalf("Another copy was changed: %s %v", rel, err)
+		}
+	}
+	p, err := a.probeUpload(filepath.Join(a.musicDir, "Artist/Album/two.flac"), "flac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadTags(p)["album"] != "Album" {
+		t.Fatal("Exact copy was not updated")
+	}
+}

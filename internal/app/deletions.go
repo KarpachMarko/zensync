@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -186,39 +188,74 @@ func (a *App) deletionPath(ctx context.Context, c Credentials, s Song) (string, 
 		}
 		p = p[i+1:]
 	}
-	found, checksum := "", ""
-	for rel := range candidates {
+	verify := func(rel string) (string, bool, error) {
 		if a.checkMusicParents(rel) != nil {
-			continue
+			return "", false, nil
 		}
-		info, e := os.Lstat(filepath.Join(a.musicDir, rel))
-		if e != nil || !info.Mode().IsRegular() {
-			continue
+		path := filepath.Join(a.musicDir, rel)
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", false, nil
 		}
-		before, e := hashFile(filepath.Join(a.musicDir, rel))
-		if e != nil {
-			return "", "", e
+		before, err := hashFile(path)
+		if err != nil {
+			return "", false, err
 		}
-		match, e := a.sameRemoteAudio(ctx, c, s, rel)
-		if e != nil {
-			return "", "", e
+		match, err := a.sameRemoteAudio(ctx, c, s, rel)
+		if err != nil || !match {
+			return "", false, err
 		}
-		if !match {
-			continue
+		after, err := hashFile(path)
+		if err != nil || before != after {
+			return "", false, errors.New("Song changed during verification; retry after the file is stable")
 		}
-		if found != "" && found != rel {
-			return "", "", errors.New("Multiple local files match this song; deletion requires an unambiguous path")
-		}
-		after, e := hashFile(filepath.Join(a.musicDir, rel))
-		if e != nil || before != after {
-			return "", "", errors.New("Song changed during verification; submit again after the file is stable")
-		}
-		found, checksum = rel, before
+		return before, true, nil
 	}
-	if found == "" {
+	// An absolute real path inside the configured music root identifies the
+	// intended file. Shorter suffixes may identify byte-identical extra copies,
+	// but must never override that identity (even when the exact file is stale).
+	root, err := filepath.Abs(a.musicDir)
+	if err != nil {
+		return "", "", err
+	}
+	reported := strings.ReplaceAll(s.Path, "\\", "/")
+	if filepath.IsAbs(reported) {
+		rel, err := filepath.Rel(root, reported)
+		if err == nil && safeRelativePath(rel) {
+			checksum, match, err := verify(rel)
+			if err != nil {
+				return "", "", err
+			}
+			if !match {
+				slog.Warn("Exact Navidrome song path could not be verified", "song_id", s.ID, "reported_path", s.Path, "music_dir", root, "relative_path", rel)
+				return "", "", errors.New("The exact Navidrome file path is missing, unsafe, or differs from the downloaded original; check the shared music mount before retrying")
+			}
+			slog.Info("Exact Navidrome song path verified", "song_id", s.ID, "relative_path", rel)
+			return rel, checksum, nil
+		}
+	}
+	matches := []string{}
+	checksums := map[string]string{}
+	for rel := range candidates {
+		checksum, match, err := verify(rel)
+		if err != nil {
+			return "", "", err
+		}
+		if match {
+			matches = append(matches, rel)
+			checksums[rel] = checksum
+		}
+	}
+	sort.Strings(matches)
+	if len(matches) > 1 {
+		slog.Warn("Song path resolution ambiguous", "song_id", s.ID, "reported_path", s.Path, "music_dir", root, "matching_paths", matches)
+		return "", "", errors.New("Multiple verified local copies match this song; enable real-path reporting for the ZenSync player and check the shared music mount paths")
+	}
+	if len(matches) == 0 {
+		slog.Warn("No verified local song path found", "song_id", s.ID, "reported_path", s.Path, "music_dir", root, "candidate_count", len(candidates))
 		return "", "", errors.New("Cannot safely locate this song. For music acquired outside ZenSync, enable Subsonic.DefaultReportRealPath in Navidrome and ensure both services share the same music directory")
 	}
-	return found, checksum, nil
+	return matches[0], checksums[matches[0]], nil
 }
 
 // Deletions run between acquisitions and serialize with collection publication and
