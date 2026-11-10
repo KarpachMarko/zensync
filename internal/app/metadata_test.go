@@ -181,3 +181,19 @@ func TestMetadataProviderCooldownAndMissingArt(t *testing.T) {
 		t.Fatalf("404: %v", e)
 	}
 }
+
+func TestSongReadsOpenSubsonicAlbumArtist(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{`{"id":"one","artist":"Guest","displayAlbumArtist":"Various Artists","albumArtists":[{"name":"Various Artists"}]}`, "Various Artists"},
+		{`{"id":"one","artist":"Guest","albumArtists":[{"name":"First"},{"name":"Second"}]}`, "First / Second"},
+		{`{"id":"one","artist":"Guest","albumArtist":"Legacy","displayAlbumArtist":"Other"}`, "Legacy"},
+	} {
+		var song Song
+		if err := json.Unmarshal([]byte(tc.raw), &song); err != nil {
+			t.Fatal(err)
+		}
+		if song.AlbumArtist != tc.want || song.ID != "one" || song.Artist != "Guest" {
+			t.Fatalf("album artist decode: %+v", song)
+		}
+	}
+}

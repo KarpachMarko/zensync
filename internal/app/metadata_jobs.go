@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,7 +56,11 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	if e = audit(tx, u.ID, u.ID, "metadata.queued", jid); e != nil {
 		return "", e
 	}
-	return jid, tx.Commit()
+	if e = tx.Commit(); e != nil {
+		return "", e
+	}
+	slog.Info("Metadata job queued", "job_id", jid, "user_id", u.ID, "songs", len(changes))
+	return jid, nil
 }
 func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
@@ -137,6 +142,7 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 409, e.Error())
 		return
 	}
+	slog.Info("Metadata merge queued", "job_id", jid, "kind", in.Kind, "source_id", in.Source, "target_id", in.Target, "target_artist", target.Artist, "target_album", target.Album, "songs", len(changes))
 	send(w, 202, map[string]any{"id": jid, "songs": len(changes)})
 }
 func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +214,8 @@ func (a *App) runMetadata(ctx context.Context) {
 	_, _ = a.DB.Exec("UPDATE metadata_jobs SET state='running',message='Updating file tags' WHERE id=?", jid)
 	var changes []metadataChange
 	e := json.Unmarshal([]byte(raw), &changes)
+	logger := slog.With("job_id", jid, "songs", len(changes))
+	logger.Info("Metadata job started", "done", done)
 	c, ce := a.shared()
 	if ce == nil && c.URL != serverURL {
 		ce = errors.New("Navidrome connection changed since this operation was queued")
@@ -216,21 +224,38 @@ func (a *App) runMetadata(ctx context.Context) {
 		e = ce
 	}
 	for e == nil && done < len(changes) {
-		e = a.publishMetadata(ctx, c, jid, changes[done])
+		change := changes[done]
+		logger.Info("Metadata song update started", "song_id", change.Song.ID, "kind", change.MergeKind, "artist_before", change.Song.Artist, "artist_after", change.Edit.Artist, "album_artist_before", change.Song.AlbumArtist, "album_artist_after", change.Edit.AlbumArtist)
+		e = a.publishMetadata(ctx, c, jid, change)
+		if e != nil {
+			logger.Error("Metadata song update failed", "song_id", change.Song.ID, "error", e)
+		} else {
+			logger.Info("Metadata song tags verified and published", "song_id", change.Song.ID)
+		}
 		if e == nil {
 			done++
 			_, e = a.DB.Exec("UPDATE metadata_jobs SET done=? WHERE id=?", done, jid)
 		}
 	}
 	if e == nil {
-		_, e = a.nav(ctx, c, "startScan", nil)
+		_, e = a.nav(ctx, c, "startScan", mapValues("fullScan", "true"))
+		if e == nil {
+			logger.Info("Metadata full library scan requested")
+		}
 	}
 	state, message := "completed", "Tags updated; Navidrome scan requested. Refresh the library after scanning."
 	if e != nil {
 		state = "failed"
 		message = fmt.Sprintf("%d/%d songs updated: %s. Recovery copies retained; retry resumes remaining work.", done, len(changes), e.Error())
 	}
-	_, _ = a.DB.Exec("UPDATE metadata_jobs SET state=?,message=? WHERE id=?", state, message, jid)
+	if _, err := a.DB.Exec("UPDATE metadata_jobs SET state=?,message=? WHERE id=?", state, message, jid); err != nil {
+		logger.Error("Metadata job completion persistence failed", "error", err)
+	}
+	if e != nil {
+		logger.Error("Metadata job failed", "done", done, "error", e)
+	} else {
+		logger.Info("Metadata job completed; Navidrome scan pending", "done", done)
+	}
 	a.navIndexMu.Lock()
 	clear(a.navIndexes)
 	a.navIndexMu.Unlock()
@@ -398,6 +423,17 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			}
 		}
 	}
+	// Navidrome recognises several aliases and prefers the plural tags for
+	// grouping. Updating just album_artist leaves existing aliases authoritative.
+	if change.MergeKind != "" {
+		if value, ok := tags["album_artist"]; ok {
+			tags["albumartist"] = value
+			tags["album artist"] = value
+		}
+		if value, ok := tags["albumartists"]; ok {
+			tags["album artists"] = value
+		}
+	}
 	for key, value := range tags {
 		args = append(args, "-metadata", key+"="+value)
 	}
@@ -407,8 +443,26 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	args = append(args, output)
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	protectChild(cmd)
-	if cmd.Run() != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
+		slog.Error("Metadata tag writer failed", "job_id", jid, "song_id", change.Song.ID, "error", err, "detail", string(output[:min(len(output), 2000)]))
 		return errors.New("Could not write audio tags; original file retained")
+	}
+	if change.MergeKind != "" {
+		p, err := a.probeUpload(output, strings.TrimPrefix(ext, "."))
+		if err != nil {
+			return fmt.Errorf("Cannot verify written grouping tags: %w", err)
+		}
+		written := uploadTags(p)
+		for _, key := range []string{"artist", "artists", "album", "albumartist", "album artist", "album_artist", "albumartists", "album artists"} {
+			expected, changed := tags[key]
+			actual, present := written[key]
+			if changed && present && actual != expected {
+				return fmt.Errorf("Grouping tag %s did not update; original file retained", key)
+			}
+		}
+		if written["artist"] != change.Edit.Artist || written["album"] != change.Edit.Album {
+			return errors.New("Written artist or album did not match; original file retained")
+		}
 	}
 	// Compare encoded audio packets, rather than container bytes altered by tags.
 	oldAudio, e := metadataAudioHash(ctx, backup)

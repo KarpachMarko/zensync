@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func metadataLibraryFixture(t *testing.T) (*App, client, map[string]Song) {
@@ -414,4 +415,148 @@ func TestMetadataArtistMergePreservesCompilation(t *testing.T) {
 	if tags["artist"] != "Band" || tags["musicbrainz_artistid"] != "artist-one" || tags["album_artist"] != "Various Artists" || tags["musicbrainz_albumartistid"] != "various-artists" || tags["musicbrainz_albumid"] != "release-two" {
 		t.Fatalf("Compilation relationships changed: %+v", tags)
 	}
+}
+
+func TestMetadataArtistMergeReplacesGroupingAliases(t *testing.T) {
+	for _, format := range []struct{ ext, codec string }{{".mp3", "mp3"}, {".flac", "flac"}} {
+		t.Run(format.codec, func(t *testing.T) {
+			a, admin, songs := metadataLibraryFixtureFormat(t, format.ext, format.codec, "")
+			for _, sid := range []string{"one", "two"} {
+				s := songs[sid]
+				s.Artist, s.AlbumArtist = "May Wave$", "May Wave$"
+				if sid == "two" {
+					s.Artist, s.AlbumArtist = "May Waves", "May Waves"
+				}
+				songs[sid] = s
+				path := filepath.Join(a.musicDir, s.Path)
+				tmp := path + format.ext
+				cmd := exec.Command("ffmpeg", "-v", "error", "-i", path, "-c", "copy",
+					"-metadata", "artist="+s.Artist, "-metadata", "artists="+s.Artist,
+					"-metadata", "album_artist="+s.Artist, "-metadata", "albumartist="+s.Artist,
+					"-metadata", "album artist="+s.Artist, "-metadata", "album artists="+s.Artist,
+					"-metadata", "albumartists="+s.Artist, tmp)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("%v: %s", err, out)
+				}
+				if err := os.Rename(tmp, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			expect(t, admin.call("POST", "/api/v2/metadata/merge", `{"kind":"artist","source":"artist-two","target":"artist-one"}`, ""), 202)
+			a.runMetadata(context.Background())
+			var state, message string
+			a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+			if state != "completed" {
+				t.Fatalf("%s: %s", state, message)
+			}
+			p, err := a.probeUpload(filepath.Join(a.musicDir, songs["two"].Path), format.codec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tags := uploadTags(p)
+			for _, key := range []string{"artist", "artists", "album_artist", "albumartist", "album artist", "album artists", "albumartists"} {
+				if value, ok := tags[key]; ok && value != "May Wave$" {
+					t.Errorf("stale grouping alias %s=%q", key, value)
+				}
+			}
+		})
+	}
+}
+
+// Opt-in integration regression: checks Navidrome's interpretation of the
+// written aliases, rather than only ffprobe's view of the resulting file.
+func TestRealNavidromeArtistMerge(t *testing.T) {
+	base := os.Getenv("ZENSYNC_TEST_NAV_URL")
+	if base == "" {
+		t.Skip("run scripts/test-navidrome.py")
+	}
+	a, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.DB.Close()
+	if err := a.createAdmin("admin", "test-password-long"); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, a, "admin")
+	a.musicDir = os.Getenv("ZENSYNC_TEST_MUSIC")
+	dir, err := os.MkdirTemp(a.musicDir, "merge-regression-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	c := Credentials{URL: base, Username: "navadmin", Password: os.Getenv("ZENSYNC_TEST_NAV_PASSWORD")}
+	if err := a.seal("navidrome", c); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	for _, f := range []struct{ file, artist string }{{"source.mp3", "May Waves"}, {"target.flac", "May Wave$"}} {
+		cmd := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=duration=1",
+			"-metadata", "title=Merge regression "+f.file, "-metadata", "album=Merge regression "+f.file,
+			"-metadata", "artist="+f.artist, "-metadata", "artists="+f.artist,
+			"-metadata", "album_artist="+f.artist, "-metadata", "album artist="+f.artist,
+			"-metadata", "albumartists="+f.artist, "-metadata", "album artists="+f.artist, filepath.Join(dir, f.file))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+	if _, err := a.nav(ctx, c, "startScan", mapValues("fullScan", "true")); err != nil {
+		t.Fatal(err)
+	}
+	var source, target Song
+	for ctx.Err() == nil {
+		songs, err := a.navSearch(ctx, c, "Merge regression", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range songs {
+			if s.Artist == "May Waves" {
+				source = s
+			}
+			if s.Artist == "May Wave$" {
+				target = s
+			}
+		}
+		if source.ID != "" && target.ID != "" {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if source.ID == "" || target.ID == "" {
+		t.Fatal("Fixtures not indexed")
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/merge", mustJSON(map[string]string{"kind": "artist", "source": source.ArtistID, "target": target.ArtistID}), ""), 202)
+	a.runMetadata(ctx)
+	var state, message string
+	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+	if state != "completed" {
+		t.Fatalf("%s: %s", state, message)
+	}
+	for ctx.Err() == nil {
+		songs, err := a.navSearch(ctx, c, "Merge regression", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		correct := len(songs) == 2
+		for _, s := range songs {
+			correct = correct && s.Artist == "May Wave$" && s.AlbumArtist == "May Wave$" && s.ArtistID == target.ArtistID
+		}
+		artists, err := a.nav(ctx, c, "getArtists", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, index := range artists.Artists.Index {
+			for _, artist := range index.Artists {
+				if artist.Name == "May Waves" {
+					correct = false
+				}
+			}
+		}
+		if correct {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("Navidrome still exposes old artist after merge and scan")
 }

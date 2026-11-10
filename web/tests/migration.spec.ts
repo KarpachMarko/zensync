@@ -426,11 +426,8 @@ test("first-access setup, real XML preview, review and reload-safe migration", a
     }),
   );
   await page.goto("/library/songs");
-  await page
-    .locator("main")
-    .getByLabel("Search music", { exact: true })
-    .fill("Shared artist");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByLabel("Search music", { exact: true }).fill("Shared artist");
+  await page.getByLabel("Search music", { exact: true }).press("Enter");
   await expect(page).toHaveURL(/search\?q=Shared(?:%20|\+)artist/);
   const existing = page.getByRole("region", {
     name: "Existing library",

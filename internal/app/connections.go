@@ -129,6 +129,37 @@ type Song struct {
 	BitRate     int     `json:"bitRate"`
 	Size        int64   `json:"size"`
 }
+
+// OpenSubsonic reports album artist credits separately from the legacy
+// albumArtist field. Keep the internal representation consistent for merges.
+func (s *Song) UnmarshalJSON(data []byte) error {
+	type songAlias Song
+	var value struct {
+		songAlias
+		DisplayAlbumArtist string `json:"displayAlbumArtist"`
+		AlbumArtists       []struct {
+			Name string `json:"name"`
+		} `json:"albumArtists"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*s = Song(value.songAlias)
+	if s.AlbumArtist == "" {
+		s.AlbumArtist = value.DisplayAlbumArtist
+		if s.AlbumArtist == "" {
+			names := []string{}
+			for _, artist := range value.AlbumArtists {
+				if artist.Name != "" {
+					names = append(names, artist.Name)
+				}
+			}
+			s.AlbumArtist = strings.Join(names, " / ")
+		}
+	}
+	return nil
+}
+
 type RemotePlaylist struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
