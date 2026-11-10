@@ -40,13 +40,13 @@ export function LibrarySongRow({
   return (
     <article data-slot="library-song">
       <Row>
-        <div>
+        <div className="min-w-0 flex-1">
           <strong>{song.title}</strong>
           <Caption>
             {song.artist} / {song.album} / {time(song.duration)}
           </Caption>
         </div>
-        <Actions>
+        <Actions className="shrink-0">
           {canEdit && (
             <Button
               size="sm"
@@ -58,6 +58,7 @@ export function LibrarySongRow({
             </Button>
           )}
           <Button
+            size="sm"
             variant="outline"
             type="button"
             aria-label={

@@ -15,7 +15,7 @@ import (
 
 func TestMetadataDuplicateCandidates(t *testing.T) {
 	songs := []Song{
-		{ID: "1", ArtistID: "a", AlbumID: "x", Artist: "The Band", Album: "The Album", Title: "Song!", Duration: 120},
+		{ID: "1", ArtistID: "a", AlbumID: "x", Artist: "The Band", Album: "The Album", Title: "Song!", Duration: 120, Path: "/private/music/song.mp3"},
 		{ID: "2", ArtistID: "b", AlbumID: "y", Artist: "the band", Album: "The Album!", Title: "song", Duration: 121.5},
 		{ID: "3", ArtistID: "a", AlbumID: "x", Artist: "The Band", Album: "The Album", Title: "Song (Live)", Duration: 121},
 		{ID: "4", ArtistID: "a", AlbumID: "x", Artist: "The Band", Album: "The Album", Title: "Song", Duration: 180},
@@ -25,6 +25,18 @@ func TestMetadataDuplicateCandidates(t *testing.T) {
 		t.Fatalf("groups: %+v", groups)
 	}
 	for _, g := range groups {
+		if g.Kind == "album" {
+			for _, member := range g.Members {
+				if len(member.Tracks) != member.Count {
+					t.Fatalf("missing album comparison: %+v", member)
+				}
+				for _, track := range member.Tracks {
+					if track.Path != "" {
+						t.Fatal("comparison leaked a filesystem path")
+					}
+				}
+			}
+		}
 		if len(g.Members) != 2 {
 			t.Fatalf("members: %+v", g)
 		}
@@ -48,10 +60,15 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 	admin := login(t, a, "admin")
 	expect(t, admin.call("POST", "/api/v2/users", `{"username":"member","password":"test-password-long"}`, ""), 201)
 	member := login(t, a, "member")
-	for _, path := range []string{"/metadata/duplicates", "/metadata/lyrics?q=test", "/metadata/covers?q=test", "/metadata/songs/one"} {
+	for _, path := range []string{"/metadata/duplicates", "/metadata/lyrics?q=test", "/metadata/covers?q=test", "/metadata/songs/one", "/metadata/songs/one/cover"} {
 		expect(t, member.call("GET", "/api/v2"+path, "", ""), 403)
 	}
 	nav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "getCoverArt") {
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte("cover-bytes"))
+			return
+		}
 		send(w, 200, map[string]any{"subsonic-response": map[string]any{"status": "ok", "song": Song{ID: "one", Title: "Original", Artist: "Band", Album: "Album"}}})
 	}))
 	defer nav.Close()
@@ -59,6 +76,11 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 		t.Fatal(e)
 	}
 	path := "/api/v2/metadata/songs/one"
+	cover := admin.call("GET", path+"/cover", "", "")
+	expect(t, cover, 200)
+	if cover.Body.String() != "cover-bytes" || cover.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("current artwork was not privately proxied")
+	}
 	expect(t, admin.call("PUT", path, `{"title":"","artist":"Band"}`, ""), 400)
 	expect(t, admin.call("PUT", path, `{"title":"Edited","artist":"Band","coverUrl":"javascript:alert(1)"}`, ""), 400)
 	body := `{"title":"Edited","artist":"Band","album":"Album","lyrics":"Words","lyricsSource":"LRCLIB:123"}`

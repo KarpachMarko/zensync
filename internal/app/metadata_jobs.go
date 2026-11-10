@@ -118,13 +118,17 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 		}
 		if in.Kind == "artist" {
 			edit.Artist = target.Artist
-		}
-		edit.AlbumArtist = target.AlbumArtist
-		if edit.AlbumArtist == "" {
-			edit.AlbumArtist = target.Artist
-		}
-		if in.Kind == "album" {
+			// A track artist merge must not move compilation tracks into a
+			// different album artist's discography.
+			if edit.AlbumArtist == "" || metadataKey(edit.AlbumArtist) == metadataKey(s.Artist) {
+				edit.AlbumArtist = target.Artist
+			}
+		} else {
 			edit.Album = target.Album
+			edit.AlbumArtist = target.AlbumArtist
+			if edit.AlbumArtist == "" {
+				edit.AlbumArtist = target.Artist
+			}
 		}
 		changes = append(changes, metadataChange{Song: s, Edit: edit, MergeKind: in.Kind, Target: &target})
 	}
@@ -370,9 +374,27 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			tags["album_artist"] = change.Edit.AlbumArtist
 		} else {
 			tags["artists"] = change.Edit.Artist
-			tags["albumartists"] = change.Edit.AlbumArtist
-			for _, key := range []string{"musicbrainz_artistid", "musicbrainz artist id", "musicbrainz_albumartistid", "musicbrainz album artist id"} {
+			for _, key := range []string{"musicbrainz_artistid", "musicbrainz artist id"} {
 				tags[key] = canonical[key]
+			}
+			if change.Edit.AlbumArtist == change.Edit.Artist {
+				tags["albumartist"] = change.Edit.Artist
+				tags["album_artist"] = change.Edit.Artist
+				tags["albumartists"] = change.Edit.Artist
+				// The destination track may itself belong to a compilation.
+				// Use its track artist identity, not its album artist identity.
+				tags["musicbrainz_albumartistid"] = canonical["musicbrainz_artistid"]
+				tags["musicbrainz album artist id"] = canonical["musicbrainz artist id"]
+			} else {
+				tags["albumartists"] = change.Edit.AlbumArtist
+				// Restore album artist identity cleared by the general edit path.
+				original, err := a.metadataCanonicalTags(ctx, c, change.Song)
+				if err != nil {
+					return err
+				}
+				for _, key := range []string{"albumartist", "musicbrainz_albumartistid", "musicbrainz album artist id"} {
+					tags[key] = original[key]
+				}
 			}
 		}
 	}

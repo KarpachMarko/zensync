@@ -315,3 +315,103 @@ func TestMetadataRejectsChangedSourceDuringRecovery(t *testing.T) {
 		t.Fatal("External edit overwritten")
 	}
 }
+
+func TestMetadataMergesInEitherOrder(t *testing.T) {
+	for _, order := range [][]string{{"artist", "album"}, {"album", "artist"}} {
+		t.Run(strings.Join(order, "-"), func(t *testing.T) {
+			a, admin, songs := metadataLibraryFixture(t)
+			for _, sid := range []string{"one", "two"} {
+				path := filepath.Join(a.musicDir, songs[sid].Path)
+				tmp := path + ".flac"
+				release := "release-" + sid
+				cmd := exec.Command("ffmpeg", "-v", "error", "-i", path, "-c", "copy",
+					"-metadata", "artist="+songs[sid].Artist,
+					"-metadata", "album="+songs[sid].Album,
+					"-metadata", "album_artist="+songs[sid].Artist,
+					"-metadata", "MUSICBRAINZ_ARTISTID=artist-"+sid,
+					"-metadata", "MUSICBRAINZ_ALBUMARTISTID=artist-"+sid,
+					"-metadata", "MUSICBRAINZ_ALBUMID="+release, tmp)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("%v: %s", err, out)
+				}
+				if err := os.Rename(tmp, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, kind := range order {
+				expect(t, admin.call("POST", "/api/v2/metadata/merge", mustJSON(map[string]string{"kind": kind, "source": kind + "-two", "target": kind + "-one"}), ""), 202)
+				a.runMetadata(context.Background())
+				var state, message string
+				a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+				if state != "completed" {
+					t.Fatalf("%s: %s", state, message)
+				}
+				p, err := a.probeUpload(filepath.Join(a.musicDir, songs["two"].Path), "flac")
+				if err != nil {
+					t.Fatal(err)
+				}
+				tags := uploadTags(p)
+				if kind == "artist" && order[0] == "artist" && tags["musicbrainz_albumid"] != "release-two" {
+					t.Fatalf("Artist merge changed album edition: %+v", tags)
+				}
+				if kind == "album" && order[0] == "album" && tags["artist"] != "band" {
+					t.Fatalf("Album merge changed track artist: %+v", tags)
+				}
+				// Simulate the Navidrome rescan from the actual resulting file tags.
+				s := songs["two"]
+				s.Artist, s.Album, s.AlbumArtist = tags["artist"], tags["album"], tags["album_artist"]
+				if kind == "artist" {
+					s.ArtistID = "artist-one"
+				}
+				if kind == "album" {
+					s.AlbumID = "album-one"
+				}
+				songs["two"] = s
+				a.navIndexMu.Lock()
+				clear(a.navIndexes)
+				a.navIndexMu.Unlock()
+			}
+			p, err := a.probeUpload(filepath.Join(a.musicDir, songs["two"].Path), "flac")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tags := uploadTags(p)
+			if tags["artist"] != "Band" || tags["album"] != "Album" || tags["album_artist"] != "Band" || tags["musicbrainz_albumid"] != "release-one" || tags["musicbrainz_artistid"] != "artist-one" || tags["musicbrainz_albumartistid"] != "artist-one" {
+				t.Fatalf("Merge order lost relationships: %+v", tags)
+			}
+		})
+	}
+}
+
+func TestMetadataArtistMergePreservesCompilation(t *testing.T) {
+	a, admin, songs := metadataLibraryFixture(t)
+	for _, sid := range []string{"one", "two"} {
+		s := songs[sid]
+		s.AlbumArtist = "Various Artists"
+		songs[sid] = s
+		path := filepath.Join(a.musicDir, s.Path)
+		tmp := path + ".flac"
+		cmd := exec.Command("ffmpeg", "-v", "error", "-i", path, "-c", "copy",
+			"-metadata", "artist="+s.Artist, "-metadata", "album="+s.Album,
+			"-metadata", "album_artist=Various Artists", "-metadata", "albumartists=Various Artists",
+			"-metadata", "MUSICBRAINZ_ARTISTID=artist-"+sid,
+			"-metadata", "MUSICBRAINZ_ALBUMARTISTID=various-artists",
+			"-metadata", "MUSICBRAINZ_ALBUMID=release-"+sid, tmp)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/merge", `{"kind":"artist","source":"artist-two","target":"artist-one"}`, ""), 202)
+	a.runMetadata(context.Background())
+	p, err := a.probeUpload(filepath.Join(a.musicDir, songs["two"].Path), "flac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := uploadTags(p)
+	if tags["artist"] != "Band" || tags["musicbrainz_artistid"] != "artist-one" || tags["album_artist"] != "Various Artists" || tags["musicbrainz_albumartistid"] != "various-artists" || tags["musicbrainz_albumid"] != "release-two" {
+		t.Fatalf("Compilation relationships changed: %+v", tags)
+	}
+}

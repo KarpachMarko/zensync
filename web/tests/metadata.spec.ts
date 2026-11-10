@@ -114,11 +114,13 @@ async function fixture(page: Page, admin = true) {
           members: [
             {
               id: `${kind}-one`,
+              artists: kind === "album" ? [{ id: "artist-one", name: "Band", albumArtist: "Band" }] : undefined,
               label: kind === "album" ? "Band — Album" : "Band",
               count: 3,
             },
             {
               id: `${kind}-two`,
+              artists: kind === "album" ? [{ id: "artist-two", name: "band", albumArtist: "band" }] : undefined,
               label: kind === "album" ? "Band — Album!" : "band",
               count: 3,
             },
@@ -231,14 +233,15 @@ test("compact TanStack editor supports keyboard autocomplete and provider select
     page.getByRole("combobox", { name: "Album", exact: true }),
   ).toHaveValue("Canonical album");
   await page.getByRole("tab", { name: "Lyrics", exact: true }).click();
-  await page.getByLabel("Search lyrics", { exact: true }).press("Enter");
+  await expect(page.getByLabel("Search lyrics", { exact: true })).toHaveValue("Band Song");
   await page.getByRole("button", { name: "Use lyrics", exact: true }).click();
   await expect(page.getByLabel("Plain lyrics", { exact: true })).toHaveValue(
     "Words",
   );
   await page.getByRole("tab", { name: "Artwork", exact: true }).click();
-  await page.getByLabel("Search covers", { exact: true }).press("Enter");
+  await expect(page.getByAltText("Current cover", { exact: true })).toHaveAttribute("src", "/api/v2/metadata/songs/one/cover");
   await page.getByRole("button", { name: "Use cover", exact: true }).click();
+  await expect(page.getByAltText("Selected cover", { exact: true })).toHaveAttribute("src", "https://archive.org/cover.jpg");
   expect(state.puts()).toBe(0);
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -268,6 +271,8 @@ test("utilities resolve duplicate songs and confirm album and artist merges", as
     .click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(state.deletes).toEqual([{ songId: "one" }]);
+  await expect(page.getByText("Artists differ · merge artists first", { exact: true })).toBeVisible();
+  await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
   for (const kind of ["album", "artist"]) {
     await page
       .getByRole("button", { name: `Merge into selected ${kind}`, exact: true })

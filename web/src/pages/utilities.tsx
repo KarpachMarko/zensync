@@ -66,7 +66,9 @@ export function Utilities({ admin }: { admin: boolean }) {
           <div className="flex items-center justify-between gap-2">
             <Text className="m-0 text-xs">
               Review candidates, delete extra songs or merge artist and album
-              tags.
+              tags. If artist IDs differ, merge artists first, then refresh
+              candidates after the Navidrome scan before merging albums. Album
+              merges preserve track artists; artist merges preserve album editions.
             </Text>
             <Button
               size="sm"
@@ -146,8 +148,11 @@ function DuplicateCandidates({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <Badge variant="secondary">{group.kind}</Badge>
+          {group.kind === "album" && new Set(group.members.flatMap((member) => member.artists?.map((artist) => JSON.stringify([artist.id, artist.name, artist.albumArtist])) ?? [])).size > 1 && (
+            <Badge variant="outline" className="ml-2">Artists differ · merge artists first</Badge>
+          )}
           <span className="ml-2 text-xs text-muted-foreground">
-            {group.reason}
+            {group.reason}{group.kind === "album" && " · Candidates only: compare tracks before merging; matching names do not prove identical recordings."}
           </span>
         </div>
         {group.kind !== "song" && (
@@ -207,6 +212,19 @@ function DuplicateCandidates({
                   <span className="ml-2 text-xs text-muted-foreground">
                     {member.count ?? 0} songs · {member.id.slice(0, 8)}
                   </span>
+                  {member.artists?.map((artist) => (
+                    <p key={artist.id + artist.name + artist.albumArtist} className="my-1 text-xs text-muted-foreground">
+                      Artist: {artist.name} · ID: {artist.id || "Unknown"} · Album artist: {artist.albumArtist || artist.name}
+                    </p>
+                  ))}
+                  {member.tracks && (
+                    <details className="mt-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">Compare tracks</summary>
+                      <ul className="space-y-1 pl-4">
+                        {member.tracks.map((track) => <li key={track.id}>{track.title} · {track.artist} · {track.duration}s · {track.id}</li>)}
+                      </ul>
+                    </details>
+                  )}
                 </div>
                 {member.id === target ? (
                   <Badge variant="outline">Keep</Badge>

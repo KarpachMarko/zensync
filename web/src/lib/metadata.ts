@@ -38,7 +38,7 @@ export type MetadataJob = {
 export type DuplicateGroup = {
   kind: "song" | "album" | "artist";
   reason: string;
-  members: { id: string; label: string; song?: LibrarySong; count?: number }[];
+  members: { id: string; label: string; song?: LibrarySong; count?: number; artists?: { id: string; name: string; albumArtist: string }[]; tracks?: LibrarySong[] }[];
 };
 export type DuplicateReport = {
   scanned: number;

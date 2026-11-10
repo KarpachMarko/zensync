@@ -84,8 +84,8 @@ function MetadataForm({
   close: () => void;
 }) {
   const client = useQueryClient();
-  const [lyricsQ, setLyricsQ] = useState("");
-  const [coversQ, setCoversQ] = useState("");
+  const [lyricsQ, setLyricsQ] = useState(`${initial.artist} ${initial.title}`.trim());
+  const [coversQ, setCoversQ] = useState(`${initial.artist} ${initial.album}`.trim());
   const save = useMutation({
     mutationFn: (edit: MetadataEdit) =>
       api(`/metadata/songs/${encodeURIComponent(id)}`, "PUT", edit),
@@ -193,6 +193,14 @@ function MetadataForm({
               />
             )}
           </form.AppField>
+          <form.Subscribe selector={(state) => state.values.coverUrl}>
+            {(url) => (
+              <div className="flex items-center gap-3">
+                <img key={url} src={url || `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover`} alt={url ? "Selected cover" : "Current cover"} className="size-24 rounded-md border border-border object-contain" />
+                <Text className="text-xs">{url ? "Selected cover" : "Current cover"}</Text>
+              </div>
+            )}
+          </form.Subscribe>
           <SearchBox
             compact
             label="Search covers"

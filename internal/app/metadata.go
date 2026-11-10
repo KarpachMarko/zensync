@@ -28,11 +28,18 @@ type MetadataEdit struct {
 	SyncedLyrics string `json:"syncedLyrics"`
 	LyricsSource string `json:"lyricsSource"`
 }
+type duplicateArtist struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AlbumArtist string `json:"albumArtist"`
+}
 type duplicateMember struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Song  *Song  `json:"song,omitempty"`
-	Count int    `json:"count,omitempty"`
+	Artists []duplicateArtist `json:"artists,omitempty"`
+	ID      string            `json:"id"`
+	Label   string            `json:"label"`
+	Song    *Song             `json:"song,omitempty"`
+	Count   int               `json:"count,omitempty"`
+	Tracks  []Song            `json:"tracks,omitempty"`
 }
 type duplicateGroup struct {
 	Kind    string            `json:"kind"`
@@ -116,6 +123,25 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 		}
 		for i := range members {
 			members[i].Count = counts[kind+":"+members[i].ID]
+			if kind == "album" {
+				for _, song := range songs {
+					if song.AlbumID == members[i].ID {
+						clean := song
+						clean.Path = ""
+						members[i].Tracks = append(members[i].Tracks, clean)
+						artist := duplicateArtist{song.ArtistID, song.Artist, song.AlbumArtist}
+						found := false
+						for _, existing := range members[i].Artists {
+							if existing == artist {
+								found = true
+							}
+						}
+						if !found {
+							members[i].Artists = append(members[i].Artists, artist)
+						}
+					}
+				}
+			}
 			if kind == "song" {
 				copy := songByID[members[i].ID]
 				members[i].Song = &copy
@@ -171,6 +197,29 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		} else {
 			a.metadataCovers(w, r, q)
 		}
+		return
+	}
+	if strings.HasPrefix(path, "/songs/") && strings.HasSuffix(path, "/cover") && r.Method == "GET" {
+		sid := strings.TrimSuffix(strings.TrimPrefix(path, "/songs/"), "/cover")
+		c, err := a.shared()
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		res, err := a.navRaw(r.Context(), c, "getCoverArt", mapValues("id", sid))
+		if err != nil {
+			fail(w, 502, "Could not load current cover")
+			return
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			fail(w, 404, "No current cover")
+			return
+		}
+		w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		io.Copy(w, io.LimitReader(res.Body, 20<<20))
 		return
 	}
 	if strings.HasPrefix(path, "/songs/") && (r.Method == "GET" || r.Method == "PUT" || r.Method == "DELETE") {
