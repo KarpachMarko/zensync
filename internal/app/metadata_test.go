@@ -1,10 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,13 +69,21 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 		expect(t, member.call("GET", "/api/v2"+path, "", ""), 403)
 	}
 	expect(t, member.call("POST", "/api/v2/metadata/credits/separate", "{}", ""), 403)
+	var artwork bytes.Buffer
+	if err := png.Encode(&artwork, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
 	nav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "getCoverArt") {
 			w.Header().Set("Content-Type", "image/png")
-			w.Write([]byte("cover-bytes"))
+			r.ParseForm()
+			if r.Form.Get("id") != "mf-one" {
+				t.Errorf("Wrong artwork identity: %s", r.Form.Get("id"))
+			}
+			w.Write(artwork.Bytes())
 			return
 		}
-		send(w, 200, map[string]any{"subsonic-response": map[string]any{"status": "ok", "song": Song{ID: "one", Title: "Original", Artist: "Band", Album: "Album"}}})
+		send(w, 200, map[string]any{"subsonic-response": map[string]any{"status": "ok", "song": Song{ID: "one", CoverArt: "mf-one", Title: "Original", Artist: "Band", Album: "Album"}}})
 	}))
 	defer nav.Close()
 	if e = a.seal("navidrome", Credentials{URL: nav.URL, Username: "service", Password: "password"}); e != nil {
@@ -81,7 +92,7 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 	path := "/api/v2/metadata/songs/one"
 	cover := admin.call("GET", path+"/cover", "", "")
 	expect(t, cover, 200)
-	if cover.Body.String() != "cover-bytes" || cover.Header().Get("Cache-Control") != "no-store" {
+	if !bytes.Equal(cover.Body.Bytes(), artwork.Bytes()) || cover.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("current artwork was not privately proxied")
 	}
 	expect(t, admin.call("PUT", path, `{"title":"","artist":"Band"}`, ""), 400)

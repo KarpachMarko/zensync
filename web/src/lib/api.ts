@@ -7,6 +7,19 @@ function responseError(data: unknown, fallback: string): string {
     : fallback;
 }
 
+async function readApiResponse(response: Response): Promise<unknown> {
+  if (response.status === 204) return null;
+  const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json") && !contentType.includes("+json")) {
+    throw new Error(`The server returned a web page or unexpected response instead of data (HTTP ${response.status}). Reload the page or check the server access gateway.`);
+  }
+  try {
+    return await response.json() as unknown;
+  } catch {
+    throw new Error(`The server returned invalid data (HTTP ${response.status}). Please retry.`);
+  }
+}
+
 let csrf = "";
 export function setCSRF(value: string) {
   csrf = value;
@@ -23,12 +36,13 @@ export async function api<T = unknown>(
     signal,
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
       "X-CSRF-Token": csrf,
       ...(key ? { "Idempotency-Key": key } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data: unknown = await res.json();
+  const data: unknown = await readApiResponse(res);
   if (!res.ok) throw new Error(responseError(data, "Request failed"));
   return data as T;
 }
@@ -42,7 +56,7 @@ export async function upload(file: File): Promise<{ id: string }> {
     },
     body: file,
   });
-  const data: unknown = await res.json();
+  const data: unknown = await readApiResponse(res);
   if (!res.ok) throw new Error(responseError(data, "Upload failed"));
   if (
     typeof data !== "object" ||
@@ -65,7 +79,7 @@ export async function uploadAudioFile(path: string, file: File, key: string): Pr
     },
     body: file,
   });
-  const data: unknown = await response.json();
+  const data: unknown = await readApiResponse(response);
   if (!response.ok) throw new Error(responseError(data, "Audio upload failed"));
   if (typeof data !== "object" || data === null || !("id" in data) || typeof data.id !== "string")
     throw new Error("Invalid audio upload response");

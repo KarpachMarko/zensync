@@ -31,7 +31,7 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
   const result = useQuery({
     queryKey: ["api", "/metadata/songs", id],
     queryFn: ({ signal }) =>
-      api<{ edit: MetadataEdit; duration: number }>(
+      api<{ edit: MetadataEdit; duration: number; searchArtist?: string }>(
         `/metadata/songs/${encodeURIComponent(id)}`,
         "GET",
         undefined,
@@ -65,6 +65,7 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
             id={id}
             initial={result.data.edit}
             duration={result.data.duration}
+            searchArtist={result.data.searchArtist ?? result.data.edit.artist}
             close={close}
           />
         )}
@@ -76,16 +77,19 @@ function MetadataForm({
   id,
   initial,
   duration,
+  searchArtist,
   close,
 }: {
   id: string;
   initial: MetadataEdit;
   duration: number;
+  searchArtist: string;
   close: () => void;
 }) {
   const client = useQueryClient();
-  const [lyricsQ, setLyricsQ] = useState(`${initial.artist} ${initial.title}`.trim());
-  const [coversQ, setCoversQ] = useState(`${initial.artist} ${initial.album}`.trim());
+  const [tab, setTab] = useState("details");
+  const [lyricsQ, setLyricsQ] = useState(`${searchArtist} ${initial.title}`.trim());
+  const [coversQ, setCoversQ] = useState(`${searchArtist} ${initial.album}`.trim());
   const save = useMutation({
     mutationFn: (edit: MetadataEdit) =>
       api(`/metadata/songs/${encodeURIComponent(id)}`, "PUT", edit),
@@ -95,8 +99,9 @@ function MetadataForm({
       close();
     },
   });
+  const defaults: MetadataEdit = { ...initial, albumArtist: initial.albumArtist ?? "" };
   const form = useAppForm({
-    defaultValues: initial,
+    defaultValues: defaults,
     validators: { onSubmit: metadataSchema },
     onSubmit: async ({ value }) => {
       if (!save.isPending) await save.mutateAsync(value).catch(() => undefined);
@@ -104,7 +109,7 @@ function MetadataForm({
   });
   const lyrics = useQuery({
     queryKey: ["api", "/metadata/lyrics", lyricsQ],
-    enabled: !!lyricsQ,
+    enabled: tab === "lyrics" && !!lyricsQ,
     retry: false,
     staleTime: 300000,
     queryFn: ({ signal }) =>
@@ -118,7 +123,7 @@ function MetadataForm({
   });
   const covers = useQuery({
     queryKey: ["api", "/metadata/covers", coversQ],
-    enabled: !!coversQ,
+    enabled: tab === "artwork" && !!coversQ,
     retry: false,
     staleTime: 300000,
     queryFn: ({ signal }) =>
@@ -133,7 +138,7 @@ function MetadataForm({
   const compactLabel = "m-0 gap-1 text-xs";
   return (
     <>
-      <Tabs defaultValue="details" className="gap-2">
+      <Tabs value={tab} onValueChange={setTab} className="gap-2">
         <TabsList className="h-8">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="artwork">Artwork</TabsTrigger>
@@ -155,11 +160,7 @@ function MetadataForm({
             <div className="col-span-2">
               <form.AppField name="title">
                 {(field) => (
-                  <field.TextField
-                    label="Title"
-                    labelClassName={compactLabel}
-                    className="h-8 min-h-8 py-1 text-sm"
-                  />
+                  <field.AutocompleteField label="Title" fieldName="title" />
                 )}
               </form.AppField>
             </div>
@@ -173,6 +174,11 @@ function MetadataForm({
                 <field.AutocompleteField label="Album" fieldName="album" />
               )}
             </form.AppField>
+            <div className="col-span-2">
+              <form.AppField name="albumArtist">
+                {(field) => <field.AutocompleteField label="Album artist" fieldName="albumArtist" />}
+              </form.AppField>
+            </div>
             <Text className="col-span-2 m-0 text-xs">
               {duration ? `Duration: ${duration}s` : "Choose existing names or enter new ones."}
             </Text>
@@ -196,7 +202,7 @@ function MetadataForm({
           <form.Subscribe selector={(state) => state.values.coverUrl}>
             {(url) => (
               <div className="flex items-center gap-3">
-                <img key={url} src={url || `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover`} alt={url ? "Selected cover" : "Current cover"} className="size-24 rounded-md border border-border object-contain" />
+                <ArtworkImage key={url} src={url || `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover`} alt={url ? "Selected cover" : "Current cover"} className="size-24 shrink-0" />
                 <Text className="text-xs">{url ? "Selected cover" : "Current cover"}</Text>
               </div>
             )}
@@ -204,7 +210,7 @@ function MetadataForm({
           <SearchBox
             compact
             label="Search covers"
-            value={`${initial.artist} ${initial.album}`}
+            value={`${searchArtist} ${initial.album}`}
             onSearch={setCoversQ}
             disabled={covers.isFetching}
           />
@@ -216,6 +222,7 @@ function MetadataForm({
           {covers.error && (
             <Text role="alert" className="m-0 text-xs">
               {covers.error.message}
+              <Button type="button" variant="outline" size="sm" onClick={() => void covers.refetch()}>Retry cover search</Button>
             </Text>
           )}
           {covers.data?.length === 0 && (
@@ -226,12 +233,7 @@ function MetadataForm({
           <div className="grid grid-cols-3 gap-2">
             {covers.data?.map((cover) => (
               <div key={cover.id} className="min-w-0 space-y-1">
-                <img
-                  src={cover.url}
-                  alt={`${cover.title} cover`}
-                  referrerPolicy="no-referrer"
-                  className="aspect-square w-full rounded object-contain"
-                />
+                <ArtworkImage src={cover.url} alt={`${cover.title} cover`} className="aspect-square w-full" />
                 <p className="m-0 truncate text-xs">
                   {cover.artist} · {cover.title}
                 </p>
@@ -266,7 +268,7 @@ function MetadataForm({
           <SearchBox
             compact
             label="Search lyrics"
-            value={`${initial.artist} ${initial.title}`}
+            value={`${searchArtist} ${initial.title}`}
             onSearch={setLyricsQ}
             disabled={lyrics.isFetching}
           />
@@ -367,5 +369,18 @@ function MetadataForm({
         </Button>
       </div>
     </>
+  );
+}
+
+
+function ArtworkImage({ src, alt, className }: { src: string; alt: string; className: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? (
+    <div role="status" className={`flex flex-col items-center justify-center rounded border border-solid border-border p-1 text-center text-xs text-muted-foreground ${className}`}>
+      <span>Artwork unavailable</span>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setFailed(false)}>Retry image</Button>
+    </div>
+  ) : (
+    <img src={src} alt={alt} referrerPolicy="no-referrer" onError={() => setFailed(true)} className={`rounded border border-solid border-border object-contain ${className}`} />
   );
 }

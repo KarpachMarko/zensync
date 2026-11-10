@@ -239,20 +239,52 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 400, err.Error())
 			return
 		}
-		res, err := a.navRaw(r.Context(), c, "getCoverArt", mapValues("id", sid))
+		song, err := a.nav(r.Context(), c, "getSong", mapValues("id", sid))
+		if err != nil {
+			fail(w, 502, err.Error())
+			return
+		}
+		if song.Song.ID != sid {
+			fail(w, 404, "Song no longer exists")
+			return
+		}
+		coverID := song.Song.CoverArt
+		if coverID == "" && song.Song.AlbumID != "" {
+			album, err := a.nav(r.Context(), c, "getAlbum", mapValues("id", song.Song.AlbumID))
+			if err != nil {
+				fail(w, 502, err.Error())
+				return
+			}
+			coverID = album.Album.CoverArt
+		}
+		if coverID == "" {
+			fail(w, 404, "No current artwork is available")
+			return
+		}
+		res, err := a.navRaw(r.Context(), c, "getCoverArt", url.Values{"id": {coverID}, "size": {"300"}})
 		if err != nil {
 			fail(w, 502, "Could not load current cover")
 			return
 		}
 		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {
-			fail(w, 404, "No current cover")
+			fail(w, 404, "Current artwork is unavailable")
 			return
 		}
-		w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
+		data, err := io.ReadAll(io.LimitReader(res.Body, (20<<20)+1))
+		if err != nil || len(data) > 20<<20 {
+			fail(w, 502, "Current artwork could not be read")
+			return
+		}
+		contentType := http.DetectContentType(data)
+		if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/gif" && contentType != "image/webp" {
+			fail(w, 502, "Navidrome did not return an artwork image")
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		io.Copy(w, io.LimitReader(res.Body, 20<<20))
+		w.Write(data)
 		return
 	}
 	if strings.HasPrefix(path, "/songs/") && (r.Method == "GET" || r.Method == "PUT" || r.Method == "DELETE") {
@@ -307,7 +339,11 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 					return
 				}
 			}
-			send(w, 200, map[string]any{"edit": edit, "saved": saved, "duration": remote.Song.Duration})
+			primaryArtist := edit.Artist
+			if edit.Artist == remote.Song.Artist && len(remote.Song.Artists) > 0 {
+				primaryArtist = remote.Song.Artists[0].Name
+			}
+			send(w, 200, map[string]any{"edit": edit, "saved": saved, "duration": remote.Song.Duration, "searchArtist": primaryArtist})
 			return
 		}
 		var edit MetadataEdit
@@ -485,32 +521,58 @@ func (a *App) metadataCovers(w http.ResponseWriter, r *http.Request, q string) {
 }
 
 func (a *App) metadataSuggestions(w http.ResponseWriter, r *http.Request) {
-	c, e := a.shared()
-	if e != nil {
-		fail(w, 400, e.Error())
-		return
-	}
-	index, e := a.indexedNavSongs(r.Context(), c)
-	if e != nil {
-		fail(w, 502, e.Error())
-		return
-	}
 	field := r.URL.Query().Get("field")
-	if field != "artist" && field != "album" {
-		fail(w, 400, "Choose artist or album suggestions")
+	if field != "artist" && field != "album" && field != "title" && field != "albumArtist" {
+		fail(w, 400, "Choose title, artist, album or album artist suggestions")
 		return
 	}
-	q := strings.ToLower(r.URL.Query().Get("q"))
+	c, err := a.shared()
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	index, err := a.indexedNavSongs(r.Context(), c)
+	if err != nil {
+		fail(w, 502, err.Error())
+		return
+	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	tokens := []string{q}
+	if field == "artist" || field == "albumArtist" {
+		for _, display := range strings.Split(q, " • ") {
+			tokens = append(tokens, creditSeparator.Split(display, -1)...)
+		}
+	}
 	seen := map[string]bool{}
 	values := []string{}
 	for _, song := range index.songs {
-		value := song.Artist
-		if field == "album" {
-			value = song.Album
+		candidates := []string{}
+		switch field {
+		case "title":
+			candidates = []string{song.Title}
+		case "album":
+			candidates = []string{song.Album}
+		case "artist":
+			candidates = creditNames(songCredits(song, false))
+		case "albumArtist":
+			candidates = creditNames(songCredits(song, true))
+			if len(candidates) == 0 {
+				candidates = creditNames(songCredits(song, false))
+			}
 		}
-		if value != "" && !seen[value] && strings.Contains(strings.ToLower(value), q) {
-			seen[value] = true
-			values = append(values, value)
+		for _, value := range candidates {
+			match := false
+			for _, token := range tokens {
+				token = strings.TrimSpace(token)
+				if (token != "" || q == "") && strings.Contains(strings.ToLower(value), token) {
+					match = true
+					break
+				}
+			}
+			if value != "" && !seen[value] && match {
+				seen[value] = true
+				values = append(values, value)
+			}
 		}
 	}
 	sort.Strings(values)

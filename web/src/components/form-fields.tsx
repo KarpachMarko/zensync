@@ -260,9 +260,11 @@ export function TextareaField({
 export function AutocompleteField({
   label,
   fieldName,
+  initialOptions = [],
 }: {
   label: string;
-  fieldName: "artist" | "album";
+  fieldName: "artist" | "album" | "title" | "albumArtist";
+  initialOptions?: string[];
 }) {
   const field = useFieldContext<string>();
   const id = useId();
@@ -289,12 +291,14 @@ export function AutocompleteField({
         value={field.state.value}
         onValueChange={field.handleChange}
         onBlur={field.handleBlur}
-        options={suggestions.data?.values ?? []}
+        options={suggestions.data?.values ?? initialOptions.filter((name) => name.toLocaleLowerCase().includes(query.toLocaleLowerCase()))}
+        aria-invalid={field.state.meta.errors.length > 0}
       />
       <ValidationErrors errors={field.state.meta.errors} />
       {suggestions.error && (
-        <span className="text-xs text-muted-foreground">
-          Suggestions unavailable; type a name.
+        <span role="status" className="text-xs text-muted-foreground">
+          {suggestions.error.message}
+          <Button type="button" variant="ghost" size="sm" onClick={() => void suggestions.refetch()}>Retry suggestions</Button>
         </span>
       )}
     </FieldLabel>

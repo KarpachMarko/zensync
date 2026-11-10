@@ -21,6 +21,8 @@ async function fixture(page: Page, admin = true) {
   let puts = 0;
   const merges: unknown[] = [];
   const deletes: unknown[] = [];
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await page.route("https://archive.org/cover.jpg", (route) => route.fulfill({ contentType: "image/png", body: png }));
   await page.route("**/api/v2/**", async (route) => {
     const url = new URL(route.request().url());
     const p = url.pathname;
@@ -72,12 +74,15 @@ async function fixture(page: Page, admin = true) {
       return route.fulfill({
         json: {
           values:
-            url.searchParams.get("field") === "artist"
-              ? ["Band", "Canonical band"]
-              : ["Album", "Canonical album"],
+            url.searchParams.get("field") === "title"
+              ? ["Song", "Other song"]
+              : url.searchParams.get("field") === "album"
+                ? ["Album", "Canonical album"]
+                : ["Band", "Canonical band"],
           limited: false,
         },
       });
+    if (p === "/api/v2/metadata/songs/one/cover") return route.fulfill({ contentType: "image/png", body: png });
     if (p === "/api/v2/metadata/songs/one") {
       if (route.request().method() === "PUT") {
         saved = route.request().postDataJSON() as MetadataEdit;
@@ -243,6 +248,7 @@ test("compact TanStack editor supports keyboard autocomplete and provider select
   );
   await page.getByRole("tab", { name: "Artwork", exact: true }).click();
   await expect(page.getByAltText("Current cover", { exact: true })).toHaveAttribute("src", "/api/v2/metadata/songs/one/cover");
+  await expect.poll(() => page.getByAltText("Current cover", { exact: true }).evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Use cover", exact: true }).click();
   await expect(page.getByAltText("Selected cover", { exact: true })).toHaveAttribute("src", "https://archive.org/cover.jpg");
   expect(state.puts()).toBe(0);
@@ -335,7 +341,8 @@ test("artist songs and compact editor work on mobile", async ({ page }) => {
   });
   const box = await dialog.boundingBox();
   expect(box?.width).toBeLessThanOrEqual(390);
-  expect(box?.height).toBeLessThan(360);
+  expect(box?.height).toBeLessThan(844 * 0.85);
+  await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
   await page.getByLabel("Title", { exact: true }).fill("");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByLabel("Title", { exact: true })).toHaveAttribute(
@@ -433,4 +440,57 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   await expect(dialog).toHaveCount(0);
   expect(writes).toEqual([{ source: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist", artists: ["Vacio", "ЛСП"] }]);
   await expect(page.getByRole("region", { name: "Combined artist credit review" })).toHaveCount(0);
+});
+
+test("metadata artwork and all identity suggestions recover from gateway HTML responses", async ({ page }) => {
+  await fixture(page);
+  let suggestionsFail = true;
+  let coverSearchFail = true;
+  let imageFail = true;
+  await page.route("**/api/v2/metadata/suggestions?**", (route) => {
+    if (suggestionsFail) return route.fulfill({ status: 403, contentType: "text/html", body: "<!DOCTYPE html><title>Access check</title>" });
+    const field = new URL(route.request().url()).searchParams.get("field");
+    return route.fulfill({ json: { values: [field === "title" ? "Song" : field === "album" ? "Album" : "Band"], limited: false } });
+  });
+  await page.route("**/api/v2/metadata/covers?**", (route) => coverSearchFail
+    ? route.fulfill({ status: 403, contentType: "text/html", body: "<!DOCTYPE html><title>Access check</title>" })
+    : route.fulfill({ json: [{ id: "cover", title: "Album", artist: "Band", url: "https://archive.org/cover.jpg", source: "https://musicbrainz.org/release/cover" }] }));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await page.route("**/api/v2/metadata/songs/one/cover", (route) => imageFail
+    ? route.fulfill({ status: 404, json: { error: "No artwork" }, headers: { "Cache-Control": "no-store" } })
+    : route.fulfill({ contentType: "image/png", body: png }));
+  await page.goto("/library?editSong=one");
+  const dialog = page.getByRole("dialog");
+  for (const label of ["Title", "Artist", "Album", "Album artist"]) await expect(dialog.getByRole("combobox", { name: label, exact: true })).toBeVisible();
+  const retries = dialog.getByRole("button", { name: "Retry suggestions", exact: true });
+  await expect(retries).toHaveCount(4);
+  suggestionsFail = false;
+  for (let remaining = 4; remaining > 0; remaining--) {
+    await retries.first().click();
+    await expect(retries).toHaveCount(remaining - 1);
+  }
+  for (const [label, option] of [["Title", "Song"], ["Artist", "Band"], ["Album", "Album"], ["Album artist", "Band"]]) {
+    await dialog.getByRole("combobox", { name: label, exact: true }).click();
+    await dialog.getByRole("option", { name: option, exact: true }).click();
+  }
+  await dialog.getByRole("tab", { name: "Artwork", exact: true }).click();
+  await expect(dialog.getByText("Artwork unavailable", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("HTTP 403");
+  await expect(dialog.getByText(/Unexpected token/)).toHaveCount(0);
+  imageFail = false;
+  await dialog.getByRole("button", { name: "Retry image", exact: true }).click();
+  await expect.poll(() => dialog.getByAltText("Current cover", { exact: true }).evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  coverSearchFail = false;
+  await dialog.getByRole("button", { name: "Retry cover search", exact: true }).click();
+  await expect.poll(() => dialog.getByAltText("Album cover", { exact: true }).evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+});
+test("a new frontend deployment offers reload without automatically discarding work", async ({ page }) => {
+  await fixture(page);
+  await page.route("http://127.0.0.1:18081/", (route) => route.fulfill({ contentType: "text/html", body: '<!DOCTYPE html><script type="module" src="/assets/new-deployment.js"></script>' }));
+  await page.goto("/library");
+  await expect(page.getByRole("button", { name: "Reload application", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit metadata: Song", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Unsaved title");
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Unsaved title");
+  await expect(page).toHaveURL(/editSong=one/);
 });

@@ -119,6 +119,7 @@ type ArtistCredit struct {
 	Name string `json:"name"`
 }
 type Song struct {
+	CoverArt     string         `json:"coverArt,omitempty"`
 	Artists      []ArtistCredit `json:"artists,omitempty"`
 	AlbumArtists []ArtistCredit `json:"albumArtists,omitempty"`
 	AlbumArtist  string         `json:"albumArtist"`
@@ -173,6 +174,7 @@ type RemotePlaylist struct {
 	SongCount int    `json:"songCount"`
 }
 type navAlbum struct {
+	CoverArt  string `json:"coverArt"`
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Artist    string `json:"artist"`

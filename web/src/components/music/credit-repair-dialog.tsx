@@ -73,7 +73,7 @@ export function CreditRepairDialog({ issue, disabled }: { issue: CreditIssue; di
                     <div key={index} className="flex min-w-0 items-end gap-1">
                       <div className="min-w-0 flex-1">
                         <form.AppField name={`artists[${index}]`}>
-                          {(field) => <field.TextField disabled={save.isPending} label={`Artist ${index + 1}`} labelClassName="m-0 text-xs" className="h-9 min-h-9 text-sm" />}
+                          {(field) => <field.AutocompleteField label={`Artist ${index + 1}`} fieldName="artist" initialOptions={issue.knownArtists} />}
                         </form.AppField>
                       </div>
                       <Button type="button" size="sm" variant="outline" aria-label={`Move artist ${index + 1} up`} disabled={index === 0 || save.isPending}

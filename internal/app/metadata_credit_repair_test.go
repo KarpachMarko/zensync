@@ -1,9 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,6 +146,27 @@ func TestRealNavidromeSeparateKnownSkateArtists(t *testing.T) {
 			t.Fatalf("%v %s", err, out)
 		}
 		writeNativeCredits(t, path, nativeCredits{[]string{name}, []string{albumArtist}, []string{}, []string{}})
+		if i == 2 {
+			coverFile := filepath.Join(dir, "test-cover.png")
+			file, err := os.Create(coverFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := png.Encode(file, image.NewRGBA(image.Rect(0, 0, 64, 64))); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			withCover := path + ".flac"
+			output, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-i", coverFile, "-map", "0:a", "-map", "1:v", "-c", "copy", "-disposition:v:0", "attached_pic", withCover).CombinedOutput()
+			if err != nil {
+				t.Fatalf("Artwork fixture: %v %s", err, output)
+			}
+			if err := os.Rename(withCover, path); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	if _, err := a.nav(ctx, c, "startScan", mapValues("fullScan", "true")); err != nil {
 		t.Fatal(err)
@@ -168,6 +192,11 @@ func TestRealNavidromeSeparateKnownSkateArtists(t *testing.T) {
 	}
 	if source.ID == "" {
 		t.Fatal("Skate fixtures were not indexed")
+	}
+	artwork := admin.call("GET", "/api/v2/metadata/songs/"+source.ID+"/cover", "", "")
+	expect(t, artwork, 200)
+	if _, _, err := image.DecodeConfig(bytes.NewReader(artwork.Body.Bytes())); err != nil {
+		t.Fatalf("Current artwork did not decode: %v", err)
 	}
 	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate", mustJSON(map[string]any{"source": source.ArtistID, "role": "artist", "name": "Vacio, ЛСП", "artists": []string{"Vacio", "ЛСП"}}), ""), 202)
 	a.runMetadata(ctx)

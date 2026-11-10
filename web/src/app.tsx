@@ -1,3 +1,4 @@
+import { UpdateNotice } from "@/components/update-notice";
 import { Utilities } from "@/pages/utilities";
 import { MetadataEditorHost } from "@/components/music/metadata-editor";
 import { AppShell } from "@/components/layout/app-shell";
@@ -36,6 +37,7 @@ export function App() {
   if (!user) return <Login setup={setup} error={error} onSubmit={login} />;
   return (
     <AppShell user={user} onSignOut={signOut} onError={setError}>
+      <UpdateNotice />
       {error && <Text role="alert">{error}</Text>}
       <Routes>
         <Route
