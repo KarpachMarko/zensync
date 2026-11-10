@@ -44,6 +44,14 @@ func metadataLibraryFixtureFormat(t *testing.T, ext, codec, rate string) (*App, 
 			artist = "band"
 			album = "Album!"
 		}
+		path := filepath.Join(a.musicDir, sid+ext)
+		tmp := path + ext
+		if out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-c", "copy", "-metadata", "artist="+artist, "-metadata", "album="+album, "-metadata", "album_artist="+artist, tmp).CombinedOutput(); err != nil {
+			t.Fatalf("fixture tags: %v %s", err, out)
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			t.Fatal(err)
+		}
 		songs[sid] = Song{ID: sid, ArtistID: "artist-" + sid, AlbumID: "album-" + sid, Title: "Song", Artist: artist, Album: album, AlbumArtist: artist, Duration: 1, Path: sid + ext, Size: int64(len(data))}
 	}
 	nav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -502,6 +510,15 @@ func TestRealNavidromeArtistMerge(t *testing.T) {
 			t.Fatalf("%v: %s", err, out)
 		}
 	}
+	writeNativeCredits(t, filepath.Join(dir, "source.mp3"), nativeCredits{
+		[]string{"May Waves", "Collaborator"}, []string{"May Waves"},
+		[]string{"00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"},
+		[]string{"00000000-0000-4000-8000-000000000001"},
+	})
+	writeNativeCredits(t, filepath.Join(dir, "target.flac"), nativeCredits{
+		[]string{"May Wave$"}, []string{"May Wave$"},
+		[]string{"00000000-0000-4000-8000-000000000003"}, []string{"00000000-0000-4000-8000-000000000003"},
+	})
 	if _, err := a.nav(ctx, c, "startScan", mapValues("fullScan", "true")); err != nil {
 		t.Fatal(err)
 	}
@@ -512,10 +529,10 @@ func TestRealNavidromeArtistMerge(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, s := range songs {
-			if s.Artist == "May Waves" {
+			if s.Title == "Merge regression source.mp3" {
 				source = s
 			}
-			if s.Artist == "May Wave$" {
+			if s.Title == "Merge regression target.flac" {
 				target = s
 			}
 		}
@@ -527,39 +544,57 @@ func TestRealNavidromeArtistMerge(t *testing.T) {
 	if source.ID == "" || target.ID == "" {
 		t.Fatal("Fixtures not indexed")
 	}
-	expect(t, admin.call("POST", "/api/v2/metadata/merge", mustJSON(map[string]string{"kind": "artist", "source": source.ArtistID, "target": target.ArtistID}), ""), 202)
-	a.runMetadata(ctx)
-	var state, message string
-	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
-	if state != "completed" {
-		t.Fatalf("%s: %s", state, message)
-	}
-	for ctx.Err() == nil {
-		songs, err := a.navSearch(ctx, c, "Merge regression", 0)
-		if err != nil {
-			t.Fatal(err)
+	for _, kind := range []string{"artist", "album"} {
+		from, to := source.ArtistID, target.ArtistID
+		if kind == "album" {
+			from, to = source.AlbumID, target.AlbumID
 		}
-		correct := len(songs) == 2
-		for _, s := range songs {
-			correct = correct && s.Artist == "May Wave$" && s.AlbumArtist == "May Wave$" && s.ArtistID == target.ArtistID
+		expect(t, admin.call("POST", "/api/v2/metadata/merge", mustJSON(map[string]string{"kind": kind, "source": from, "target": to}), ""), 202)
+		a.runMetadata(ctx)
+		var state, message string
+		a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+		if state != "completed" {
+			t.Fatalf("%s: %s", state, message)
 		}
-		artists, err := a.nav(ctx, c, "getArtists", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, index := range artists.Artists.Index {
-			for _, artist := range index.Artists {
-				if artist.Name == "May Waves" {
-					correct = false
+		verified := false
+		for ctx.Err() == nil {
+			songs, err := a.navSearch(ctx, c, "Merge regression", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range songs {
+				if s.Title != source.Title {
+					continue
+				}
+				if len(s.Artists) == 2 && s.Artists[0].Name == "May Wave$" && s.Artists[1].Name == "Collaborator" && s.AlbumArtist == "May Wave$" && (kind != "album" || s.AlbumID == target.AlbumID) {
+					source = s
+					verified = true
 				}
 			}
+			if verified {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
-		if correct {
-			return
+		if !verified {
+			t.Fatalf("Navidrome lost collaborators after %s merge", kind)
 		}
-		time.Sleep(200 * time.Millisecond)
+		// The next request must resolve the newly scanned album identity.
+		a.navIndexMu.Lock()
+		clear(a.navIndexes)
+		a.navIndexMu.Unlock()
 	}
-	t.Fatal("Navidrome still exposes old artist after merge and scan")
+	artists, err := a.nav(ctx, c, "getArtists", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range artists.Artists.Index {
+		for _, artist := range index.Artists {
+			if artist.Name == "May Waves" {
+				t.Fatal("Navidrome still exposes the old artist")
+			}
+		}
+	}
 }
 
 func TestRealNavidromeScreenshotReview(t *testing.T) {

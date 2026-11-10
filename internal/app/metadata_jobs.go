@@ -21,10 +21,11 @@ import (
 )
 
 type metadataChange struct {
-	Song      Song         `json:"song"`
-	Edit      MetadataEdit `json:"edit"`
-	MergeKind string       `json:"mergeKind,omitempty"`
-	Target    *Song        `json:"target,omitempty"`
+	ArtistMerge *artistMergeIdentity `json:"artistMerge,omitempty"`
+	Song        Song                 `json:"song"`
+	Edit        MetadataEdit         `json:"edit"`
+	MergeKind   string               `json:"mergeKind,omitempty"`
+	Target      *Song                `json:"target,omitempty"`
 }
 
 func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
@@ -96,10 +97,10 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 		if in.Kind == "album" {
 			key = s.AlbumID
 		}
-		if key == in.Target {
+		if key == in.Target || (in.Kind == "artist" && creditNameForID(s, in.Target) != "") {
 			target = s
 		}
-		if key == in.Source {
+		if key == in.Source || (in.Kind == "artist" && creditNameForID(s, in.Source) != "") {
 			source = append(source, s)
 		}
 	}
@@ -121,12 +122,21 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 			a.internal(w, e)
 			return
 		}
+		var identity *artistMergeIdentity
 		if in.Kind == "artist" {
-			edit.Artist = target.Artist
-			// A track artist merge must not move compilation tracks into a
-			// different album artist's discography.
-			if edit.AlbumArtist == "" || metadataKey(edit.AlbumArtist) == metadataKey(s.Artist) {
-				edit.AlbumArtist = target.Artist
+			identity = &artistMergeIdentity{
+				SourceName: creditNameForID(s, in.Source), TargetName: creditNameForID(target, in.Target),
+				ReplaceTrack: creditHasID(s.Artists, in.Source) || (len(s.Artists) == 0 && s.ArtistID == in.Source),
+				ReplaceAlbum: creditHasID(s.AlbumArtists, in.Source),
+			}
+			if len(s.AlbumArtists) == 0 && (s.AlbumArtist != "" && strings.EqualFold(s.AlbumArtist, identity.SourceName)) {
+				identity.ReplaceAlbum = true
+			}
+			if identity.ReplaceTrack {
+				edit.Artist = replaceCreditDisplay(s.Artists, in.Source, identity.TargetName, s.Artist)
+			}
+			if identity.ReplaceAlbum {
+				edit.AlbumArtist = replaceCreditDisplay(s.AlbumArtists, in.Source, identity.TargetName, s.AlbumArtist)
 			}
 		} else {
 			edit.Album = target.Album
@@ -135,14 +145,18 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 				edit.AlbumArtist = target.Artist
 			}
 		}
-		changes = append(changes, metadataChange{Song: s, Edit: edit, MergeKind: in.Kind, Target: &target})
+		changes = append(changes, metadataChange{Song: s, Edit: edit, MergeKind: in.Kind, Target: &target, ArtistMerge: identity})
 	}
 	jid, e := a.queueMetadata(changes, u)
 	if e != nil {
 		fail(w, 409, e.Error())
 		return
 	}
-	slog.Info("Metadata merge queued", "job_id", jid, "kind", in.Kind, "source_id", in.Source, "target_id", in.Target, "target_artist", target.Artist, "target_album", target.Album, "songs", len(changes))
+	destinationArtist := target.Artist
+	if in.Kind == "artist" {
+		destinationArtist = creditNameForID(target, in.Target)
+	}
+	slog.Info("Metadata merge queued", "job_id", jid, "kind", in.Kind, "source_id", in.Source, "target_id", in.Target, "target_artist", destinationArtist, "target_album", target.Album, "songs", len(changes))
 	send(w, 202, map[string]any{"id": jid, "songs": len(changes)})
 }
 func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
@@ -371,7 +385,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if change.Edit.AlbumArtist != "" {
 		tags["album_artist"] = change.Edit.AlbumArtist
 	}
-	if change.Edit.Artist != change.Song.Artist {
+	if change.MergeKind == "" && change.Edit.Artist != change.Song.Artist {
 		tags["album_artist"] = change.Edit.Artist
 		tags["artists"] = change.Edit.Artist
 		tags["albumartists"] = change.Edit.Artist
@@ -387,40 +401,19 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
+	canonicalPath := ""
 	if change.MergeKind != "" && change.Target != nil {
-		canonical, e := a.metadataCanonicalTags(ctx, c, *change.Target)
+		canonical, targetPath, e := a.metadataCanonicalTags(ctx, c, *change.Target)
 		if e != nil {
 			return e
 		}
+		canonicalPath = targetPath
 		if change.MergeKind == "album" {
 			for _, key := range []string{"musicbrainz_albumid", "musicbrainz album id", "musicbrainz_releasegroupid", "musicbrainz release group id", "musicbrainz_albumartistid", "musicbrainz album artist id", "albumartist", "album_artist", "albumartists", "albumversion", "album_version", "releasedate", "date", "year", "originaldate", "originalyear", "compilation"} {
 				tags[key] = canonical[key]
 			}
 			tags["album_artist"] = change.Edit.AlbumArtist
-		} else {
-			tags["artists"] = change.Edit.Artist
-			for _, key := range []string{"musicbrainz_artistid", "musicbrainz artist id"} {
-				tags[key] = canonical[key]
-			}
-			if change.Edit.AlbumArtist == change.Edit.Artist {
-				tags["albumartist"] = change.Edit.Artist
-				tags["album_artist"] = change.Edit.Artist
-				tags["albumartists"] = change.Edit.Artist
-				// The destination track may itself belong to a compilation.
-				// Use its track artist identity, not its album artist identity.
-				tags["musicbrainz_albumartistid"] = canonical["musicbrainz_artistid"]
-				tags["musicbrainz album artist id"] = canonical["musicbrainz artist id"]
-			} else {
-				tags["albumartists"] = change.Edit.AlbumArtist
-				// Restore album artist identity cleared by the general edit path.
-				original, err := a.metadataCanonicalTags(ctx, c, change.Song)
-				if err != nil {
-					return err
-				}
-				for _, key := range []string{"albumartist", "musicbrainz_albumartistid", "musicbrainz album artist id"} {
-					tags[key] = original[key]
-				}
-			}
+
 		}
 	}
 	// Navidrome recognises several aliases and prefers the plural tags for
@@ -448,7 +441,16 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		return errors.New("Could not write audio tags; original file retained")
 	}
 	if change.MergeKind != "" {
-		p, err := a.probeUpload(output, strings.TrimPrefix(ext, "."))
+		if err := preserveMergeCredits(ctx, &change, backup, canonicalPath, output); err != nil {
+			return err
+		}
+		// The native writer verifies individual list values. ffprobe flattens
+		// native lists, so only compare the single-valued display fields here.
+		for _, key := range []string{"artists", "albumartists", "album artists", "albumartist", "album artist", "album_artist"} {
+			delete(tags, key)
+		}
+		tags["artist"] = change.Edit.Artist
+		p, err := a.probeUpload(output, uploadFormat(ext))
 		if err != nil {
 			return fmt.Errorf("Cannot verify written grouping tags: %w", err)
 		}
@@ -502,7 +504,16 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if e = os.Rename(output, path); e != nil {
 		return e
 	}
-	return syncDir(filepath.Dir(path))
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if change.MergeKind != "" {
+		_, err := a.DB.Exec("UPDATE metadata_edits SET metadata=? WHERE song_id=?", mustJSON(change.Edit), change.Song.ID)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (a *App) backupMetadataFile(source, dest, checksum string) error {
 	in, e := os.Open(source)
@@ -582,25 +593,25 @@ func (a *App) downloadMetadataCover(ctx context.Context, raw, path string) error
 	return os.WriteFile(path, bytes, 0600)
 }
 
-func (a *App) metadataCanonicalTags(ctx context.Context, c Credentials, target Song) (map[string]string, error) {
+func (a *App) metadataCanonicalTags(ctx context.Context, c Credentials, target Song) (map[string]string, string, error) {
 	remote, e := a.nav(ctx, c, "getSong", url.Values{"id": {target.ID}, "realPath": {"true"}})
 	if e != nil {
-		return nil, e
+		return nil, "", e
 	}
 	if remote.Song.ID != target.ID {
-		return nil, errors.New("Merge destination no longer exists")
+		return nil, "", errors.New("Merge destination no longer exists")
 	}
 	rel, _, e := a.deletionPath(ctx, c, remote.Song)
 	if e != nil {
-		return nil, e
+		return nil, "", e
 	}
 	out, e := exec.CommandContext(ctx, a.ffprobePath, "-v", "error", "-show_format", "-show_streams", "-of", "json", filepath.Join(a.musicDir, rel)).Output()
 	if e != nil {
-		return nil, errors.New("Cannot read destination grouping tags")
+		return nil, "", errors.New("Cannot read destination grouping tags")
 	}
 	var p probe
 	if e = json.Unmarshal(out, &p); e != nil {
-		return nil, e
+		return nil, "", e
 	}
-	return uploadTags(p), nil
+	return uploadTags(p), filepath.Join(a.musicDir, rel), nil
 }

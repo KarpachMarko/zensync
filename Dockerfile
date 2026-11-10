@@ -29,7 +29,7 @@ COPY internal/ ./internal/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/zensync ./cmd/zensync
 
 FROM alpine:3.23
-RUN apk add --no-cache ca-certificates tzdata ffmpeg && addgroup -g 10001 zensync && adduser -D -H -u 10001 -G zensync zensync && mkdir -p /data /music && chown 10001:10001 /data /music
+RUN apk add --no-cache ca-certificates tzdata ffmpeg python3 py3-mutagen && addgroup -g 10001 zensync && adduser -D -H -u 10001 -G zensync zensync && mkdir -p /data /music && chown 10001:10001 /data /music
 WORKDIR /app
 COPY --from=backend /out/zensync /app/zensync
 COPY --from=downloader /out/d-fi /usr/local/bin/d-fi

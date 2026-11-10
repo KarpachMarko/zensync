@@ -37,6 +37,8 @@ Every API request is logged as structured JSON, including successful calls. View
 
 ## Development
 
+Metadata artist/album merges require Python 3 with Mutagen, in addition to ffmpeg/ffprobe, to preserve native multi-valued credits. The Docker image includes these dependencies. For local testing, install your distribution’s Python Mutagen package or set `ZENSYNC_PYTHON` to a virtual environment’s Python executable.
+
 Use **pnpm** for frontend dependencies and scripts. See [frontend structure and component conventions](web/README.md).
 
 ## Start here
