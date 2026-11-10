@@ -38,9 +38,18 @@ export type MetadataJob = {
 export type DuplicateGroup = {
   kind: "song" | "album" | "artist";
   reason: string;
-  members: { id: string; label: string; song?: LibrarySong; count?: number; artists?: { id: string; name: string; albumArtist: string }[]; tracks?: LibrarySong[] }[];
+  members: { id: string; label: string; song?: LibrarySong; count?: number; albumArtists?: { id: string; name: string }[]; artists?: { id: string; name: string; albumArtist: string }[]; tracks?: LibrarySong[] }[];
+};
+export type CreditIssue = {
+  id: string;
+  name: string;
+  role: "artist" | "album artist";
+  parts: string[];
+  knownArtists: string[];
+  tracks: LibrarySong[];
 };
 export type DuplicateReport = {
+  creditIssues?: CreditIssue[];
   scanned: number;
   limited: boolean;
   groups: DuplicateGroup[];

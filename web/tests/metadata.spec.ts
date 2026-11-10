@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import type { MetadataEdit, DuplicateGroup } from "../src/lib/metadata";
 const song = {
@@ -114,12 +115,14 @@ async function fixture(page: Page, admin = true) {
           members: [
             {
               id: `${kind}-one`,
+              albumArtists: kind === "album" ? [{ id: "artist-one", name: "Band" }] : undefined,
               artists: kind === "album" ? [{ id: "artist-one", name: "Band", albumArtist: "Band" }] : undefined,
               label: kind === "album" ? "Band — Album" : "Band",
               count: 3,
             },
             {
               id: `${kind}-two`,
+              albumArtists: kind === "album" ? [{ id: "artist-two", name: "band" }] : undefined,
               artists: kind === "album" ? [{ id: "artist-two", name: "band", albumArtist: "band" }] : undefined,
               label: kind === "album" ? "Band — Album!" : "band",
               count: 3,
@@ -271,7 +274,7 @@ test("utilities resolve duplicate songs and confirm album and artist merges", as
     .click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(state.deletes).toEqual([{ songId: "one" }]);
-  await expect(page.getByText("Artists differ · merge artists first", { exact: true })).toBeVisible();
+  await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
   for (const kind of ["album", "artist"]) {
     await page
@@ -339,4 +342,45 @@ test("artist songs and compact editor work on mobile", async ({ page }) => {
     "aria-invalid",
     "true",
   );
+});
+
+test("screenshot albums and combined artist credits are reviewable without destructive collaboration merges", async ({ page }) => {
+  const state = await fixture(page);
+  const dataset = JSON.parse(readFileSync(new URL("../../internal/app/testdata/screenshot-metadata.json", import.meta.url), "utf8")) as {
+    albumTitle: string; albumArtists: string[]; combinedArtists: string[]; standaloneArtist: string;
+  };
+  await page.route("**/api/v2/metadata/duplicates", (route) => route.fulfill({ json: {
+    scanned: 12, limited: false,
+    groups: [{
+      kind: "album", reason: "Matching normalized album artist and album title",
+      members: dataset.albumArtists.map((artist, index) => ({
+        id: `elf-${index}`, label: `${artist} — ${dataset.albumTitle}`, count: 1,
+        albumArtists: [{ id: "slava", name: artist }],
+        tracks: [{ ...song, artist: index === 0 ? dataset.combinedArtists[0] : artist }],
+      })),
+    }],
+    creditIssues: dataset.combinedArtists.map((name, index) => ({
+      id: `combined-${index}`, name, role: "artist",
+      parts: name.split(/, | x /i), knownArtists: [dataset.standaloneArtist],
+      tracks: [{ ...song, artist: name }],
+    })),
+  }}));
+  await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByText("SLAVA MARLOW — ЭЛЬФ 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Slava Marlow — ЭЛЬФ 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toHaveCount(0);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  const review = page.getByRole("region", { name: "Combined artist credit review" });
+  for (const name of dataset.combinedArtists) await expect(review.getByText(name, { exact: true })).toBeVisible();
+  await expect(review.getByRole("button", { name: /Merge/ })).toHaveCount(0);
+  await expect(review.getByText(/No automatic splitting or artist merging/)).toBeVisible();
+  await review.getByRole("button", { name: "Review affected songs", exact: true }).first().click();
+  await review.getByRole("button", { name: "Edit metadata: Song", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page).toHaveURL(/editSong=one/);
+  expect(state.puts()).toBe(0);
+  expect(state.merges).toEqual([]);
 });

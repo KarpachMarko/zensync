@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -559,4 +560,83 @@ func TestRealNavidromeArtistMerge(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatal("Navidrome still exposes old artist after merge and scan")
+}
+
+func TestRealNavidromeScreenshotReview(t *testing.T) {
+	base := os.Getenv("ZENSYNC_TEST_NAV_URL")
+	if base == "" {
+		t.Skip("run scripts/test-navidrome.py")
+	}
+	var fixture struct {
+		AlbumTitle       string
+		AlbumArtists     []string
+		CombinedArtists  []string
+		StandaloneArtist string
+	}
+	raw, err := os.ReadFile("testdata/screenshot-metadata.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.DB.Close()
+	music := os.Getenv("ZENSYNC_TEST_MUSIC")
+	dir, err := os.MkdirTemp(music, "screenshot-review-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	for i, albumArtist := range fixture.AlbumArtists {
+		artist := fixture.StandaloneArtist
+		if i == 0 {
+			artist = fixture.CombinedArtists[0]
+		}
+		cmd := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=duration=1",
+			"-metadata", "title=Screenshot regression "+fmt.Sprint(i),
+			"-metadata", "album="+fixture.AlbumTitle,
+			// Distinct release IDs model the hidden grouping difference; the
+			// screenshots do not reveal actual MusicBrainz IDs or edition tags.
+			"-metadata", fmt.Sprintf("musicbrainz_albumid=00000000-0000-4000-8000-%012d", i+1),
+			"-metadata", "artist="+artist, "-metadata", "artists="+artist,
+			"-metadata", "album_artist="+albumArtist, "-metadata", "albumartists="+albumArtist,
+			filepath.Join(dir, fmt.Sprintf("%d.flac", i)))
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, output)
+		}
+	}
+	c := Credentials{URL: base, Username: "navadmin", Password: os.Getenv("ZENSYNC_TEST_NAV_PASSWORD")}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := a.nav(ctx, c, "startScan", mapValues("fullScan", "true")); err != nil {
+		t.Fatal(err)
+	}
+	for ctx.Err() == nil {
+		songs, err := a.navSearch(ctx, c, "Screenshot regression", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(songs) == 2 {
+			var albumGroups []duplicateGroup
+			for _, group := range metadataDuplicates(songs) {
+				if group.Kind == "album" {
+					albumGroups = append(albumGroups, group)
+				}
+			}
+			if len(albumGroups) != 1 || len(albumGroups[0].Members) != 2 {
+				t.Fatalf("Real Navidrome screenshot album pair missed: %+v", songs)
+			}
+			issues := metadataCreditIssues(songs)
+			if len(issues) != 1 || issues[0].Name != fixture.CombinedArtists[0] || issues[0].Role != "artist" {
+				t.Fatalf("Real Navidrome combined credit missed: %+v / %+v", songs, issues)
+			}
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("Screenshot fixtures were not indexed")
 }

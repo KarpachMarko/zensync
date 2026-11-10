@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,5 +197,136 @@ func TestSongReadsOpenSubsonicAlbumArtist(t *testing.T) {
 		if song.AlbumArtist != tc.want || song.ID != "one" || song.Artist != "Guest" {
 			t.Fatalf("album artist decode: %+v", song)
 		}
+	}
+}
+
+func TestScreenshotAlbumUsesAlbumArtist(t *testing.T) {
+	var fixture struct {
+		AlbumTitle       string
+		AlbumArtists     []string
+		CombinedArtists  []string
+		StandaloneArtist string
+	}
+	raw, err := os.ReadFile("testdata/screenshot-metadata.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	songs := []Song{
+		{ID: "one", AlbumID: "elf-upper", Album: fixture.AlbumTitle, AlbumArtist: fixture.AlbumArtists[0], Artist: fixture.CombinedArtists[0], ArtistID: "combined", Title: "Synthetic first track"},
+		{ID: "two", AlbumID: "elf-title", Album: fixture.AlbumTitle, AlbumArtist: fixture.AlbumArtists[1], Artist: fixture.StandaloneArtist, ArtistID: "slava", Title: "Synthetic second track"},
+		{ID: "three", AlbumID: "unrelated", Album: fixture.AlbumTitle, AlbumArtist: "Unrelated artist", Artist: fixture.StandaloneArtist, ArtistID: "slava", Title: "Unrelated release"},
+	}
+	var albums []duplicateGroup
+	for _, group := range metadataDuplicates(songs) {
+		if group.Kind == "album" {
+			albums = append(albums, group)
+		}
+	}
+	if len(albums) != 1 || len(albums[0].Members) != 2 || albums[0].Members[0].ID != "elf-title" || albums[0].Members[1].ID != "elf-upper" {
+		t.Fatalf("Expected the two screenshot editions, excluding unrelated album: %+v", albums)
+	}
+	if !strings.Contains(albums[0].Members[1].Label, "SLAVA MARLOW") {
+		t.Fatal("Album label must use album artist")
+	}
+}
+
+func TestScreenshotCombinedCredits(t *testing.T) {
+	var fixture struct {
+		CombinedArtists  []string
+		StandaloneArtist string
+	}
+	raw, err := os.ReadFile("testdata/screenshot-metadata.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	songs := []Song{{ID: "standalone", ArtistID: "slava", Artist: fixture.StandaloneArtist}}
+	for i, name := range fixture.CombinedArtists {
+		songs = append(songs, Song{ID: fmt.Sprintf("combined-%d", i), ArtistID: fmt.Sprintf("combined-%d", i), Artist: name, Path: "/private/file.mp3"})
+	}
+	// A collaboration already modelled as individual identities is valid.
+	songs = append(songs, Song{ID: "valid", Artist: "Slava Marlow, Aarne", Artists: []ArtistCredit{{ID: "slava", Name: "Slava Marlow"}, {ID: "aarne", Name: "Aarne"}}})
+	songs = append(songs, Song{ID: "band", Artist: "Earth, Wind & Fire"})
+	issues := metadataCreditIssues(songs)
+	if len(issues) != len(fixture.CombinedArtists) {
+		t.Fatalf("Expected all %d screenshot combinations only, got %+v", len(fixture.CombinedArtists), issues)
+	}
+	for _, issue := range issues {
+		if len(issue.KnownArtists) == 0 || len(issue.Parts) < 2 || len(issue.Tracks) != 1 || issue.Tracks[0].Path != "" || issue.Tracks[0].ID == "valid" || issue.Tracks[0].ID == "band" {
+			t.Fatalf("Invalid review evidence: %+v", issue)
+		}
+	}
+	// No stage-name/legal-name equivalence is inferred.
+	for _, group := range metadataDuplicates(songs) {
+		if group.Kind == "artist" {
+			t.Fatalf("Combinations must not be merged with individuals: %+v", group)
+		}
+	}
+}
+
+func TestCreditReviewIncludesAlbumArtistAndIsStable(t *testing.T) {
+	songs := []Song{
+		{ID: "known", Artist: "Slava Marlow", ArtistID: "slava"},
+		{ID: "album-only", Artist: "Guest", ArtistID: "guest", AlbumArtist: "Slava Marlow, Aarne", AlbumArtists: []ArtistCredit{{ID: "collapsed", Name: "Slava Marlow, Aarne"}}},
+		{ID: "valid", Artist: "Guest", ArtistID: "guest", AlbumArtist: "Slava Marlow, Aarne", AlbumArtists: []ArtistCredit{{ID: "slava", Name: "Slava Marlow"}, {ID: "aarne", Name: "Aarne"}}},
+	}
+	issues := metadataCreditIssues(songs)
+	if len(issues) != 1 || issues[0].Role != "album artist" || issues[0].ID != "collapsed" {
+		t.Fatalf("Album credit review: %+v", issues)
+	}
+	reversed := []Song{songs[2], songs[1], songs[0]}
+	if mustJSON(issues) != mustJSON(metadataCreditIssues(reversed)) {
+		t.Fatal("Review must be deterministic")
+	}
+}
+
+func TestAlbumCandidatesFallbackWithoutAlbumArtist(t *testing.T) {
+	groups := metadataDuplicates([]Song{
+		{ID: "one", AlbumID: "one", Album: "Эльф 1", Artist: "SLAVA MARLOW"},
+		{ID: "two", AlbumID: "two", Album: "ЭЛЬФ 1", Artist: "Slava Marlow"},
+	})
+	if len(groups) != 1 || groups[0].Kind != "album" {
+		t.Fatalf("Legacy fallback: %+v", groups)
+	}
+}
+
+func TestScreenshotReviewAPI(t *testing.T) {
+	a, admin, songs := metadataLibraryFixture(t)
+	first := songs["one"]
+	first.Artist, first.AlbumArtist, first.Album = "Slava Marlow, Aarne", "SLAVA MARLOW", "ЭЛЬФ 1"
+	first.Artists = []ArtistCredit{{ID: first.ArtistID, Name: first.Artist}}
+	first.AlbumArtists = []ArtistCredit{{ID: "slava", Name: first.AlbumArtist}}
+	songs["one"] = first
+	second := songs["two"]
+	second.Artist, second.AlbumArtist, second.Album = "Slava Marlow", "Slava Marlow", "ЭЛЬФ 1"
+	second.Artists = []ArtistCredit{{ID: "slava", Name: second.Artist}}
+	second.AlbumArtists = []ArtistCredit{{ID: "slava", Name: second.AlbumArtist}}
+	songs["two"] = second
+	response := admin.call("GET", "/api/v2/metadata/duplicates", "", "")
+	expect(t, response, 200)
+	var report struct {
+		Groups       []duplicateGroup
+		CreditIssues []creditIssue
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Groups) != 1 || report.Groups[0].Kind != "album" || len(report.Groups[0].Members) != 2 {
+		t.Fatalf("Album report: %+v", report.Groups)
+	}
+	if len(report.CreditIssues) != 1 || report.CreditIssues[0].Name != first.Artist {
+		t.Fatalf("Credit report: %+v", report.CreditIssues)
+	}
+	if report.CreditIssues[0].Tracks[0].Path != "" || report.Groups[0].Members[0].Tracks[0].Path != "" {
+		t.Fatal("Report exposed filesystem paths")
+	}
+	var jobs int
+	if err := a.DB.QueryRow("SELECT count(*) FROM metadata_jobs").Scan(&jobs); err != nil || jobs != 0 {
+		t.Fatal("Review must not queue metadata writes", err)
 	}
 }

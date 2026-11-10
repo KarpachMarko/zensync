@@ -1,4 +1,5 @@
 import { LibrarySongRow } from "@/components/music/library-song-row";
+import { CreditIssues } from "@/components/music/credit-issues";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
 import { PageHeading, Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
@@ -66,9 +67,9 @@ export function Utilities({ admin }: { admin: boolean }) {
           <div className="flex items-center justify-between gap-2">
             <Text className="m-0 text-xs">
               Review candidates, delete extra songs or merge artist and album
-              tags. If artist IDs differ, merge artists first, then refresh
-              candidates after the Navidrome scan before merging albums. Album
-              merges preserve track artists; artist merges preserve album editions.
+              tags. Album candidates use album artist; featured track artists may
+              differ legitimately. Compare album-artist identities before merging,
+              then refresh after the Navidrome scan.
             </Text>
             <Button
               size="sm"
@@ -89,7 +90,7 @@ export function Utilities({ admin }: { admin: boolean }) {
           {report.data && (
             <Text className="my-1 text-xs">
               {report.data.scanned} songs checked · {report.data.groups.length}{" "}
-              candidate groups.
+              duplicate candidate groups · {report.data.creditIssues?.length ?? 0} combined-credit issues.
               {report.data.limited &&
                 " Partial scan: 50,000-song limit reached. Merges are disabled."}
             </Text>
@@ -104,6 +105,7 @@ export function Utilities({ admin }: { admin: boolean }) {
           {report.data && !report.data.groups.length && (
             <Text>No duplicate candidates found.</Text>
           )}
+          <CreditIssues issues={report.data?.creditIssues ?? []} />
         </CollapsibleContent>
       </Collapsible>
     </>
@@ -148,8 +150,8 @@ function DuplicateCandidates({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <Badge variant="secondary">{group.kind}</Badge>
-          {group.kind === "album" && new Set(group.members.flatMap((member) => member.artists?.map((artist) => JSON.stringify([artist.id, artist.name, artist.albumArtist])) ?? [])).size > 1 && (
-            <Badge variant="outline" className="ml-2">Artists differ · merge artists first</Badge>
+          {group.kind === "album" && new Set(group.members.map((member) => member.albumArtists?.map((artist) => artist.id).filter(Boolean).sort().join("|")).filter(Boolean)).size > 1 && (
+            <Badge variant="outline" className="ml-2">Album artist IDs differ · review artists first</Badge>
           )}
           <span className="ml-2 text-xs text-muted-foreground">
             {group.reason}{group.kind === "album" && " · Candidates only: compare tracks before merging; matching names do not prove identical recordings."}
@@ -212,6 +214,11 @@ function DuplicateCandidates({
                   <span className="ml-2 text-xs text-muted-foreground">
                     {member.count ?? 0} songs · {member.id.slice(0, 8)}
                   </span>
+                  {member.albumArtists?.map((artist) => (
+                    <p key={artist.id + artist.name} className="my-1 text-xs text-muted-foreground">
+                      Album artist: {artist.name} · ID: {artist.id || "Unknown"}
+                    </p>
+                  ))}
                   {member.artists?.map((artist) => (
                     <p key={artist.id + artist.name + artist.albumArtist} className="my-1 text-xs text-muted-foreground">
                       Artist: {artist.name} · ID: {artist.id || "Unknown"} · Album artist: {artist.albumArtist || artist.name}

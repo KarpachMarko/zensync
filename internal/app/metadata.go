@@ -34,12 +34,13 @@ type duplicateArtist struct {
 	AlbumArtist string `json:"albumArtist"`
 }
 type duplicateMember struct {
-	Artists []duplicateArtist `json:"artists,omitempty"`
-	ID      string            `json:"id"`
-	Label   string            `json:"label"`
-	Song    *Song             `json:"song,omitempty"`
-	Count   int               `json:"count,omitempty"`
-	Tracks  []Song            `json:"tracks,omitempty"`
+	AlbumArtists []ArtistCredit    `json:"albumArtists,omitempty"`
+	Artists      []duplicateArtist `json:"artists,omitempty"`
+	ID           string            `json:"id"`
+	Label        string            `json:"label"`
+	Song         *Song             `json:"song,omitempty"`
+	Count        int               `json:"count,omitempty"`
+	Tracks       []Song            `json:"tracks,omitempty"`
 }
 type duplicateGroup struct {
 	Kind    string            `json:"kind"`
@@ -78,8 +79,12 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 		copy.Path = ""
 		songByID[s.ID] = copy
 		add("artist", metadataKey(s.Artist), s.ArtistID, s.Artist)
-		if metadataKey(s.Artist) != "" && metadataKey(s.Album) != "" {
-			add("album", metadataKey(s.Artist)+":"+metadataKey(s.Album), s.AlbumID, s.Artist+" — "+s.Album)
+		albumArtist := s.AlbumArtist
+		if strings.TrimSpace(albumArtist) == "" {
+			albumArtist = s.Artist
+		}
+		if metadataKey(albumArtist) != "" && metadataKey(s.Album) != "" {
+			add("album", metadataKey(albumArtist)+":"+metadataKey(s.Album), s.AlbumID, albumArtist+" — "+s.Album)
 		}
 		if metadataKey(s.Artist) != "" && metadataKey(s.Title) != "" {
 			k := metadataKey(s.Artist) + ":" + metadataKey(s.Title)
@@ -118,6 +123,9 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 		}
 		sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
 		reason := "Matching normalized names with distinct library IDs"
+		if kind == "album" {
+			reason = "Matching normalized album artist and album title with distinct library IDs"
+		}
 		if kind == "song" {
 			reason = "Matching artist and title, duration within two seconds; editions may differ"
 		}
@@ -129,6 +137,22 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 						clean := song
 						clean.Path = ""
 						members[i].Tracks = append(members[i].Tracks, clean)
+						credits := songCredits(song, true)
+						if len(credits) == 0 {
+							credits = []ArtistCredit{{ID: song.ArtistID, Name: song.Artist}}
+						}
+						for _, credit := range credits {
+							found := false
+							for _, existing := range members[i].AlbumArtists {
+								if existing == credit {
+									found = true
+									break
+								}
+							}
+							if !found {
+								members[i].AlbumArtists = append(members[i].AlbumArtists, credit)
+							}
+						}
 						artist := duplicateArtist{song.ArtistID, song.Artist, song.AlbumArtist}
 						found := false
 						for _, existing := range members[i].Artists {
@@ -183,7 +207,7 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 502, e.Error())
 			return
 		}
-		send(w, 200, map[string]any{"groups": metadataDuplicates(index.songs), "scanned": len(index.songs), "limited": index.limited})
+		send(w, 200, map[string]any{"groups": metadataDuplicates(index.songs), "creditIssues": metadataCreditIssues(index.songs), "scanned": len(index.songs), "limited": index.limited})
 		return
 	}
 	if (path == "/lyrics" || path == "/covers") && r.Method == "GET" {

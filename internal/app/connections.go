@@ -114,20 +114,26 @@ type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
+type ArtistCredit struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
 type Song struct {
-	AlbumArtist string  `json:"albumArtist"`
-	ArtistID    string  `json:"artistId"`
-	AlbumID     string  `json:"albumId"`
-	ID          string  `json:"id"`
-	Title       string  `json:"title"`
-	Artist      string  `json:"artist"`
-	Album       string  `json:"album"`
-	Duration    float64 `json:"duration"`
-	Path        string  `json:"path"`
-	Starred     string  `json:"starred"`
-	ContentType string  `json:"contentType"`
-	BitRate     int     `json:"bitRate"`
-	Size        int64   `json:"size"`
+	Artists      []ArtistCredit `json:"artists,omitempty"`
+	AlbumArtists []ArtistCredit `json:"albumArtists,omitempty"`
+	AlbumArtist  string         `json:"albumArtist"`
+	ArtistID     string         `json:"artistId"`
+	AlbumID      string         `json:"albumId"`
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Artist       string         `json:"artist"`
+	Album        string         `json:"album"`
+	Duration     float64        `json:"duration"`
+	Path         string         `json:"path"`
+	Starred      string         `json:"starred"`
+	ContentType  string         `json:"contentType"`
+	BitRate      int            `json:"bitRate"`
+	Size         int64          `json:"size"`
 }
 
 // OpenSubsonic reports album artist credits separately from the legacy
@@ -137,9 +143,6 @@ func (s *Song) UnmarshalJSON(data []byte) error {
 	var value struct {
 		songAlias
 		DisplayAlbumArtist string `json:"displayAlbumArtist"`
-		AlbumArtists       []struct {
-			Name string `json:"name"`
-		} `json:"albumArtists"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
@@ -149,7 +152,7 @@ func (s *Song) UnmarshalJSON(data []byte) error {
 		s.AlbumArtist = value.DisplayAlbumArtist
 		if s.AlbumArtist == "" {
 			names := []string{}
-			for _, artist := range value.AlbumArtists {
+			for _, artist := range s.AlbumArtists {
 				if artist.Name != "" {
 					names = append(names, artist.Name)
 				}
