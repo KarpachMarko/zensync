@@ -91,15 +91,16 @@ func preserveMergeCredits(ctx context.Context, change *metadataChange, original,
 	}
 	plan := struct {
 		artistMergeIdentity
-		Kind                 string   `json:"kind"`
-		Original             string   `json:"original"`
-		Target               string   `json:"target"`
-		Output               string   `json:"output"`
-		FallbackArtists      []string `json:"fallbackArtists"`
-		FallbackAlbumArtists []string `json:"fallbackAlbumArtists"`
-		TargetArtists        []string `json:"targetArtists"`
-		TargetAlbumArtists   []string `json:"targetAlbumArtists"`
-	}{identity, change.MergeKind, original, target, output, creditNames(songCredits(change.Song, false)), creditNames(songCredits(change.Song, true)), creditNames(songCredits(*change.Target, false)), creditNames(songCredits(*change.Target, true))}
+		Kind                 string            `json:"kind"`
+		Original             string            `json:"original"`
+		Target               string            `json:"target"`
+		Output               string            `json:"output"`
+		FallbackArtists      []string          `json:"fallbackArtists"`
+		FallbackAlbumArtists []string          `json:"fallbackAlbumArtists"`
+		TargetArtists        []string          `json:"targetArtists"`
+		TargetAlbumArtists   []string          `json:"targetAlbumArtists"`
+		CreditRepair         *creditRepairPlan `json:"creditRepair,omitempty"`
+	}{identity, change.MergeKind, original, target, output, creditNames(songCredits(change.Song, false)), creditNames(songCredits(change.Song, true)), creditNames(songCredits(*change.Target, false)), creditNames(songCredits(*change.Target, true)), change.CreditRepair}
 	raw, err := json.Marshal(plan)
 	if err != nil {
 		return err

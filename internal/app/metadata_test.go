@@ -62,9 +62,10 @@ func TestMetadataReviewPersistenceAndPermissions(t *testing.T) {
 	admin := login(t, a, "admin")
 	expect(t, admin.call("POST", "/api/v2/users", `{"username":"member","password":"test-password-long"}`, ""), 201)
 	member := login(t, a, "member")
-	for _, path := range []string{"/metadata/duplicates", "/metadata/lyrics?q=test", "/metadata/covers?q=test", "/metadata/songs/one", "/metadata/songs/one/cover"} {
+	for _, path := range []string{"/metadata/duplicates", "/metadata/lyrics?q=test", "/metadata/covers?q=test", "/metadata/songs/one", "/metadata/songs/one/cover", "/metadata/credits/separate"} {
 		expect(t, member.call("GET", "/api/v2"+path, "", ""), 403)
 	}
+	expect(t, member.call("POST", "/api/v2/metadata/credits/separate", "{}", ""), 403)
 	nav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "getCoverArt") {
 			w.Header().Set("Content-Type", "image/png")

@@ -349,7 +349,7 @@ test("screenshot albums and combined artist credits are reviewable without destr
   const dataset = JSON.parse(readFileSync(new URL("../../internal/app/testdata/screenshot-metadata.json", import.meta.url), "utf8")) as {
     albumTitle: string; albumArtists: string[]; combinedArtists: string[]; standaloneArtist: string;
   };
-  await page.route("**/api/v2/metadata/duplicates", (route) => route.fulfill({ json: {
+  await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
     scanned: 12, limited: false,
     groups: [{
       kind: "album", reason: "Matching normalized album artist and album title",
@@ -376,11 +376,61 @@ test("screenshot albums and combined artist credits are reviewable without destr
   const review = page.getByRole("region", { name: "Combined artist credit review" });
   for (const name of dataset.combinedArtists) await expect(review.getByText(name, { exact: true })).toBeVisible();
   await expect(review.getByRole("button", { name: /Merge/ })).toHaveCount(0);
-  await expect(review.getByText(/No automatic splitting or artist merging/)).toBeVisible();
+  await expect(review.getByRole("button", { name: "Separate artist credits", exact: true })).toHaveCount(dataset.combinedArtists.length);
   await review.getByRole("button", { name: "Review affected songs", exact: true }).first().click();
-  await review.getByRole("button", { name: "Edit metadata: Song", exact: true }).click();
+  await review.getByRole("button", { name: "Separate artist credits", exact: true }).first().click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page).toHaveURL(/editSong=one/);
+  await expect(page.getByLabel("Artist 1", { exact: true })).toHaveValue("Aleksey Konstantinovich Uzenjuk");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(state.puts()).toBe(0);
   expect(state.merges).toEqual([]);
+});
+
+test("Skate combined-credit repair proposes known artists, validates and queues one explicit correction", async ({ page }) => {
+  await fixture(page);
+  const writes: unknown[] = [];
+  let scanComplete = false;
+  await page.route("**/api/v2/metadata/jobs", (route) => {
+    if (writes.length) scanComplete = true;
+    return route.fulfill({ json: writes.length ? [{ id: "credit-job", state: "completed", done: 1, total: 1, message: "Credits updated; scan requested" }] : [] });
+  });
+  await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
+    scanned: 3, limited: false, groups: [],
+    creditIssues: scanComplete ? [] : [{ id: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist",
+      parts: ["Vacio", "ЛСП"], knownArtists: ["Vacio", "ЛСП"],
+      tracks: [{ ...song, title: "Skate", album: "Skate", artist: "Vacio, ЛСП • Васильев Николай Михайлович, Олег Вадимович Савченко" }],
+    }],
+  }}));
+  await page.route("**/api/v2/metadata/credits/separate", async (route) => {
+    writes.push(route.request().postDataJSON());
+    await route.fulfill({ status: 202, json: { id: "credit-job", songs: 1 } });
+  });
+  await page.goto("/utilities?tool=duplicates");
+  await page.getByRole("button", { name: "Separate artist credits", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Artist 1", { exact: true })).toHaveValue("Vacio");
+  await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  expect(writes).toEqual([]);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  await dialog.getByRole("button", { name: "Move artist 2 up", exact: true }).click();
+  await expect(dialog.getByLabel("Artist 1", { exact: true })).toHaveValue("ЛСП");
+  await dialog.getByRole("button", { name: "Move artist 2 up", exact: true }).click();
+  await dialog.getByRole("button", { name: "Add artist", exact: true }).click();
+  await dialog.getByLabel("Artist 3", { exact: true }).fill("Extra artist");
+  await dialog.getByRole("button", { name: "Move artist 3 up", exact: true }).click();
+  await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("Extra artist");
+  await dialog.getByRole("button", { name: "Remove artist 2", exact: true }).click();
+  await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  await dialog.getByLabel("Artist 2", { exact: true }).fill("Vacio");
+  await dialog.getByRole("button", { name: "Confirm separate artists", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  expect(writes).toEqual([]);
+  await dialog.getByLabel("Artist 2", { exact: true }).fill("ЛСП");
+  await dialog.getByRole("button", { name: "Confirm separate artists", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toEqual([{ source: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist", artists: ["Vacio", "ЛСП"] }]);
+  await expect(page.getByRole("region", { name: "Combined artist credit review" })).toHaveCount(0);
 });

@@ -105,7 +105,7 @@ export function Utilities({ admin }: { admin: boolean }) {
           {report.data && !report.data.groups.length && (
             <Text>No duplicate candidates found.</Text>
           )}
-          <CreditIssues issues={report.data?.creditIssues ?? []} />
+          <CreditIssues issues={report.data?.creditIssues ?? []} limited={report.data?.limited} />
         </CollapsibleContent>
       </Collapsible>
     </>

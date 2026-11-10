@@ -125,6 +125,35 @@ def replace_credit(values, ids, source, target, target_id):
     return result, result_ids if any(result_ids) else [], changed
 
 
+
+def expand_credit(values, ids, old_name, replacements):
+    if not any(name.casefold() == old_name.casefold() for name in values):
+        raise ValueError("The combined credit changed; refresh the review")
+    if len(ids) > len(values):
+        raise ValueError("Artist names and IDs cannot be aligned safely")
+    padded = list(ids) + [""] * (len(values) - len(ids))
+    names, mbids = [], []
+    for name, mbid in zip(values, padded):
+        if name.casefold() == old_name.casefold():
+            names.extend(replacements)
+            # The compound identity's MBID does not identify either individual.
+            mbids.extend([""] * len(replacements))
+        else:
+            names.append(name)
+            mbids.append(mbid)
+    # Collapse only the explicitly selected identities when already credited.
+    selected = {name.casefold() for name in replacements}
+    result, result_ids = [], []
+    for name, mbid in zip(names, mbids):
+        match = next((i for i, existing in enumerate(result)
+                      if name.casefold() in selected and existing.casefold() == name.casefold()), None)
+        if match is None:
+            result.append(name)
+            result_ids.append(mbid)
+        elif not result_ids[match]:
+            result_ids[match] = mbid
+    return result, result_ids if any(result_ids) else []
+
 def main():
     plan = json.load(sys.stdin)
     original, target, output = (load(plan[key]) for key in ("original", "target", "output"))
@@ -133,7 +162,15 @@ def main():
     artistids, albumartistids = read(original, "artistids"), read(original, "albumartistids")
     artist_display = (read(original, "artist") or [" / ".join(artists)])[0]
     album_display = (read(original, "albumartist") or [" / ".join(albumartists)])[0]
-    if plan["kind"] == "artist":
+    if plan["kind"] == "credits":
+        repair = plan["creditRepair"]
+        if repair["role"] == "artist":
+            artists, artistids = expand_credit(artists, artistids, repair["name"], repair["artists"])
+            artist_display = " / ".join(artists)
+        else:
+            albumartists, albumartistids = expand_credit(albumartists, albumartistids, repair["name"], repair["artists"])
+            album_display = " / ".join(albumartists)
+    elif plan["kind"] == "artist":
         source, destination = plan["sourceName"], plan["targetName"]
         if not source or not destination:
             raise ValueError("Refresh candidates and queue a new artist merge to preserve collaborators")

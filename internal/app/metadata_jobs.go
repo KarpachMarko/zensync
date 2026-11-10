@@ -21,11 +21,12 @@ import (
 )
 
 type metadataChange struct {
-	ArtistMerge *artistMergeIdentity `json:"artistMerge,omitempty"`
-	Song        Song                 `json:"song"`
-	Edit        MetadataEdit         `json:"edit"`
-	MergeKind   string               `json:"mergeKind,omitempty"`
-	Target      *Song                `json:"target,omitempty"`
+	CreditRepair *creditRepairPlan    `json:"creditRepair,omitempty"`
+	ArtistMerge  *artistMergeIdentity `json:"artistMerge,omitempty"`
+	Song         Song                 `json:"song"`
+	Edit         MetadataEdit         `json:"edit"`
+	MergeKind    string               `json:"mergeKind,omitempty"`
+	Target       *Song                `json:"target,omitempty"`
 }
 
 func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
@@ -62,6 +63,17 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	}
 	slog.Info("Metadata job queued", "job_id", jid, "user_id", u.ID, "songs", len(changes))
 	return jid, nil
+}
+func (a *App) existingMetadataEdit(s Song) (MetadataEdit, error) {
+	edit := MetadataEdit{Title: s.Title, Artist: s.Artist, Album: s.Album, AlbumArtist: s.AlbumArtist}
+	var raw string
+	err := a.DB.QueryRow("SELECT metadata FROM metadata_edits WHERE song_id=?", s.ID).Scan(&raw)
+	if err == nil {
+		err = json.Unmarshal([]byte(raw), &edit)
+	} else if err == sql.ErrNoRows {
+		err = nil
+	}
+	return edit, err
 }
 func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
@@ -110,15 +122,8 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	changes := []metadataChange{}
 	for _, s := range source {
-		edit := MetadataEdit{Title: s.Title, Artist: s.Artist, Album: s.Album, AlbumArtist: s.AlbumArtist}
-		var raw string
-		e = a.DB.QueryRow("SELECT metadata FROM metadata_edits WHERE song_id=?", s.ID).Scan(&raw)
-		if e == nil {
-			if e = json.Unmarshal([]byte(raw), &edit); e != nil {
-				a.internal(w, e)
-				return
-			}
-		} else if e != sql.ErrNoRows {
+		edit, e := a.existingMetadataEdit(s)
+		if e != nil {
 			a.internal(w, e)
 			return
 		}
@@ -375,6 +380,9 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	}
 	args = append(args, "-map_metadata", "0", "-c:a", "copy")
 	tags := map[string]string{"title": change.Edit.Title, "artist": change.Edit.Artist, "album": change.Edit.Album}
+	if change.MergeKind == "credits" {
+		tags = map[string]string{}
+	}
 	if change.Edit.Lyrics != "" {
 		tags["lyrics"] = change.Edit.Lyrics
 	}
@@ -397,7 +405,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			tags[key] = ""
 		}
 	}
-	if change.MergeKind != "artist" && (change.Edit.Album != change.Song.Album || change.Edit.Artist != change.Song.Artist) {
+	if (change.MergeKind == "" || change.MergeKind == "album") && (change.Edit.Album != change.Song.Album || change.Edit.Artist != change.Song.Artist) {
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
@@ -436,7 +444,11 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	args = append(args, output)
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	protectChild(cmd)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if change.MergeKind == "credits" {
+		if err := prepareCreditRepairFile(backup, output); err != nil {
+			return err
+		}
+	} else if output, err := cmd.CombinedOutput(); err != nil {
 		slog.Error("Metadata tag writer failed", "job_id", jid, "song_id", change.Song.ID, "error", err, "detail", string(output[:min(len(output), 2000)]))
 		return errors.New("Could not write audio tags; original file retained")
 	}

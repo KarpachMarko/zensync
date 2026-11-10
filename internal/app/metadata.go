@@ -183,6 +183,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v2/metadata")
+	if path == "/credits/separate" && r.Method == "POST" {
+		a.separateArtistCredits(w, r, u)
+		return
+	}
 	if path == "/merge" && r.Method == "POST" {
 		a.mergeMetadata(w, r, u)
 		return
@@ -201,6 +205,11 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		if e != nil {
 			fail(w, 400, e.Error())
 			return
+		}
+		if r.URL.Query().Get("refresh") == "true" {
+			a.navIndexMu.Lock()
+			delete(a.navIndexes, digest(mustJSON(c)))
+			a.navIndexMu.Unlock()
 		}
 		index, e := a.indexedNavSongs(r.Context(), c)
 		if e != nil {
