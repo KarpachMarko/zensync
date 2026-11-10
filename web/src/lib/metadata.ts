@@ -5,6 +5,8 @@ export const metadataSchema = z.object({
   artist: z.string().trim().min(1).max(500),
   album: z.string().max(500),
   albumArtist: z.string().max(500).optional(),
+  removeCover: z.boolean().optional(),
+  coverUploadId: z.string().max(64).optional(),
   coverUrl: z.union([z.literal(""), z.url().startsWith("https://").max(2000)]),
   lyrics: z.string().max(200000),
   syncedLyrics: z.string().max(200000),
@@ -29,6 +31,7 @@ export type CoverCandidate = {
   source: string;
 };
 export type MetadataJob = {
+  title?: string;
   id: string;
   state: "queued" | "running" | "completed" | "failed";
   message: string;

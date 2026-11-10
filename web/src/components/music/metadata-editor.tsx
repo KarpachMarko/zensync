@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/typography";
 import { SearchBox } from "@/components/search-box";
 import { useAppForm } from "@/hooks/use-app-form";
-import { api } from "@/lib/api";
+import { FileUpload, FileUploadTrigger } from "@/components/ui/file-upload";
+import { ArtworkSource } from "./artwork-source";
+import { api, uploadCoverFile } from "@/lib/api";
 import {
   metadataSchema,
   type MetadataEdit,
@@ -88,6 +90,9 @@ function MetadataForm({
 }) {
   const client = useQueryClient();
   const [tab, setTab] = useState("details");
+  const [artworkText, setArtworkText] = useState(initial.coverUrl || `${searchArtist} ${initial.album}`.trim());
+  const [uploadedName, setUploadedName] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const [lyricsQ, setLyricsQ] = useState(`${searchArtist} ${initial.title}`.trim());
   const [coversQ, setCoversQ] = useState(`${searchArtist} ${initial.album}`.trim());
   const save = useMutation({
@@ -99,12 +104,21 @@ function MetadataForm({
       close();
     },
   });
-  const defaults: MetadataEdit = { ...initial, albumArtist: initial.albumArtist ?? "" };
+  const defaults: MetadataEdit = { ...initial, albumArtist: initial.albumArtist ?? "", removeCover: false, coverUploadId: "" };
   const form = useAppForm({
     defaultValues: defaults,
     validators: { onSubmit: metadataSchema },
     onSubmit: async ({ value }) => {
       if (!save.isPending) await save.mutateAsync(value).catch(() => undefined);
+    },
+  });
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadCoverFile(id, file),
+    onSuccess: (result, file) => {
+      form.setFieldValue("coverUploadId", result.id);
+      form.setFieldValue("coverUrl", "");
+      form.setFieldValue("removeCover", false);
+      setUploadedName(file.name); setArtworkText(""); setCoversQ(""); setUploadError("");
     },
   });
   const lyrics = useQuery({
@@ -187,33 +201,43 @@ function MetadataForm({
         <TabsContent
           value="artwork"
           forceMount
-          className="mt-0 space-y-2 data-[state=inactive]:hidden"
+          className="mt-0 space-y-4 data-[state=inactive]:hidden"
         >
-          <form.AppField name="coverUrl">
-            {(field) => (
-              <field.TextField
-                label="Cover URL"
-                labelClassName={compactLabel}
-                className="h-8 min-h-8 py-1 text-sm"
-                placeholder="Select a cover below"
-              />
-            )}
-          </form.AppField>
-          <form.Subscribe selector={(state) => state.values.coverUrl}>
-            {(url) => (
-              <div className="flex items-center gap-3">
-                <ArtworkImage key={url} src={url || `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover`} alt={url ? "Selected cover" : "Current cover"} className="size-24 shrink-0" />
-                <Text className="text-xs">{url ? "Selected cover" : "Current cover"}</Text>
+          <ArtworkSource value={artworkText} onSubmit={(value, isURL) => {
+            setArtworkText(value);
+            if (isURL) {
+              form.setFieldValue("coverUrl", value);
+              form.setFieldValue("coverUploadId", "");
+              form.setFieldValue("removeCover", false);
+              setCoversQ("");
+            } else setCoversQ(value);
+          }} />
+          <form.Subscribe selector={(state) => ({ url: state.values.coverUrl, uploadID: state.values.coverUploadId ?? "", remove: state.values.removeCover ?? false })}>
+            {({ url, uploadID, remove }) => (
+              <div className="flex flex-wrap items-center gap-4 py-2">
+                {remove ? <Text role="status" className="m-0 text-xs">Embedded cover will be removed when you save. Shared album artwork is kept.</Text> : (
+                  <div className="flex items-center gap-3">
+                    <ArtworkImage key={url || uploadID || "current"} src={uploadID ? `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover-upload/${uploadID}` : url || `/api/v2/metadata/songs/${encodeURIComponent(id)}/cover`} alt={uploadID ? "Uploaded cover" : url ? "Selected cover" : "Current cover"} className="size-24 shrink-0" />
+                    <Text className="m-0 max-w-40 break-words text-xs">{uploadID ? uploadedName : url ? "Selected cover" : "Current cover"}</Text>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <FileUpload label="Upload cover" value={[]} maxFiles={1} maxSize={20 * 1024 * 1024} accept="image/jpeg,image/png" disabled={upload.isPending || save.isPending}
+                    onFileReject={(_, message) => setUploadError(message)}
+                    onValueChange={(files) => { if (files[0]) { setUploadError(""); upload.mutate(files[0]); } }}>
+                    <FileUploadTrigger asChild><Button type="button" size="sm" variant="outline">{upload.isPending ? "Uploading…" : "Upload cover"}</Button></FileUploadTrigger>
+                  </FileUpload>
+                  <Button type="button" size="sm" variant="outline" disabled={upload.isPending || save.isPending} onClick={() => {
+                    form.setFieldValue("removeCover", !remove);
+                    form.setFieldValue("coverUrl", ""); form.setFieldValue("coverUploadId", "");
+                    setArtworkText(""); setCoversQ("");
+                  }}>{remove ? "Keep current cover" : "Remove cover"}</Button>
+                </div>
               </div>
             )}
           </form.Subscribe>
-          <SearchBox
-            compact
-            label="Search covers"
-            value={`${searchArtist} ${initial.album}`}
-            onSearch={setCoversQ}
-            disabled={covers.isFetching}
-          />
+          <Text className="m-0 text-xs">Upload a JPEG or PNG, up to 20 MiB. Artwork changes apply when you save.</Text>
+          {(uploadError || upload.error) && <Text role="alert" className="m-0 text-xs">{uploadError || upload.error?.message}</Text>}
           {covers.isFetching && (
             <Text role="status" className="m-0 text-xs">
               Searching MusicBrainz and Cover Art Archive…
@@ -251,6 +275,10 @@ function MetadataForm({
                   className="w-full"
                   onClick={() => {
                     form.setFieldValue("coverUrl", cover.url);
+                    form.setFieldValue("coverUploadId", "");
+                    form.setFieldValue("removeCover", false);
+                    setArtworkText(cover.url);
+                    setCoversQ("");
                     toast.info("Cover selected");
                   }}
                 >
@@ -363,7 +391,7 @@ function MetadataForm({
           size="sm"
           type="submit"
           form="metadata-form"
-          disabled={save.isPending}
+          disabled={save.isPending || upload.isPending}
         >
           {save.isPending ? "Queuing…" : "Save changes"}
         </Button>

@@ -1,3 +1,4 @@
+import { AppLink } from "@/components/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -57,7 +58,8 @@ export function CreditRepairDialog({ issue, disabled }: { issue: CreditIssue; di
   };
   return (
     <>
-      <Button size="sm" disabled={disabled || !!jobID} onClick={() => changeOpen(true)}>{jobID ? failed ? "Separation failed — retry above" : "Separation queued" : "Separate artist credits"}</Button>
+      <Button size="sm" disabled={disabled || !!jobID} onClick={() => changeOpen(true)}>{jobID ? failed ? "Separation failed — see Activity" : "Separation queued" : "Separate artist credits"}</Button>
+      {failed && <AppLink to="/activity" className="ml-2 text-xs underline">Review failure in Activity</AppLink>}
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogTitle>Separate artist credits</DialogTitle>

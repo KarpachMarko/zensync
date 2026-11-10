@@ -156,6 +156,67 @@ def expand_credit(values, ids, old_name, replacements):
 
 def main():
     plan = json.load(sys.stdin)
+    if plan["kind"] == "artwork-metadata":
+        original, output = load(plan["original"]), load(plan["output"])
+        changed = plan["changed"]
+        cover_keys = {"covr", "metadata_block_picture", "coverart", "coverartmime"}
+        mutable = {"tit2": "title", "\xa9nam": "title", "title": "title",
+                   "talb": "album", "\xa9alb": "album", "album": "album",
+                   "uslt": "lyrics", "sylt": "lyrics", "\xa9lyr": "lyrics",
+                   "lyrics": "lyrics", "syncedlyrics": "lyrics", "unsyncedlyrics": "lyrics"}
+        for key, value in original.tags.items():
+            root = key.lower().split(":")[0]
+            normal = key.lower()
+            if normal.startswith("txxx:"):
+                normal = normal[5:]
+            if normal.startswith("----:com.apple.itunes:"):
+                normal = normal[len("----:com.apple.itunes:"):]
+            if logical(key) is not None or root == "apic" or normal in cover_keys:
+                continue
+            field = mutable.get(root, mutable.get(normal))
+            if field and changed.get(field):
+                continue
+            if "musicbrainz" in normal and ("albumid" in normal.replace(" ", "").replace("_", "") or "releasegroupid" in normal.replace(" ", "").replace("_", "")) and changed["grouping"]:
+                continue
+            output.tags[key] = value
+        for role, fields in (("artist", {"artist", "artists", "artistids"}),
+                             ("albumartist", {"albumartist", "albumartists", "albumartistids"})):
+            if changed[role]:
+                desired = plan[role]
+                write(output, role, [desired] if desired else [])
+                write(output, "artists" if role == "artist" else "albumartists", [desired] if desired else [])
+                write(output, "artistids" if role == "artist" else "albumartistids", [])
+            else:
+                for key in list(output.tags.keys()):
+                    if logical(key) in fields:
+                        del output.tags[key]
+                for key, value in original.tags.items():
+                    if logical(key) in fields:
+                        output.tags[key] = value
+        if isinstance(output.tags, ID3):
+            output.save(v2_version=4)
+        else:
+            output.save()
+        print("{}")
+        return
+    if plan["kind"] == "remove-cover":
+        output = load(plan["output"])
+        if isinstance(output.tags, ID3):
+            output.tags.delall("APIC")
+        elif isinstance(output.tags, MP4Tags):
+            output.tags.pop("covr", None)
+        else:
+            for key in list(output.tags.keys()):
+                if key.lower() in {"metadata_block_picture", "coverart", "coverartmime"}:
+                    del output.tags[key]
+        if hasattr(output, "clear_pictures"):
+            output.clear_pictures()
+        if isinstance(output.tags, ID3):
+            output.save(v2_version=4)
+        else:
+            output.save()
+        print("{}")
+        return
     original, target, output = (load(plan[key]) for key in ("original", "target", "output"))
     artists = names(original, "artists", "artist", plan["fallbackArtists"])
     albumartists = names(original, "albumartists", "albumartist", plan["fallbackAlbumArtists"])

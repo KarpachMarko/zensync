@@ -19,14 +19,16 @@ import (
 
 // Metadata edits are a review layer, independent of acquisition and file identity.
 type MetadataEdit struct {
-	AlbumArtist  string `json:"albumArtist,omitempty"`
-	Title        string `json:"title"`
-	Artist       string `json:"artist"`
-	Album        string `json:"album"`
-	CoverURL     string `json:"coverUrl"`
-	Lyrics       string `json:"lyrics"`
-	SyncedLyrics string `json:"syncedLyrics"`
-	LyricsSource string `json:"lyricsSource"`
+	RemoveCover   bool   `json:"removeCover,omitempty"`
+	CoverUploadID string `json:"coverUploadId,omitempty"`
+	AlbumArtist   string `json:"albumArtist,omitempty"`
+	Title         string `json:"title"`
+	Artist        string `json:"artist"`
+	Album         string `json:"album"`
+	CoverURL      string `json:"coverUrl"`
+	Lyrics        string `json:"lyrics"`
+	SyncedLyrics  string `json:"syncedLyrics"`
+	LyricsSource  string `json:"lyricsSource"`
 }
 type duplicateArtist struct {
 	ID          string `json:"id"`
@@ -183,6 +185,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v2/metadata")
+	if strings.HasPrefix(path, "/songs/") && strings.Contains(path, "/cover-upload") {
+		a.metadataCoverUpload(w, r, u)
+		return
+	}
 	if path == "/credits/separate" && r.Method == "POST" {
 		a.separateArtistCredits(w, r, u)
 		return
@@ -363,8 +369,42 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 				fail(w, 400, "Cover must be an HTTPS URL")
 				return
 			}
+			lookup, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			err := validateArtworkURL(lookup, v)
+			cancel()
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
 		}
-		jid, e := a.queueMetadata([]metadataChange{{Song: remote.Song, Edit: edit}}, u)
+		selected := 0
+		if edit.CoverURL != "" {
+			selected++
+		}
+		if edit.CoverUploadID != "" {
+			selected++
+		}
+		if edit.RemoveCover {
+			selected++
+		}
+		if selected > 1 {
+			fail(w, 400, "Choose one artwork action: URL, upload, or removal")
+			return
+		}
+		change := metadataChange{Song: remote.Song, Edit: edit}
+		if edit.CoverUploadID != "" {
+			relative, err := coverUploadRelative(u.ID, sid, edit.CoverUploadID)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			if _, err := a.readCoverUpload(relative); err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			change.UploadedCover = relative
+		}
+		jid, e := a.queueMetadata([]metadataChange{change}, u)
 		if e != nil {
 			fail(w, 409, e.Error())
 			return
@@ -407,7 +447,10 @@ func (a *App) metadataJSON(ctx context.Context, endpoint string, out any) error 
 	}
 	res, e := client.Do(req)
 	if e != nil {
-		return errors.New("Metadata provider is unavailable")
+		if errors.Is(e, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return errors.New("Metadata search timed out. Try a shorter query or try again later")
+		}
+		return errors.New("Metadata provider is unavailable; try again shortly")
 	}
 	defer res.Body.Close()
 	if res.StatusCode == 429 || res.StatusCode == 503 {
@@ -479,6 +522,7 @@ func (a *App) metadataCovers(w http.ResponseWriter, r *http.Request, q string) {
 		return
 	}
 	rows := []coverCandidate{}
+	var artworkError error
 	for _, release := range search.Releases {
 		// IDs from upstream are never allowed to change the destination host or path.
 		if len(release.ID) != 36 || strings.ContainsAny(release.ID, "/?#%") {
@@ -490,13 +534,18 @@ func (a *App) metadataCovers(w http.ResponseWriter, r *http.Request, q string) {
 				Thumbnails map[string]string `json:"thumbnails"`
 			} `json:"images"`
 		}
-		e := a.metadataJSON(ctx, "https://coverartarchive.org/release/"+release.ID, &art)
+		lookup, stop := context.WithTimeout(ctx, 4*time.Second)
+		e := a.metadataJSON(lookup, "https://coverartarchive.org/release/"+release.ID, &art)
+		stop()
 		if errors.Is(e, sql.ErrNoRows) {
 			continue
 		}
 		if e != nil {
-			fail(w, 502, e.Error())
-			return
+			artworkError = e
+			if ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		for _, im := range art.Images {
 			if !im.Front {
@@ -516,6 +565,10 @@ func (a *App) metadataCovers(w http.ResponseWriter, r *http.Request, q string) {
 			rows = append(rows, coverCandidate{release.ID, release.Title, strings.Join(names, ", "), image, "https://musicbrainz.org/release/" + release.ID})
 			break
 		}
+	}
+	if len(rows) == 0 && artworkError != nil {
+		fail(w, 502, artworkError.Error())
+		return
 	}
 	send(w, 200, rows)
 }

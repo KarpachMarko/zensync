@@ -37,6 +37,9 @@ export function Utilities({ admin }: { admin: boolean }) {
     "tool",
     parseAsStringLiteral(["duplicates"] as const),
   );
+  const kinds = ["all", "song", "album", "artist", "credits"] as const;
+  const [kind, setKind] = useQueryState("kind", parseAsStringLiteral(kinds).withDefault("all"));
+  const filterID = useId();
   const report = useQuery({
     queryKey: ["api", "/metadata/duplicates"],
     enabled: admin && tool === "duplicates",
@@ -51,6 +54,8 @@ export function Utilities({ admin }: { admin: boolean }) {
     retry: false,
     staleTime: 30000,
   });
+  const visibleGroups = (report.data?.groups ?? []).filter((group) => kind === "all" || group.kind === kind);
+  const visibleCredits = kind === "all" || kind === "credits" ? report.data?.creditIssues ?? [] : [];
   if (!admin)
     return <Text role="alert">Utilities require an administrator.</Text>;
   return (
@@ -80,6 +85,19 @@ export function Utilities({ admin }: { admin: boolean }) {
               Refresh candidates
             </Button>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor={filterID}>Show</Label>
+            <Select value={kind} onValueChange={(value) => { const next = kinds.find((item) => item === value); if (next) void setKind(next); }}>
+              <SelectTrigger id={filterID} className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All issues</SelectItem>
+                <SelectItem value="song">Duplicate songs</SelectItem>
+                <SelectItem value="album">Duplicate albums</SelectItem>
+                <SelectItem value="artist">Duplicate artists</SelectItem>
+                <SelectItem value="credits">Combined artist credits</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <MetadataJobs />
           {report.isFetching && (
             <Text role="status" className="my-1">
@@ -89,23 +107,23 @@ export function Utilities({ admin }: { admin: boolean }) {
           {report.error && <Text role="alert">{report.error.message}</Text>}
           {report.data && (
             <Text className="my-1 text-xs">
-              {report.data.scanned} songs checked · {report.data.groups.length}{" "}
-              duplicate candidate groups · {report.data.creditIssues?.length ?? 0} combined-credit issues.
+              {report.data.scanned} songs checked · {visibleGroups.length} of {report.data.groups.length}{" "}
+              duplicate candidate groups · {visibleCredits.length} combined-credit issues.
               {report.data.limited &&
                 " Partial scan: 50,000-song limit reached. Merges are disabled."}
             </Text>
           )}
-          {report.data?.groups.map((group) => (
+          {visibleGroups.map((group) => (
             <DuplicateCandidates
               key={`${group.kind}:${group.members.map((m) => m.id).join(":")}`}
               group={group}
-              limited={report.data.limited}
+              limited={report.data?.limited ?? false}
             />
           ))}
-          {report.data && !report.data.groups.length && (
-            <Text>No duplicate candidates found.</Text>
+          {report.data && !visibleGroups.length && kind !== "credits" && (
+            <Text>No {kind === "all" ? "duplicate" : kind} candidates found.</Text>
           )}
-          <CreditIssues issues={report.data?.creditIssues ?? []} limited={report.data?.limited} />
+          <CreditIssues issues={visibleCredits} limited={report.data?.limited} />
         </CollapsibleContent>
       </Collapsible>
     </>

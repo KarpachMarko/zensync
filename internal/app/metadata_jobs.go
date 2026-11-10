@@ -21,12 +21,13 @@ import (
 )
 
 type metadataChange struct {
-	CreditRepair *creditRepairPlan    `json:"creditRepair,omitempty"`
-	ArtistMerge  *artistMergeIdentity `json:"artistMerge,omitempty"`
-	Song         Song                 `json:"song"`
-	Edit         MetadataEdit         `json:"edit"`
-	MergeKind    string               `json:"mergeKind,omitempty"`
-	Target       *Song                `json:"target,omitempty"`
+	UploadedCover string               `json:"uploadedCover,omitempty"`
+	CreditRepair  *creditRepairPlan    `json:"creditRepair,omitempty"`
+	ArtistMerge   *artistMergeIdentity `json:"artistMerge,omitempty"`
+	Song          Song                 `json:"song"`
+	Edit          MetadataEdit         `json:"edit"`
+	MergeKind     string               `json:"mergeKind,omitempty"`
+	Target        *Song                `json:"target,omitempty"`
 }
 
 func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
@@ -166,13 +167,14 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 }
 func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		rows, e := a.DB.Query("SELECT id,state,message,done,json_array_length(changes) FROM metadata_jobs ORDER BY rowid DESC LIMIT 20")
+		rows, e := a.DB.Query("SELECT id,state,message,done," + metadataActivityTotalSQL + "," + metadataActivityTitleSQL + " FROM metadata_jobs ORDER BY " + executionOrderSQL("state") + ",rowid DESC LIMIT 20")
 		if e != nil {
 			a.internal(w, e)
 			return
 		}
 		defer rows.Close()
 		type job struct {
+			Title   string `json:"title"`
 			ID      string `json:"id"`
 			State   string `json:"state"`
 			Message string `json:"message"`
@@ -182,7 +184,7 @@ func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
 		jobs := []job{}
 		for rows.Next() {
 			var j job
-			if e = rows.Scan(&j.ID, &j.State, &j.Message, &j.Done, &j.Total); e != nil {
+			if e = rows.Scan(&j.ID, &j.State, &j.Message, &j.Done, &j.Total, &j.Title); e != nil {
 				a.internal(w, e)
 				return
 			}
@@ -365,13 +367,23 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	os.Remove(output)
 	defer os.Remove(output)
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", backup}
-	useCover := change.Edit.CoverURL != ""
-	if useCover {
+	useCover := change.Edit.CoverURL != "" || change.UploadedCover != ""
+	if change.Edit.RemoveCover {
+		args = append(args, "-map", "0:a")
+	} else if useCover {
 		if ext != ".mp3" && ext != ".flac" && ext != ".m4a" {
 			return errors.New("Cover embedding currently supports MP3, FLAC and M4A")
 		}
 		cover := filepath.Join(dir, "selected-cover")
-		if e = a.downloadMetadataCover(ctx, change.Edit.CoverURL, cover); e != nil {
+		if change.UploadedCover != "" {
+			data, err := a.readCoverUpload(change.UploadedCover)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(cover, data, 0600); err != nil {
+				return err
+			}
+		} else if e = a.downloadMetadataCover(ctx, change.Edit.CoverURL, cover); e != nil {
 			return e
 		}
 		args = append(args, "-i", cover, "-map", "0:a", "-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic")
@@ -452,6 +464,16 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		slog.Error("Metadata tag writer failed", "job_id", jid, "song_id", change.Song.ID, "error", err, "detail", string(output[:min(len(output), 2000)]))
 		return errors.New("Could not write audio tags; original file retained")
 	}
+	if change.MergeKind == "" && (useCover || change.Edit.RemoveCover) {
+		if err := preserveArtworkMetadata(ctx, change, backup, output); err != nil {
+			return err
+		}
+	}
+	if change.Edit.RemoveCover {
+		if err := removeMetadataArtwork(ctx, output); err != nil {
+			return err
+		}
+	}
 	if change.MergeKind != "" {
 		if err := preserveMergeCredits(ctx, &change, backup, canonicalPath, output); err != nil {
 			return err
@@ -519,7 +541,9 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if err := syncDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	if change.MergeKind != "" {
+	if change.MergeKind != "" || change.UploadedCover != "" || change.Edit.RemoveCover {
+		change.Edit.RemoveCover = false
+		change.Edit.CoverUploadID = ""
 		_, err := a.DB.Exec("UPDATE metadata_edits SET metadata=? WHERE song_id=?", mustJSON(change.Edit), change.Song.ID)
 		if err != nil {
 			return err
@@ -572,16 +596,13 @@ func metadataCoverHost(u *url.URL) bool {
 }
 func (a *App) downloadMetadataCover(ctx context.Context, raw, path string) error {
 	u, e := url.Parse(raw)
-	if e != nil || !metadataCoverHost(u) {
-		return errors.New("Choose an HTTPS cover from Cover Art Archive or archive.org")
+	if e != nil {
+		return errors.New("Use a public HTTPS image URL")
 	}
-	client := *a.HTTP
-	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-		if len(via) >= 5 || !metadataCoverHost(r.URL) {
-			return errors.New("Unsafe cover redirect")
-		}
-		return nil
+	if err := validateArtworkURL(ctx, u); err != nil {
+		return err
 	}
+	client := a.artworkClient()
 	req, e := http.NewRequestWithContext(ctx, "GET", raw, nil)
 	if e != nil {
 		return e

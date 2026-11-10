@@ -86,6 +86,16 @@ export async function uploadAudioFile(path: string, file: File, key: string): Pr
   return { id: data.id };
 }
 
+export async function uploadCoverFile(songID: string, file: File): Promise<{ id: string }> {
+  const response = await fetch(`/api/v2/metadata/songs/${encodeURIComponent(songID)}/cover-upload`, {
+    method: "POST", headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": csrf }, body: file,
+  });
+  const data = await readApiResponse(response);
+  if (!response.ok) throw new Error(responseError(data, "Cover upload failed"));
+  if (typeof data !== "object" || data === null || !("id" in data) || typeof data.id !== "string") throw new Error("Invalid cover upload response");
+  return { id: data.id };
+}
+
 export type Track = {
   provider?: "deezer" | "lossless";
   source?: string;

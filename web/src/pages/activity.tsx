@@ -22,22 +22,24 @@ export function Activity({ admin }: { admin: boolean }) {
   const error = actionError || result.error?.message;
   const loading = result.isPending;
   const load = result.reload;
-  async function taskAction(id: string, cancel = false, dismiss = false) {
+  async function taskAction(item: ActivityItem, cancel = false, dismiss = false) {
+    const id = item.id;
     if (pendingTask) return;
     setPendingTask(id);
     setError("");
     try {
-      await api(
-        "/tasks/" + id + (dismiss ? "/dismiss" : cancel ? "/cancel" : ""),
-        "POST",
-      );
+      if (item.kind === "metadata") {
+        await api("/metadata/jobs", "POST", { id });
+      } else {
+        await api("/tasks/" + id + (dismiss ? "/dismiss" : cancel ? "/cancel" : ""), "POST");
+      }
       await load();
       toast.success(
         dismiss
           ? "Failure dismissed. Music files are kept."
           : cancel
             ? "Migration task cancelled."
-            : "Task queued for retry.",
+            : item.kind === "metadata" ? "Metadata update queued for retry." : "Task queued for retry.",
       );
     } catch (e) {
       setError((e as Error).message);
@@ -48,7 +50,7 @@ export function Activity({ admin }: { admin: boolean }) {
   return (
     <>
       <PageHeading tabIndex={-1}>Activity</PageHeading>
-      <Text>Follow downloads, library scans and migration tasks.</Text>
+      <Text>Follow downloads, library scans, metadata updates and migration tasks.</Text>
       {admin && (
         <AppLink to="/settings/downloads">Manage parallel downloads</AppLink>
       )}
@@ -67,12 +69,12 @@ export function Activity({ admin }: { admin: boolean }) {
             <StatusSection key={title} title={title} count={group.length}>
               {group.map((r) => (
                 <ActivityRow
-                  key={r.id}
+                  key={`${r.kind ?? "task"}:${r.id}`}
                   item={r}
                   busy={pendingTask !== null}
-                  onRetry={() => void taskAction(r.id)}
-                  onDismiss={() => void taskAction(r.id, false, true)}
-                  onCancel={() => void taskAction(r.id, true)}
+                  onRetry={() => void taskAction(r)}
+                  onDismiss={() => void taskAction(r, false, true)}
+                  onCancel={() => void taskAction(r, true)}
                 />
               ))}
             </StatusSection>

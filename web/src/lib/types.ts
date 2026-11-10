@@ -33,6 +33,7 @@ export type MusicRequest = {
 };
 
 export type ActivityItem = {
+  kind?: "metadata" | "acquisition" | "migration" | "relocation" | "other";
   id: string;
   title: string;
   state: string;

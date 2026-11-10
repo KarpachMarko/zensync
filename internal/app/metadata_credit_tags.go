@@ -130,3 +130,32 @@ func preserveMergeCredits(ctx context.Context, change *metadataChange, original,
 	change.Edit.Artist, change.Edit.AlbumArtist = actual.Artist, actual.AlbumArtist
 	return nil
 }
+
+func removeMetadataArtwork(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, metadataPythonPath(), "-c", metadataCreditWriter)
+	cmd.Stdin = strings.NewReader(mustJSON(map[string]string{"kind": "remove-cover", "output": path}))
+	protectChild(cmd)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("Could not remove cover; original retained: %v %s", err, out)
+	}
+	return nil
+}
+
+func preserveArtworkMetadata(ctx context.Context, change metadataChange, original, output string) error {
+	changed := map[string]bool{
+		"title":       change.Edit.Title != change.Song.Title,
+		"album":       change.Edit.Album != change.Song.Album,
+		"artist":      change.Edit.Artist != change.Song.Artist,
+		"albumartist": change.Edit.AlbumArtist != "" && change.Edit.AlbumArtist != change.Song.AlbumArtist,
+		"lyrics":      change.Edit.Lyrics != "" || change.Edit.SyncedLyrics != "",
+		"grouping":    change.Edit.Album != change.Song.Album || change.Edit.Artist != change.Song.Artist,
+	}
+	plan := map[string]any{"kind": "artwork-metadata", "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist}
+	cmd := exec.CommandContext(ctx, metadataPythonPath(), "-c", metadataCreditWriter)
+	cmd.Stdin = strings.NewReader(mustJSON(plan))
+	protectChild(cmd)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("Could not preserve metadata during artwork update: %v %s", err, out)
+	}
+	return nil
+}

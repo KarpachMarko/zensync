@@ -494,3 +494,129 @@ test("a new frontend deployment offers reload without automatically discarding w
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Unsaved title");
   await expect(page).toHaveURL(/editSong=one/);
 });
+
+test("metadata history lives in Activity while Library and Duplicates show at most three active rows", async ({ page }) => {
+  await fixture(page);
+  const jobs = [
+    { id: "done", title: "Edit metadata / Finished", state: "completed", done: 1, total: 1, message: "Completed history" },
+    { id: "failed", title: "Edit metadata / Failed", state: "failed", done: 0, total: 1, message: "Could not read source" },
+    { id: "queued-a", title: "Queued A", state: "queued", done: 0, total: 1, message: "Waiting" },
+    { id: "running", title: "Running", state: "running", done: 1, total: 4, message: "Writing tags" },
+    { id: "queued-b", title: "Queued B", state: "queued", done: 0, total: 1, message: "Waiting" },
+    { id: "queued-c", title: "Queued C", state: "queued", done: 0, total: 1, message: "Waiting" },
+  ];
+  const retries: unknown[] = [];
+  await page.route("**/api/v2/metadata/jobs", async (route) => {
+    if (route.request().method() === "POST") {
+      retries.push(route.request().postDataJSON());
+      jobs[1].state = "queued";
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: jobs });
+  });
+  await page.route("**/api/v2/activity", (route) => route.fulfill({ json: jobs.map((job) => ({
+    id: job.id, kind: "metadata", title: job.title, state: job.state, stage: job.message,
+  })) }));
+  for (const path of ["/library", "/utilities?tool=duplicates"]) {
+    await page.goto(path);
+    const updates = page.getByRole("region", { name: "Active library updates" });
+    await expect(updates.locator('[data-slot="activity-row"]')).toHaveCount(3);
+    await expect(updates.locator("strong")).toHaveText(["Library updates", "Running", "Queued A", "Queued B"]);
+    await expect(page.getByText("Completed history", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Could not read source", { exact: true })).toHaveCount(0);
+  }
+  await page.goto("/activity");
+  await page.getByRole("button", { name: /^Completed/ }).click();
+  await expect(page.locator('[data-slot="activity-row"]')).toHaveCount(6);
+  await expect(page.getByText("Edit metadata / Finished", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Edit metadata / Failed", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Retry", exact: true }).click();
+  expect(retries).toEqual([{ id: "failed" }]);
+});
+
+test("duplicate type filter is retained in the URL and separates credit issues from duplicates", async ({ page }) => {
+  await fixture(page);
+  const groups: DuplicateGroup[] = (["song", "album", "artist"] as const).map((kind) => ({
+    kind, reason: "Fixture", members: [{ id: kind + "-one", label: kind + " first", count: 1, song }, { id: kind + "-two", label: kind + " second", count: 1, song: { ...song, id: "two" } }],
+  }));
+  await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
+    scanned: 6, limited: false, groups,
+    creditIssues: [{ id: "combined", name: "Vacio, ЛСП", role: "artist", parts: ["Vacio", "ЛСП"], knownArtists: ["Vacio", "ЛСП"], tracks: [song] }],
+  } }));
+  await page.goto("/utilities?tool=duplicates");
+  const filter = page.getByRole("combobox", { name: "Show", exact: true });
+  await filter.click(); await page.getByRole("option", { name: "Duplicate albums", exact: true }).click();
+  await expect(page).toHaveURL(/kind=album/);
+  await expect(page.getByText("album first", { exact: true })).toBeVisible();
+  await expect(page.getByText("artist first", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Combined artist credit review" })).toHaveCount(0);
+  await page.reload();
+  await expect(filter).toHaveText("Duplicate albums");
+  for (const label of ["Duplicate artists", "Duplicate songs"]) {
+    await filter.click(); await page.getByRole("option", { name: label, exact: true }).click();
+    await expect(filter).toHaveText(label);
+  }
+  await filter.click(); await page.getByRole("option", { name: "Combined artist credits", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Combined artist credit review" })).toBeVisible();
+  await expect(page.getByText("album first", { exact: true })).toHaveCount(0);
+  await filter.click(); await page.getByRole("option", { name: "All issues", exact: true }).click();
+  await expect(page.getByText("album first", { exact: true })).toBeVisible();
+  await expect(page.getByText("artist first", { exact: true })).toBeVisible();
+});
+
+test("one artwork field accepts image URLs during a provider failure and the preview clears its focus outline", async ({ page }) => {
+  const state = await fixture(page);
+  await page.route("**/api/v2/metadata/covers?**", (route) => route.fulfill({ status: 502, json: { error: "Metadata search timed out" } }));
+  await page.goto("/library?editSong=one");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: "Artwork", exact: true }).click();
+  await expect(dialog.locator('input:not([type="file"]):visible')).toHaveCount(1);
+  const input = dialog.getByLabel("Search artwork or image URL", { exact: true });
+  await input.focus();
+  const image = dialog.getByAltText("Current cover", { exact: true });
+  await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const gap = await image.evaluate((element) => {
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="Artist and album, or https://…"]');
+    return element.getBoundingClientRect().top - (field?.getBoundingClientRect().bottom ?? 0);
+  });
+  expect(gap).toBeGreaterThanOrEqual(12);
+  await input.fill("https://archive.org/cover.jpg");
+  await dialog.getByRole("button", { name: "Use URL", exact: true }).click();
+  await expect(dialog.getByAltText("Selected cover", { exact: true })).toHaveAttribute("src", "https://archive.org/cover.jpg");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  expect(state.edit()).toMatchObject({ coverUrl: "https://archive.org/cover.jpg", removeCover: false });
+});
+
+test("cover upload is staged with a preview until Save and removal is explicit", async ({ page }) => {
+  const state = await fixture(page);
+  const token = "a".repeat(64);
+  let uploaded = false;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await page.route("**/api/v2/metadata/songs/one/cover-upload", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    uploaded = true;
+    return route.fulfill({ status: 201, json: { id: token } });
+  });
+  await page.route("**/api/v2/metadata/songs/one/cover-upload/*", (route) => route.fulfill({ contentType: "image/png", body: png }));
+  await page.goto("/library?editSong=one");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: "Artwork", exact: true }).click();
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: png });
+  await expect(dialog.getByAltText("Uploaded cover", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  expect(uploaded).toBe(true);
+  expect(state.puts()).toBe(0);
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  expect(state.edit()).toMatchObject({ coverUploadId: token, coverUrl: "", removeCover: false });
+
+  await page.getByRole("button", { name: "Edit metadata: Song", exact: true }).click();
+  await dialog.getByRole("tab", { name: "Artwork", exact: true }).click();
+  await dialog.getByRole("button", { name: "Remove cover", exact: true }).click();
+  await expect(dialog.getByText(/Embedded cover will be removed/)).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Keep current cover", exact: true }).click();
+  await expect(dialog.getByAltText("Current cover", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Remove cover", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  expect(state.edit()).toMatchObject({ removeCover: true, coverUrl: "", coverUploadId: "" });
+});
