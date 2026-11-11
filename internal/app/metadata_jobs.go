@@ -269,7 +269,7 @@ func (a *App) runMetadata(ctx context.Context) {
 	state, message := "completed", "Tags updated; Navidrome scan requested. Refresh the library after scanning."
 	if e != nil {
 		state = "failed"
-		message = fmt.Sprintf("%d/%d songs updated: %s. Recovery copies retained; retry resumes remaining work.", done, len(changes), e.Error())
+		message = fmt.Sprintf("%d/%d songs updated: %s. Unfinished recovery copies retained; retry resumes remaining work.", done, len(changes), e.Error())
 	}
 	if _, err := a.DB.Exec("UPDATE metadata_jobs SET state=?,message=? WHERE id=?", state, message, jid); err != nil {
 		logger.Error("Metadata job completion persistence failed", "error", err)
@@ -278,6 +278,9 @@ func (a *App) runMetadata(ctx context.Context) {
 		logger.Error("Metadata job failed", "done", done, "error", e)
 	} else {
 		logger.Info("Metadata job completed; Navidrome scan pending", "done", done)
+	}
+	if _, err := a.CleanupMetadataBackups(); err != nil {
+		logger.Warn("Metadata recovery cleanup deferred", "error", err)
 	}
 	a.navIndexMu.Lock()
 	clear(a.navIndexes)
@@ -344,23 +347,40 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		return e
 	}
 	backup := filepath.Join(dir, "original"+filepath.Ext(path))
-	if _, e = os.Stat(backup); os.IsNotExist(e) {
+	_, backupErr := os.Stat(backup)
+	if backupErr != nil && !os.IsNotExist(backupErr) {
+		return backupErr
+	}
+	limit, err := metadataBackupLimit()
+	if err != nil {
+		return err
+	}
+	var reserve int64
+	if os.IsNotExist(backupErr) {
+		reserve = info.Size()
+	}
+	if change.Edit.CoverURL != "" || change.UploadedCover != "" {
+		reserve += maxMetadataCover
+	}
+	if _, err = a.cleanupMetadataBackups(limit, reserve, time.Now()); err != nil {
+		return err
+	}
+	if os.IsNotExist(backupErr) {
 		if e = a.backupMetadataFile(path, backup, before); e != nil {
 			return e
 		}
-	} else {
-		if e != nil {
-			return e
-		}
-		if hash, e = hashFile(backup); e != nil || hash != before {
-			return errors.New("Recovery copy verification failed")
-		}
+	} else if hash, e = hashFile(backup); e != nil || hash != before {
+		return errors.New("Recovery copy verification failed")
 	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aiff":
 	default:
 		return errors.New("Unsupported tag format; use MP3, FLAC, M4A, OGG, OPUS, WAV or AIFF")
+	}
+	if err := diskHeadroom(filepath.Dir(path), uint64(info.Size())+(256<<20)); err != nil {
+		return errors.New("Not enough free space for metadata working copy plus 256 MiB headroom")
 	}
 	tmp, e := os.CreateTemp(filepath.Dir(path), ".zensync-tags-*"+ext)
 	if e != nil {
@@ -569,7 +589,7 @@ func (a *App) backupMetadataFile(source, dest, checksum string) error {
 	if e != nil {
 		return e
 	}
-	if e = diskHeadroom(filepath.Dir(dest), uint64(info.Size())*2+(32<<20)); e != nil {
+	if e = diskHeadroom(filepath.Dir(dest), uint64(info.Size())*2+(256<<20)); e != nil {
 		return e
 	}
 	tmp, e := os.CreateTemp(filepath.Dir(dest), ".backup-")

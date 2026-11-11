@@ -14,7 +14,73 @@ The worker remuxes audio without re-encoding, verifies the encoded audio packet 
 
 The status panel reports queued/running/completed/failed operations and per-song progress. Completed means file tags were updated and a scan was requested; Navidrome may still be scanning. Refresh the library or duplicate candidates afterward. Failed operations expose their error and offer **Retry update**. Merges may partially complete; retry resumes remaining files. A failed scan request can be retried without rewriting already-completed files. Only one metadata operation can be queued/running at a time.
 
-Recovery files live outside the music library under `metadata-backups/{job-id}-{song-id-digest}/original.{extension}`. The `metadata_files` journal records the source path and before/after hashes, allowing recovery from interruption between replacement and progress recording. An externally changed file is never replayed over on retry. Keep these backups; automatic cleanup and a one-click rollback UI are not implemented. To restore manually, stop ZenSync, verify the journal and backup checksum, restore the original file to the recorded path, then rescan Navidrome. The previous review-record DELETE API only discards the stored review; it does not undo published tags and is blocked while an operation is active.
+Recovery files live outside the music library under `metadata-backups/{job-id}-{song-id-digest}/original.{extension}`. These are full audio files, not tag-only records. `selected-cover` is a temporary downloaded/uploaded image. The `metadata_files` journal records the original relative music path and before/after SHA-256 checksums. Separate jobs can create separate full copies of the same song.
+
+### Recovery storage policy
+
+Published copies are retained for **up to 7 days**, with a **1 GiB total recovery budget** by default. Oldest published copies are removed first when space is needed. Cleanup runs at startup, hourly, before new recovery allocations and after metadata jobs. Successfully processed songs in a partly failed job are eligible too; the unfinished entries remain protected. Existing unknown directories and unfinished copies are counted but never automatically deleted. If those exceed the budget, new metadata writes stop rather than evict recovery data. Legacy installations can therefore remain over budget until protected work is resolved. Existing successful copies above the budget are pruned on the first startup of the updated version.
+
+Set `ZENSYNC_METADATA_BACKUP_LIMIT_MIB` in the service environment to choose a different budget (positive MiB, default `1024`). This includes original files and staged covers inside `metadata-backups`; it does not limit the music library or other ZenSync data. Working-file and backup writes also require 256 MiB of free-space headroom. Retention is a short recovery window, not a permanent backup or a guarantee of seven days of undo history. Keep an independent backup if you need long-term rollback.
+
+### Inventory and cleanup
+
+Stop the service before offline maintenance. Replace the Compose service name if yours differs. Use the updated image with the same data/music mounts; do not start its worker before saving any old copies you want to retain.
+
+```sh
+docker compose stop zensync
+docker compose run --rm --no-deps zensync metadata-backups list > metadata-backups.json
+```
+
+The JSON inventory lists `key`, `jobId`, `songId`, `musicPath` (relative to the shared music root), `beforeHash`, `afterHash`, size, job state, and `reclaimable`. **`reclaimable: true` means deletion will not break job resumption**, but it does remove that copy's manual rollback option. Unrecognized or unfinished copies are `false`. A job can fail after publishing earlier songs, so the job state alone is insufficient to classify every directory. Copies made before journal creation may not have a known `musicPath` or checksums; keep them until investigated.
+
+To enforce the budget and age policy immediately, without starting the worker:
+
+```sh
+docker compose run --rm --no-deps zensync metadata-backups cleanup
+```
+
+This prints removed entries; it does not remove unfinished copies, music files, the database or Activity history. `list` is read-only with respect to recovery files. The maintenance commands refuse to run while another service owns the data-directory lock. Restart with `docker compose up -d zensync` after maintenance. Changing the budget is not a way to force deletion of protected originals.
+
+### Manual restoration
+
+There is no rollback UI. Before cleanup, choose one inventory entry and use its full original copy and recorded destination. Stop ZenSync, back up `zensync.db` consistently, and ensure no queued operation will reapply edits to the song. Do not infer the destination from the opaque directory name.
+
+On the host, set these values from the inventory and your actual mount paths:
+
+```sh
+backup='/home/debian-server/docker-data/zensync/metadata-backups/JOB-SONG_DIGEST/original.flac'
+music_file='/actual/host/music/Artist/Album/song.flac'
+before_hash='BEFORE_HASH_FROM_INVENTORY'
+after_hash='AFTER_HASH_FROM_INVENTORY'
+```
+
+Verify the original copy matches `beforeHash` and the current music file matches `afterHash`. If either fails or either checksum is absent, stop: the file may have later edits or may need interrupted-write reconciliation. Do not overwrite it blindly. Run each command only if the previous one succeeds:
+
+```sh
+printf '%s  %s\n' "$before_hash" "$backup" | sha256sum -c -
+printf '%s  %s\n' "$after_hash" "$music_file" | sha256sum -c -
+restore_tmp=$(mktemp --tmpdir="$(dirname -- "$music_file")" .zensync-restore.XXXXXX)
+cp -- "$backup" "$restore_tmp"
+printf '%s  %s\n' "$before_hash" "$restore_tmp" | sha256sum -c -
+chmod --reference="$music_file" "$restore_tmp"
+chown --reference="$music_file" "$restore_tmp"
+sync -f "$restore_tmp"
+mv -f -- "$restore_tmp" "$music_file"
+sync -f "$(dirname -- "$music_file")"
+```
+
+This restores that song's complete pre-edit file, including tags and artwork. Before restarting, abandon the originating job if it is failed/queued/running so it cannot reapply the edit, and clear that song's saved metadata review. With the service stopped, use the exact IDs from the inventory in `zensync.db`:
+
+```sql
+BEGIN;
+UPDATE metadata_jobs SET state='cancelled',message='Stopped after manual restoration'
+ WHERE id='JOB_ID_FROM_INVENTORY' AND state IN ('failed','queued','running');
+DELETE FROM metadata_edits WHERE song_id='SONG_ID_FROM_INVENTORY';
+COMMIT;
+```
+
+Abandoning a partially completed batch leaves its remaining songs unprocessed. Restart ZenSync, request a full Navidrome scan, and refresh the library. This is manual recovery, not a transactionally journaled rollback feature; retain the original until the restored song is confirmed. The review-record DELETE API only discards a stored review and does not undo published file tags.
+
 
 ## Utilities: Review duplicates
 

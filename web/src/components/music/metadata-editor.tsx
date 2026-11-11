@@ -61,8 +61,8 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
           Edit song metadata
         </DialogTitle>
         <DialogDescription className="m-0 text-xs">
-          Save changes to file tags and rescan Navidrome. Original files are
-          backed up.
+          Save changes to file tags and rescan Navidrome. Recovery copies expire
+          after 7 days, or earlier when storage is needed.
         </DialogDescription>
         {result.error && (
           <Text role="alert" className="my-1">

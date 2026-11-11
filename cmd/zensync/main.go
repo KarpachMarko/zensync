@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,7 +26,11 @@ func main() {
 	if levelErr != nil {
 		level = slog.LevelInfo
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	logOutput := os.Stdout
+	if len(os.Args) > 1 && os.Args[1] == "metadata-backups" {
+		logOutput = os.Stderr
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{Level: level})))
 	if levelErr != nil {
 		slog.Warn("Invalid ZENSYNC_LOG_LEVEL; using INFO")
 	}
@@ -54,6 +59,35 @@ func main() {
 	}
 	slog.Info("Database and runtime initialized")
 	defer a.DB.Close()
+	if len(os.Args) > 1 && os.Args[1] == "metadata-backups" {
+		if len(os.Args) != 3 || (os.Args[2] != "list" && os.Args[2] != "cleanup") {
+			slog.Error("Usage: zensync metadata-backups list|cleanup")
+			os.Exit(1)
+		}
+		unlock, err := a.AcquireWorkerLock()
+		if err != nil {
+			slog.Error("Stop ZenSync before running recovery maintenance", "error", err)
+			os.Exit(1)
+		}
+		defer unlock()
+		var entries []app.MetadataBackupInfo
+		if os.Args[2] == "list" {
+			entries, err = a.MetadataBackupInventory()
+		} else {
+			entries, err = a.CleanupMetadataBackups()
+		}
+		if entries != nil {
+			if encodeErr := json.NewEncoder(os.Stdout).Encode(entries); encodeErr != nil {
+				slog.Error("Could not write recovery inventory", "error", encodeErr)
+				os.Exit(1)
+			}
+		}
+		if err != nil {
+			slog.Error("Metadata recovery maintenance failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	unlock, err := a.AcquireWorkerLock()
 	if err != nil {
 		slog.Error("startup failed", "error", err)
