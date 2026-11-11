@@ -503,7 +503,30 @@ func (a *App) sameRemoteAudio(ctx context.Context, c Credentials, s Song, rel st
 	return a.sameRemoteAudioHash(ctx, c, s.ID, info.Size(), checksum)
 }
 
+type originalAudioReadError struct{ message string }
+
+func (e *originalAudioReadError) Error() string { return e.message }
+
+// Retry interrupted reads only. A complete but different file must never be
+// treated as the intended song, even when a subsequent download might differ.
 func (a *App) sameRemoteAudioHash(ctx context.Context, c Credentials, sid string, size int64, checksum string) (bool, error) {
+	for attempt := 0; ; attempt++ {
+		match, err := a.sameRemoteAudioHashOnce(ctx, c, sid, size, checksum)
+		var interrupted *originalAudioReadError
+		if !errors.As(err, &interrupted) || attempt >= 2 || ctx.Err() != nil {
+			return match, err
+		}
+		slog.Warn("Original audio verification download interrupted; retrying", "song_id", sid, "attempt", attempt+1, "error", err)
+		timer := time.NewTimer(time.Duration(attempt+1) * 200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+func (a *App) sameRemoteAudioHashOnce(ctx context.Context, c Credentials, sid string, size int64, checksum string) (bool, error) {
 	resp, e := a.navRaw(ctx, c, "download", mapValues("id", sid))
 	if e != nil {
 		return false, e
@@ -534,8 +557,18 @@ func (a *App) sameRemoteAudioHash(ctx context.Context, c Credentials, sid string
 	}
 	h := sha256.New()
 	n, e := io.Copy(h, io.LimitReader(resp.Body, size+1))
-	if e != nil {
-		return false, errors.New("Could not verify original audio from Navidrome; check download permission and connectivity")
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if errors.Is(e, context.Canceled) {
+		return false, context.Canceled
+	}
+	if e != nil || n < size {
+		failure := "truncated"
+		if e != nil && !errors.Is(e, io.ErrUnexpectedEOF) {
+			failure = transportFailure(e)
+		}
+		return false, &originalAudioReadError{message: fmt.Sprintf("Original audio download interrupted (%s, %d/%d bytes); verification failed after reading from Navidrome", failure, n, size)}
 	}
 	return n == size && hex.EncodeToString(h.Sum(nil)) == checksum, nil
 }
