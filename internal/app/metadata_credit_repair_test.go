@@ -224,7 +224,8 @@ func TestRealNavidromeSeparateKnownSkateArtists(t *testing.T) {
 					t.Fatal("Resolved Skate issue remains in review")
 				}
 			}
-			testRealNavidromeCoverChanges(t, a, admin, c, songs[0])
+			updated := testRealNavidromeArtistRows(t, a, admin, c, songs[0])
+			testRealNavidromeCoverChanges(t, a, admin, c, updated)
 			return
 		}
 		time.Sleep(200 * time.Millisecond)

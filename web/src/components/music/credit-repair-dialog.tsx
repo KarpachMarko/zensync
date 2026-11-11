@@ -79,13 +79,13 @@ export function CreditRepairDialog({ issue, disabled }: { issue: CreditIssue; di
                         </form.AppField>
                       </div>
                       <Button type="button" size="sm" variant="outline" aria-label={`Move artist ${index + 1} up`} disabled={index === 0 || save.isPending}
-                        onClick={() => { const names = [...array.state.value]; [names[index - 1], names[index]] = [names[index], names[index - 1]]; array.handleChange(names); }}>↑</Button>
+                        onClick={() => { const names = [...form.getFieldValue("artists")]; [names[index - 1], names[index]] = [names[index], names[index - 1]]; array.handleChange(names); }}>↑</Button>
                       <Button type="button" size="sm" variant="outline" aria-label={`Remove artist ${index + 1}`} disabled={array.state.value.length <= 2 || save.isPending}
-                        onClick={() => array.handleChange(array.state.value.filter((_, position) => position !== index))}>×</Button>
+                        onClick={() => array.handleChange(form.getFieldValue("artists").filter((_, position) => position !== index))}>×</Button>
                     </div>
                   ))}
                   <Button type="button" variant="outline" size="sm" disabled={save.isPending || array.state.value.length >= 20}
-                    onClick={() => array.handleChange([...array.state.value, ""])}>Add artist</Button>
+                    onClick={() => array.handleChange([...form.getFieldValue("artists"), ""])}>Add artist</Button>
                 </div>
               )}
             </form.Field>

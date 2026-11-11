@@ -19,16 +19,18 @@ import (
 
 // Metadata edits are a review layer, independent of acquisition and file identity.
 type MetadataEdit struct {
-	RemoveCover   bool   `json:"removeCover,omitempty"`
-	CoverUploadID string `json:"coverUploadId,omitempty"`
-	AlbumArtist   string `json:"albumArtist,omitempty"`
-	Title         string `json:"title"`
-	Artist        string `json:"artist"`
-	Album         string `json:"album"`
-	CoverURL      string `json:"coverUrl"`
-	Lyrics        string `json:"lyrics"`
-	SyncedLyrics  string `json:"syncedLyrics"`
-	LyricsSource  string `json:"lyricsSource"`
+	ArtistNames      []string `json:"artistNames,omitempty"`
+	AlbumArtistNames []string `json:"albumArtistNames"`
+	RemoveCover      bool     `json:"removeCover,omitempty"`
+	CoverUploadID    string   `json:"coverUploadId,omitempty"`
+	AlbumArtist      string   `json:"albumArtist,omitempty"`
+	Title            string   `json:"title"`
+	Artist           string   `json:"artist"`
+	Album            string   `json:"album"`
+	CoverURL         string   `json:"coverUrl"`
+	Lyrics           string   `json:"lyrics"`
+	SyncedLyrics     string   `json:"syncedLyrics"`
+	LyricsSource     string   `json:"lyricsSource"`
 }
 type duplicateArtist struct {
 	ID          string `json:"id"`
@@ -358,9 +360,26 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 					return
 				}
 			}
+			if edit.ArtistNames == nil {
+				if edit.Artist == remote.Song.Artist || edit.Artist == strings.Join(creditNames(songCredits(remote.Song, false)), " / ") {
+					edit.ArtistNames = creditNames(songCredits(remote.Song, false))
+				} else {
+					edit.ArtistNames = []string{edit.Artist}
+				}
+			}
+			if edit.AlbumArtistNames == nil {
+				if edit.AlbumArtist == remote.Song.AlbumArtist || edit.AlbumArtist == strings.Join(creditNames(songCredits(remote.Song, true)), " / ") {
+					edit.AlbumArtistNames = creditNames(songCredits(remote.Song, true))
+				} else if edit.AlbumArtist != "" {
+					edit.AlbumArtistNames = []string{edit.AlbumArtist}
+				}
+				if edit.AlbumArtistNames == nil {
+					edit.AlbumArtistNames = []string{}
+				}
+			}
 			primaryArtist := edit.Artist
-			if edit.Artist == remote.Song.Artist && len(remote.Song.Artists) > 0 {
-				primaryArtist = remote.Song.Artists[0].Name
+			if len(edit.ArtistNames) > 0 {
+				primaryArtist = edit.ArtistNames[0]
 			}
 			send(w, 200, map[string]any{"edit": edit, "saved": saved, "duration": remote.Song.Duration, "searchArtist": primaryArtist})
 			return
@@ -369,10 +388,31 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		if !decodeLimit(w, r, &edit, 1<<20) {
 			return
 		}
+		if err := validateMetadataArtistNames(edit.ArtistNames, true); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		if err := validateMetadataArtistNames(edit.AlbumArtistNames, false); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		if edit.ArtistNames != nil {
+			edit.Artist = strings.Join(edit.ArtistNames, " / ")
+		}
+		if edit.AlbumArtistNames != nil {
+			edit.AlbumArtist = strings.Join(edit.AlbumArtistNames, " / ")
+		}
 		edit.Title = strings.TrimSpace(edit.Title)
 		edit.Artist = strings.TrimSpace(edit.Artist)
 		edit.Album = strings.TrimSpace(edit.Album)
-		if edit.Title == "" || edit.Artist == "" || len(edit.Title) > 500 || len(edit.Artist) > 500 || len(edit.Album) > 500 || len(edit.AlbumArtist) > 500 || len(edit.Lyrics) > 200000 || len(edit.SyncedLyrics) > 200000 || len(edit.LyricsSource) > 500 || len(edit.CoverURL) > 2000 {
+		artistLimit, albumArtistLimit := 500, 500
+		if edit.ArtistNames != nil {
+			artistLimit = 10500
+		}
+		if edit.AlbumArtistNames != nil {
+			albumArtistLimit = 10500
+		}
+		if edit.Title == "" || edit.Artist == "" || len(edit.Title) > 500 || len(edit.Artist) > artistLimit || len(edit.Album) > 500 || len(edit.AlbumArtist) > albumArtistLimit || len(edit.Lyrics) > 200000 || len(edit.SyncedLyrics) > 200000 || len(edit.LyricsSource) > 500 || len(edit.CoverURL) > 2000 {
 			fail(w, 400, "Invalid metadata or lyrics too long")
 			return
 		}
@@ -646,4 +686,24 @@ func (a *App) metadataSuggestions(w http.ResponseWriter, r *http.Request) {
 		values = values[:20]
 	}
 	send(w, 200, map[string]any{"values": values, "limited": index.limited})
+}
+
+func validateMetadataArtistNames(names []string, required bool) error {
+	if names == nil {
+		return nil
+	}
+	if len(names) > 20 || (required && len(names) == 0) {
+		return errors.New("List between one and twenty track artists, or up to twenty album artists")
+	}
+	seen := map[string]bool{}
+	for i, name := range names {
+		name = strings.TrimSpace(name)
+		key := strings.ToLower(name)
+		if name == "" || len(name) > 500 || seen[key] {
+			return errors.New("Each artist needs a distinct non-empty name of at most 500 characters")
+		}
+		names[i] = name
+		seen[key] = true
+	}
+	return nil
 }

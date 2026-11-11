@@ -17,6 +17,7 @@ async function fixture(page: Page, admin = true) {
     lyrics: "",
     syncedLyrics: "",
     lyricsSource: "",
+    albumArtist: "Band",
   };
   let puts = 0;
   const merges: unknown[] = [];
@@ -220,12 +221,12 @@ test("compact TanStack editor supports keyboard autocomplete and provider select
     .getByRole("button", { name: "Edit metadata: Song", exact: true })
     .click();
   await page.getByLabel("Title", { exact: true }).fill("Corrected");
-  await page.getByRole("combobox", { name: "Artist", exact: true }).fill("Can");
+  await page.getByRole("combobox", { name: "Artist 1", exact: true }).fill("Can");
   await page
     .getByRole("option", { name: "Canonical band", exact: true })
     .click();
   await expect(
-    page.getByRole("combobox", { name: "Artist", exact: true }),
+    page.getByRole("combobox", { name: "Artist 1", exact: true }),
   ).toHaveValue("Canonical band");
   await page.getByRole("combobox", { name: "Album", exact: true }).fill("Can");
   await page
@@ -461,7 +462,7 @@ test("metadata artwork and all identity suggestions recover from gateway HTML re
     : route.fulfill({ contentType: "image/png", body: png }));
   await page.goto("/library?editSong=one");
   const dialog = page.getByRole("dialog");
-  for (const label of ["Title", "Artist", "Album", "Album artist"]) await expect(dialog.getByRole("combobox", { name: label, exact: true })).toBeVisible();
+  for (const label of ["Title", "Artist 1", "Album", "Album artist 1"]) await expect(dialog.getByRole("combobox", { name: label, exact: true })).toBeVisible();
   const retries = dialog.getByRole("button", { name: "Retry suggestions", exact: true });
   await expect(retries).toHaveCount(4);
   suggestionsFail = false;
@@ -469,7 +470,7 @@ test("metadata artwork and all identity suggestions recover from gateway HTML re
     await retries.first().click();
     await expect(retries).toHaveCount(remaining - 1);
   }
-  for (const [label, option] of [["Title", "Song"], ["Artist", "Band"], ["Album", "Album"], ["Album artist", "Band"]]) {
+  for (const [label, option] of [["Title", "Song"], ["Artist 1", "Band"], ["Album", "Album"], ["Album artist 1", "Band"]]) {
     await dialog.getByRole("combobox", { name: label, exact: true }).click();
     await dialog.getByRole("option", { name: option, exact: true }).click();
   }
@@ -696,4 +697,25 @@ test("duplicate groups have a non-destructive not-duplicates action with undo", 
  expect(payload).toEqual({kind:"album",ids:["album-b","album-a"]});
  await page.getByRole("button",{name:"Undo",exact:true}).click();
  await expect(page.getByText("Distinct edition A",{exact:true})).toBeVisible();
+});
+
+test("metadata editor uses one row per artist and keeps literal slashes inside a row",async ({page})=>{
+ const state=await fixture(page);
+ await page.route("**/api/v2/metadata/songs/one",async route=>{
+  if(route.request().method()==="PUT") return route.fallback();
+  return route.fulfill({json:{duration:120,searchArtist:"May Waves",edit:{...state.edit(),artist:"May Waves / Guest",albumArtist:"May Waves",artistNames:["May Waves","Guest"],albumArtistNames:["May Waves"]}}});
+ });
+ await page.goto("/library?editSong=one");
+ const dialog=page.getByRole("dialog");
+ await expect(dialog.getByRole("combobox",{name:"Artist 1",exact:true})).toHaveValue("May Waves");
+ await expect(dialog.getByRole("combobox",{name:"Artist 2",exact:true})).toHaveValue("Guest");
+ await dialog.getByRole("combobox",{name:"Artist 1",exact:true}).fill("May Wave$");
+ await dialog.getByRole("button",{name:"Add artist",exact:true}).click();
+ await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+ await expect(dialog.getByRole("combobox",{name:"Artist 3",exact:true})).toHaveAttribute("aria-invalid","true");
+ await dialog.getByRole("combobox",{name:"Artist 3",exact:true}).fill("AC/DC");
+ await dialog.getByRole("button",{name:"Move artist 2 up",exact:true}).click();
+ await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+ await expect(dialog).toHaveCount(0);
+ expect(state.edit()).toMatchObject({artist:"Guest / May Wave$ / AC/DC",artistNames:["Guest","May Wave$","AC/DC"],albumArtistNames:["May Waves"]});
 });

@@ -161,7 +161,7 @@ def expand_credit(values, ids, old_name, replacements):
 
 def main():
     plan = json.load(sys.stdin)
-    if plan["kind"] == "artwork-metadata":
+    if plan["kind"] == "edit-metadata":
         original, output = load(plan["original"]), load(plan["output"])
         changed = plan["changed"]
         cover_keys = {"covr", "metadata_block_picture", "coverart", "coverartmime"}
@@ -186,11 +186,24 @@ def main():
             output.tags[key] = value
         for role, fields in (("artist", {"artist", "artists", "artistids"}),
                              ("albumartist", {"albumartist", "albumartists", "albumartistids"})):
-            if changed[role]:
+            plural = "artists" if role == "artist" else "albumartists"
+            idfield = "artistids" if role == "artist" else "albumartistids"
+            explicit = plan.get("artistNames" if role == "artist" else "albumArtistNames")
+            if explicit is not None:
+                previous = names(original, plural, role, [])
+                previous_ids = read(original, idfield)
+                aligned_ids = []
+                for name in explicit:
+                    index = next((i for i, old in enumerate(previous) if old.casefold() == name.casefold()), None)
+                    aligned_ids.append(previous_ids[index] if index is not None and index < len(previous_ids) else "")
+                write(output, role, [" / ".join(explicit)] if explicit else [])
+                write(output, plural, explicit)
+                write(output, idfield, aligned_ids if any(aligned_ids) else [])
+            elif changed[role]:
                 desired = plan[role]
                 write(output, role, [desired] if desired else [])
-                write(output, "artists" if role == "artist" else "albumartists", [desired] if desired else [])
-                write(output, "artistids" if role == "artist" else "albumartistids", [])
+                write(output, plural, [desired] if desired else [])
+                write(output, idfield, [])
             else:
                 for key in list(output.tags.keys()):
                     if logical(key) in fields:
@@ -202,7 +215,16 @@ def main():
             output.save(v2_version=4)
         else:
             output.save()
-        print("{}")
+        checked = load(plan["output"])
+        for role, plural, key in (("artist", "artists", "artistNames"), ("albumartist", "albumartists", "albumArtistNames")):
+            explicit = plan.get(key)
+            if explicit is not None and (read(checked, plural) != explicit or read(checked, role) != ([" / ".join(explicit)] if explicit else [])):
+                raise ValueError("Written individual artist fields failed verification: " + role)
+        result = {}
+        for role, plural, key, fallback in (("artist", "artists", "artistNames", "fallbackArtists"), ("albumartist", "albumartists", "albumArtistNames", "fallbackAlbumArtists")):
+            result[key] = names(checked, plural, role, [] if changed[role] or plan.get(key) is not None else plan.get(fallback, []))
+            result["artist" if role == "artist" else "albumArtist"] = (read(checked, role) or [" / ".join(result[key])])[0]
+        print(json.dumps(result))
         return
     if plan["kind"] == "remove-cover":
         output = load(plan["output"])
@@ -295,7 +317,7 @@ def main():
     for field, values in expected.items():
         if read(checked, field) != values:
             raise ValueError("Written artist credits failed verification: " + field)
-    print(json.dumps({"artist": artist_display, "albumArtist": album_display}))
+    print(json.dumps({"artist": artist_display, "albumArtist": album_display, "artistNames": artists, "albumArtistNames": albumartists}))
 
 
 if __name__ == "__main__":

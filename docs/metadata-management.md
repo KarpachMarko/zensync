@@ -6,6 +6,8 @@ Playlist browsing uses the signed-in user's linked personal Navidrome account. O
 
 ## Compact editor
 
+Track artists and album artists are edited as separate, ordered rows. Each row is one literal name; `/` and other punctuation inside a row are never treated as separators. Add, remove or move rows to change credits. Saving sends explicit `artistNames` and `albumArtistNames` arrays and writes native multi-value tags. Unchanged credits keep their existing identities, including on title/lyrics/artwork-only edits. Changed names lose their old identity IDs; unaffected names retain their aligned IDs. Removing all album-artist rows clears those credits. Legacy single-string API edits remain supported and do not infer multiple artists from slash-separated text.
+
 **Edit metadata** opens one shared dialog, using TanStack Form and Zod. Details, Artwork and Lyrics have separate tabs. Artist and album fields suggest existing library names, support free text, and offer keyboard navigation. Suggestions share the bounded 50,000-song index and can be incomplete for larger libraries.
 
 **Save changes** queues a file-tag update. Fields include title, artist, album, optional album artist, artwork URL, plain lyrics and synced LRC. Synced text takes priority in the embedded lyrics tag; both selected forms remain in the review record. Blank lyrics preserve existing embedded lyrics. Embedded artwork is preserved unless a replacement is selected. New cover embedding supports MP3, FLAC and M4A, with JPEG/PNG images from Cover Art Archive / archive.org. Artwork redirects are checked, image downloads are capped at 20 MiB, and dimensions at 50 megapixels.

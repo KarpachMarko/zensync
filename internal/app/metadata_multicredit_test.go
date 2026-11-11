@@ -57,9 +57,9 @@ if sys.argv[2]=="write":
 else:
     result={}
     for field,d,g,m in zip(fields,desc,generic,mp4):
-        if isinstance(tags,ID3): values=list(tags["TXXX:"+d].text)
-        elif isinstance(tags,MP4Tags): values=[v.decode() for v in tags[m]]
-        else: values=list(tags[g])
+        if isinstance(tags,ID3): values=list(tags["TXXX:"+d].text) if "TXXX:"+d in tags else []
+        elif isinstance(tags,MP4Tags): values=[v.decode() for v in tags.get(m,[])]
+        else: values=list(tags.get(g,[]))
         result[field]=values
     print(json.dumps(result))
 `

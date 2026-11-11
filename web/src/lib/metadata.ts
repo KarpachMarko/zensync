@@ -1,10 +1,14 @@
 import { z } from "zod";
 import type { LibrarySong } from "./api";
+const artistNamesSchema = z.array(z.string().trim().min(1).max(500)).max(20)
+  .refine((names) => new Set(names.map((name) => name.trim().toLocaleLowerCase())).size === names.length, "List each artist once");
 export const metadataSchema = z.object({
   title: z.string().trim().min(1).max(500),
-  artist: z.string().trim().min(1).max(500),
+  artist: z.string().trim().min(1).max(10500),
+  artistNames: artistNamesSchema.min(1).optional(),
+  albumArtistNames: artistNamesSchema.optional(),
   album: z.string().max(500),
-  albumArtist: z.string().max(500).optional(),
+  albumArtist: z.string().max(10500).optional(),
   removeCover: z.boolean().optional(),
   coverUploadId: z.string().max(64).optional(),
   coverUrl: z.union([z.literal(""), z.url().startsWith("https://").max(2000)]),

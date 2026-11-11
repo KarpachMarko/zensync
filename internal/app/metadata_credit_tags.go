@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -122,13 +123,16 @@ func preserveMergeCredits(ctx context.Context, change *metadataChange, original,
 		return fmt.Errorf("Could not preserve individual artist credits: %s", strings.TrimSpace(detail))
 	}
 	var actual struct {
-		Artist      string `json:"artist"`
-		AlbumArtist string `json:"albumArtist"`
+		Artist           string   `json:"artist"`
+		AlbumArtist      string   `json:"albumArtist"`
+		ArtistNames      []string `json:"artistNames"`
+		AlbumArtistNames []string `json:"albumArtistNames"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &actual); err != nil {
 		return err
 	}
 	change.Edit.Artist, change.Edit.AlbumArtist = actual.Artist, actual.AlbumArtist
+	change.Edit.ArtistNames, change.Edit.AlbumArtistNames = actual.ArtistNames, actual.AlbumArtistNames
 	return nil
 }
 
@@ -142,21 +146,55 @@ func removeMetadataArtwork(ctx context.Context, path string) error {
 	return nil
 }
 
-func preserveArtworkMetadata(ctx context.Context, change metadataChange, original, output string) error {
+func preserveEditedMetadata(ctx context.Context, change *metadataChange, original, output string) error {
 	changed := map[string]bool{
 		"title":       change.Edit.Title != change.Song.Title,
 		"album":       change.Edit.Album != change.Song.Album,
-		"artist":      change.Edit.Artist != change.Song.Artist,
-		"albumartist": change.Edit.AlbumArtist != "" && change.Edit.AlbumArtist != change.Song.AlbumArtist,
+		"artist":      metadataTrackArtistsChanged(*change),
+		"albumartist": metadataAlbumArtistsChanged(*change),
 		"lyrics":      change.Edit.Lyrics != "" || change.Edit.SyncedLyrics != "",
-		"grouping":    change.Edit.Album != change.Song.Album || change.Edit.Artist != change.Song.Artist,
+		"grouping":    change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(*change),
 	}
-	plan := map[string]any{"kind": "artwork-metadata", "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist}
+	artists, albumArtists := change.Edit.ArtistNames, change.Edit.AlbumArtistNames
+	if artists != nil && !metadataTrackArtistsChanged(*change) {
+		artists = nil
+	}
+	if albumArtists != nil && !metadataAlbumArtistsChanged(*change) {
+		albumArtists = nil
+	}
+	plan := map[string]any{"kind": "edit-metadata", "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist, "artistNames": artists, "albumArtistNames": albumArtists, "fallbackArtists": creditNames(songCredits(change.Song, false)), "fallbackAlbumArtists": creditNames(songCredits(change.Song, true))}
 	cmd := exec.CommandContext(ctx, metadataPythonPath(), "-c", metadataCreditWriter)
 	cmd.Stdin = strings.NewReader(mustJSON(plan))
 	protectChild(cmd)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("Could not preserve metadata during artwork update: %v %s", err, out)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Could not preserve metadata during tag update: %v %s", err, stderr.String())
 	}
+	var actual struct {
+		Artist           string   `json:"artist"`
+		AlbumArtist      string   `json:"albumArtist"`
+		ArtistNames      []string `json:"artistNames"`
+		AlbumArtistNames []string `json:"albumArtistNames"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &actual); err != nil {
+		return err
+	}
+	change.Edit.Artist, change.Edit.AlbumArtist = actual.Artist, actual.AlbumArtist
+	change.Edit.ArtistNames, change.Edit.AlbumArtistNames = actual.ArtistNames, actual.AlbumArtistNames
 	return nil
+}
+
+func metadataTrackArtistsChanged(change metadataChange) bool {
+	if change.Edit.ArtistNames != nil {
+		return !slices.Equal(change.Edit.ArtistNames, creditNames(songCredits(change.Song, false)))
+	}
+	return change.Edit.Artist != change.Song.Artist
+}
+
+func metadataAlbumArtistsChanged(change metadataChange) bool {
+	if change.Edit.AlbumArtistNames != nil {
+		return !slices.Equal(change.Edit.AlbumArtistNames, creditNames(songCredits(change.Song, true)))
+	}
+	return change.Edit.AlbumArtist != "" && change.Edit.AlbumArtist != change.Song.AlbumArtist
 }

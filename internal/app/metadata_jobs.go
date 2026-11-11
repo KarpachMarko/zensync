@@ -409,7 +409,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if change.Edit.AlbumArtist != "" {
 		tags["album_artist"] = change.Edit.AlbumArtist
 	}
-	if change.MergeKind == "" && change.Edit.Artist != change.Song.Artist {
+	if change.MergeKind == "" && metadataTrackArtistsChanged(change) {
 		tags["album_artist"] = change.Edit.Artist
 		tags["artists"] = change.Edit.Artist
 		tags["albumartists"] = change.Edit.Artist
@@ -421,7 +421,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			tags[key] = ""
 		}
 	}
-	if (change.MergeKind == "" || change.MergeKind == "album") && (change.Edit.Album != change.Song.Album || change.Edit.Artist != change.Song.Artist) {
+	if (change.MergeKind == "" || change.MergeKind == "album") && (change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(change)) {
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
@@ -468,8 +468,8 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		slog.Error("Metadata tag writer failed", "job_id", jid, "song_id", change.Song.ID, "error", err, "detail", string(output[:min(len(output), 2000)]))
 		return errors.New("Could not write audio tags; original file retained")
 	}
-	if change.MergeKind == "" && (useCover || change.Edit.RemoveCover) {
-		if err := preserveArtworkMetadata(ctx, change, path, output); err != nil {
+	if change.MergeKind == "" {
+		if err := preserveEditedMetadata(ctx, &change, path, output); err != nil {
 			return err
 		}
 	}
@@ -566,7 +566,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if err := syncDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	if change.MergeKind != "" || change.UploadedCover != "" || change.Edit.RemoveCover {
+	{
 		change.Edit.RemoveCover = false
 		change.Edit.CoverUploadID = ""
 		_, err := a.DB.Exec("UPDATE metadata_edits SET metadata=? WHERE song_id=?", mustJSON(change.Edit), change.Song.ID)

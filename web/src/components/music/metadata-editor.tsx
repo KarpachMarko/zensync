@@ -115,12 +115,12 @@ function MetadataForm({
       close();
     },
   });
-  const defaults: MetadataEdit = { ...initial, albumArtist: initial.albumArtist ?? "", removeCover: false, coverUploadId: "" };
+  const defaults: MetadataEdit = { ...initial, artistNames: initial.artistNames ?? [initial.artist], albumArtistNames: initial.albumArtistNames ?? (initial.albumArtist ? [initial.albumArtist] : []), albumArtist: initial.albumArtist ?? "", removeCover: false, coverUploadId: "" };
   const form = useAppForm({
     defaultValues: defaults,
     validators: { onSubmit: metadataSchema },
     onSubmit: async ({ value }) => {
-      if (!save.isPending) await save.mutateAsync(value).catch(() => undefined);
+      if (!save.isPending) await save.mutateAsync({ ...value, artist: (value.artistNames ?? [value.artist]).join(" / "), albumArtist: value.albumArtistNames?.join(" / ") ?? value.albumArtist }).catch(() => undefined);
     },
   });
   const upload = useMutation({
@@ -196,21 +196,24 @@ function MetadataForm({
                 )}
               </form.AppField>
             </div>
-            <form.AppField name="artist">
-              {(field) => (
-                <field.AutocompleteField label="Artist" fieldName="artist" />
-              )}
-            </form.AppField>
-            <form.AppField name="album">
-              {(field) => (
-                <field.AutocompleteField label="Album" fieldName="album" />
-              )}
-            </form.AppField>
-            <div className="col-span-2">
-              <form.AppField name="albumArtist">
-                {(field) => <field.AutocompleteField label="Album artist" fieldName="albumArtist" />}
-              </form.AppField>
-            </div>
+            {(["artistNames", "albumArtistNames"] as const).map((name) => {
+              const album = name === "albumArtistNames";
+              return <div key={name} className="col-span-2 space-y-2">
+                <form.Field name={name} mode="array">{(array) => {
+                  const names = array.state.value ?? [];
+                  return <>
+                    {names.map((_, index) => <div key={index} className="flex min-w-0 items-end gap-1">
+                      <div className="min-w-0 flex-1"><form.AppField name={`${name}[${index}]`}>{(field) => <field.AutocompleteField label={`${album ? "Album artist" : "Artist"} ${index + 1}`} fieldName={album ? "albumArtist" : "artist"} />}</form.AppField></div>
+                      <Button type="button" size="sm" variant="outline" aria-label={`Move ${album ? "album artist" : "artist"} ${index + 1} up`} disabled={index === 0 || save.isPending} onClick={() => { const next = [...(form.getFieldValue(name) ?? [])]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; array.handleChange(next); }}>↑</Button>
+                      <Button type="button" size="sm" variant="outline" aria-label={`Remove ${album ? "album artist" : "artist"} ${index + 1}`} disabled={(!album && names.length <= 1) || save.isPending} onClick={() => array.handleChange((form.getFieldValue(name) ?? []).filter((_, position) => position !== index))}>×</Button>
+                    </div>)}
+                    <Button type="button" size="sm" variant="outline" disabled={names.length >= 20 || save.isPending} onClick={() => array.handleChange([...(form.getFieldValue(name) ?? []), ""])}>Add {album ? "album artist" : "artist"}</Button>
+                    <Text className="m-0 text-xs">One artist per row. Punctuation, including /, stays part of the name.</Text>
+                  </>;
+                }}</form.Field>
+              </div>;
+            })}
+            <div className="col-span-2"><form.AppField name="album">{(field) => <field.AutocompleteField label="Album" fieldName="album" />}</form.AppField></div>
             <Text className="col-span-2 m-0 text-xs">
               {duration ? `Duration: ${duration}s` : "Choose existing names or enter new ones."}
             </Text>
