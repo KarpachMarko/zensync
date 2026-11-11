@@ -224,13 +224,13 @@ def main():
     artist_display = (read(original, "artist") or [" / ".join(artists)])[0]
     album_display = (read(original, "albumartist") or [" / ".join(albumartists)])[0]
     if plan["kind"] == "credits":
-        repair = plan["creditRepair"]
-        if repair["role"] == "artist":
-            artists, artistids = expand_credit(artists, artistids, repair["name"], repair["artists"])
-            artist_display = " / ".join(artists)
-        else:
-            albumartists, albumartistids = expand_credit(albumartists, albumartistids, repair["name"], repair["artists"])
-            album_display = " / ".join(albumartists)
+        for repair in plan.get("creditRepairs") or [plan["creditRepair"]]:
+            if repair["role"] == "artist":
+                artists, artistids = expand_credit(artists, artistids, repair["name"], repair["artists"])
+                artist_display = " / ".join(artists)
+            else:
+                albumartists, albumartistids = expand_credit(albumartists, albumartistids, repair["name"], repair["artists"])
+                album_display = " / ".join(albumartists)
     elif plan["kind"] == "artist":
         source, destination = plan["sourceName"], plan["targetName"]
         if not source or not destination:

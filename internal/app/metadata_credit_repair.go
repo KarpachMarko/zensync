@@ -108,3 +108,71 @@ func prepareCreditRepairFile(original, output string) error {
 	}
 	return closeErr
 }
+
+// Queue one job and one write per song, including songs with both roles to fix.
+func (a *App) separateKnownArtistCredits(w http.ResponseWriter, r *http.Request, u User) {
+	c, err := a.shared()
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	a.navIndexMu.Lock()
+	delete(a.navIndexes, digest(mustJSON(c)))
+	a.navIndexMu.Unlock()
+	index, err := a.indexedNavSongs(r.Context(), c)
+	if err != nil {
+		fail(w, 502, err.Error())
+		return
+	}
+	if index.limited {
+		fail(w, 409, "Separating credits requires a complete library scan")
+		return
+	}
+	changes := []metadataChange{}
+	positions := map[string]int{}
+	count := 0
+	for _, issue := range metadataCreditIssues(index.songs) {
+		names := []string{}
+		seen := map[string]bool{}
+		for _, part := range issue.Parts {
+			match := ""
+			for _, known := range issue.KnownArtists {
+				// Exact case-insensitive matches only: punctuation can distinguish identities.
+				if strings.EqualFold(strings.TrimSpace(part), known) {
+					match = known
+					break
+				}
+			}
+			if match == "" || seen[strings.ToLower(match)] {
+				names = nil
+				break
+			}
+			seen[strings.ToLower(match)] = true
+			names = append(names, match)
+		}
+		if len(names) < 2 || len(names) > 20 {
+			continue
+		}
+		count++
+		for _, song := range issue.Tracks {
+			pos, ok := positions[song.ID]
+			if !ok {
+				pos = len(changes)
+				positions[song.ID] = pos
+				copy := song
+				changes = append(changes, metadataChange{Song: song, Edit: MetadataEdit{Title: song.Title, Artist: song.Artist, Album: song.Album, AlbumArtist: song.AlbumArtist}, MergeKind: "credits", Target: &copy})
+			}
+			changes[pos].CreditRepairs = append(changes[pos].CreditRepairs, creditRepairPlan{Role: issue.Role, Name: issue.Name, Artists: names})
+		}
+	}
+	if len(changes) == 0 {
+		fail(w, 409, "No combined credits have all artists matched exactly; review the remaining names")
+		return
+	}
+	jid, err := a.queueMetadata(changes, u)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	send(w, 202, map[string]any{"id": jid, "songs": len(changes), "issues": count})
+}

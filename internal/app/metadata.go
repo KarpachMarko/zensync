@@ -189,6 +189,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.metadataCoverUpload(w, r, u)
 		return
 	}
+	if path == "/credits/separate-known" && r.Method == "POST" {
+		a.separateKnownArtistCredits(w, r, u)
+		return
+	}
 	if path == "/credits/separate" && r.Method == "POST" {
 		a.separateArtistCredits(w, r, u)
 		return

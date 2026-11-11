@@ -21,6 +21,7 @@ import (
 )
 
 type metadataChange struct {
+	CreditRepairs []creditRepairPlan   `json:"creditRepairs,omitempty"`
 	UploadedCover string               `json:"uploadedCover,omitempty"`
 	CreditRepair  *creditRepairPlan    `json:"creditRepair,omitempty"`
 	ArtistMerge   *artistMergeIdentity `json:"artistMerge,omitempty"`

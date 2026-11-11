@@ -20,7 +20,7 @@ import {
 } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsString, useQueryState } from "nuqs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export function MetadataEditorHost() {
@@ -30,6 +30,9 @@ export function MetadataEditorHost() {
   ) : null;
 }
 function MetadataEditor({ id, close }: { id: string; close: () => void }) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  const [dropped, setDropped] = useState<{ file: File } | null>(null);
   const result = useQuery({
     queryKey: ["api", "/metadata/songs", id],
     queryFn: ({ signal }) =>
@@ -48,7 +51,12 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
         if (!open) close();
       }}
     >
-      <DialogContent className="max-h-[85vh] gap-2 overflow-y-auto rounded-md p-3 sm:max-w-xl">
+      <DialogContent className="max-h-[85vh] gap-2 overflow-y-auto rounded-md p-3 sm:max-w-xl"
+        onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); depth.current++; setDragging(true); } }}
+        onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+        onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setDragging(false); }}
+        onDrop={(event) => { event.preventDefault(); depth.current = 0; setDragging(false); const files = event.dataTransfer.files; if (files.length) setDropped({ file: files[0] }); }}>
+        {dragging && <div role="status" className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/95 p-6 text-center">Drop a JPEG or PNG to use as the cover</div>}
         <DialogTitle className="m-0 pr-8 text-base">
           Edit song metadata
         </DialogTitle>
@@ -68,6 +76,7 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
             initial={result.data.edit}
             duration={result.data.duration}
             searchArtist={result.data.searchArtist ?? result.data.edit.artist}
+            dropped={dropped}
             close={close}
           />
         )}
@@ -80,12 +89,14 @@ function MetadataForm({
   initial,
   duration,
   searchArtist,
+  dropped,
   close,
 }: {
   id: string;
   initial: MetadataEdit;
   duration: number;
   searchArtist: string;
+  dropped: { file: File } | null;
   close: () => void;
 }) {
   const client = useQueryClient();
@@ -121,6 +132,13 @@ function MetadataForm({
       setUploadedName(file.name); setArtworkText(""); setCoversQ(""); setUploadError("");
     },
   });
+  useEffect(() => {
+    if (!dropped || upload.isPending || save.isPending) return;
+    setTab("artwork");
+    const file = dropped.file;
+    if (!["image/jpeg", "image/png"].includes(file.type) || file.size > 20 * 1024 * 1024) { setUploadError("Choose a JPEG or PNG under 20 MiB"); return; }
+    setUploadError(""); upload.mutate(file);
+  }, [dropped]);
   const lyrics = useQuery({
     queryKey: ["api", "/metadata/lyrics", lyricsQ],
     enabled: tab === "lyrics" && !!lyricsQ,

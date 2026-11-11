@@ -1,3 +1,6 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 import { CreditRepairDialog } from "./credit-repair-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +9,10 @@ import { Text } from "@/components/typography";
 import type { CreditIssue } from "@/lib/metadata";
 
 export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[]; limited?: boolean }) {
+  const client = useQueryClient();
+  const eligible = issues.filter((issue) => issue.parts.length >= 2 && issue.parts.every((part) => issue.knownArtists.some((name) => name.toLowerCase() === part.trim().toLowerCase())));
+  const bulk = useMutation({ mutationFn: () => api<{ songs: number; issues: number }>("/metadata/credits/separate-known", "POST"),
+    onSuccess: async (result) => { toast.info(`Queued ${result.issues} credit fixes across ${result.songs} songs`); await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); } });
   if (!issues.length) return null;
   return (
     <section aria-label="Combined artist credit review" className="space-y-2">
@@ -15,6 +22,9 @@ export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[
         artist entries. You can adjust names and order before applying. Legal names
         are not automatically mapped to stage names.
       </Text>
+      <Button size="sm" disabled={limited || !eligible.length || bulk.isPending || bulk.isSuccess} onClick={() => bulk.mutate()}>{bulk.isSuccess ? "Known artist fixes queued" : `Queue all known artist fixes (${eligible.length})`}</Button>
+      {bulk.error && <Text role="alert">{bulk.error.message}</Text>}
+      <Text className="my-1 text-xs">Queues exact matches to existing artist names together. Unmatched names remain for review. Follow progress in Activity.</Text>
       {issues.map((issue) => (
         <Collapsible key={issue.role + issue.id + issue.name} className="rounded border border-solid border-border p-3">
           <div className="flex flex-wrap items-center gap-2">

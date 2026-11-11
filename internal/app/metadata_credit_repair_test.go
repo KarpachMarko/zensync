@@ -259,3 +259,42 @@ print(json.dumps(names))
 	}
 	return result
 }
+
+func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
+	a, admin, songs := metadataLibraryFixture(t)
+	known := songs["one"]
+	known.Artists = []ArtistCredit{{ID: "vacio", Name: "Vacio"}, {ID: "lsp", Name: "ЛСП"}}
+	songs["one"] = known
+	song := songs["two"]
+	song.Artist = "Vacio, ЛСП"
+	song.ArtistID = "combined"
+	song.Artists = []ArtistCredit{{ID: "combined", Name: "Vacio, ЛСП"}, {ID: "guest", Name: "Guest"}}
+	song.AlbumArtist = "Vacio, ЛСП"
+	song.AlbumArtists = []ArtistCredit{{ID: "combined", Name: "Vacio, ЛСП"}, {ID: "guest", Name: "Guest"}}
+	songs["two"] = song
+	path := filepath.Join(a.musicDir, song.Path)
+	writeNativeCredits(t, path, nativeCredits{[]string{"Vacio, ЛСП", "Guest"}, []string{"Vacio, ЛСП", "Guest"}, []string{"compound", "guest"}, []string{"compound", "guest"}})
+	// An incomplete match must stay available for manual review.
+	unknown := known
+	unknown.ID = "unknown"
+	unknown.Artists = []ArtistCredit{{ID: "partial", Name: "Vacio, Unknown"}}
+	songs["unknown"] = unknown
+	response := admin.call("POST", "/api/v2/metadata/credits/separate-known", "", "")
+	expect(t, response, 202)
+	var result struct{ Songs, Issues int }
+	json.Unmarshal(response.Body.Bytes(), &result)
+	if result.Songs != 1 || result.Issues != 2 {
+		t.Fatalf("Wrong batch: %s", response.Body)
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", "", ""), 409)
+	a.runMetadata(context.Background())
+	var state, message string
+	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+	if state != "completed" {
+		t.Fatalf("%s: %s", state, message)
+	}
+	got := readNativeCredits(t, path)
+	if !reflect.DeepEqual(got.Artists, []string{"Vacio", "ЛСП", "Guest"}) || !reflect.DeepEqual(got.AlbumArtists, []string{"Vacio", "ЛСП", "Guest"}) {
+		t.Fatalf("Lost a role: %+v", got)
+	}
+}

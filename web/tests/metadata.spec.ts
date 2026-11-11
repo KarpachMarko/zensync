@@ -620,3 +620,31 @@ test("cover upload is staged with a preview until Save and removal is explicit",
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   expect(state.edit()).toMatchObject({ removeCover: true, coverUrl: "", coverUploadId: "" });
 });
+
+test("dialog reveals a cover drop overlay and accepts a file on Details", async ({ page }) => {
+ await fixture(page);
+ await page.route("**/api/v2/metadata/songs/one/cover-upload", route => route.fulfill({status:201,json:{id:"a".repeat(64)}}));
+ await page.route("**/api/v2/metadata/songs/one/cover-upload/*", route => route.fulfill({contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=","base64")}));
+ await page.goto("/library?editSong=one");
+ const dialog=page.getByRole("dialog");
+ const transfer=await page.evaluateHandle(() => {
+  const data=new DataTransfer(); data.items.add(new File([new Uint8Array([1,2,3])],"cover.png",{type:"image/png"})); return data;
+ });
+ await dialog.dispatchEvent("dragenter",{dataTransfer:transfer});
+ await expect(dialog.getByText("Drop a JPEG or PNG to use as the cover")).toBeVisible();
+ await dialog.dispatchEvent("drop",{dataTransfer:transfer});
+ await expect(dialog.getByText("Drop a JPEG or PNG to use as the cover")).toHaveCount(0);
+ await expect(dialog.getByRole("tab",{name:"Artwork",exact:true})).toHaveAttribute("data-state","active");
+ await expect(dialog.getByAltText("Uploaded cover",{exact:true})).toBeVisible();
+});
+
+test("known combined credits queue together without individual dialogs",async ({page})=>{
+ await fixture(page);
+ await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:3,limited:false,groups:[],creditIssues:[{id:"combined",name:"Vacio, ЛСП",role:"artist",parts:["Vacio","ЛСП"],knownArtists:["Vacio","ЛСП"],tracks:[song]}]}}));
+ let calls=0;
+ await page.route("**/api/v2/metadata/credits/separate-known",route=>{calls++;return route.fulfill({status:202,json:{id:"batch",songs:1,issues:1}})});
+ await page.goto("/utilities?tool=duplicates");
+ await page.getByRole("button",{name:"Queue all known artist fixes (1)",exact:true}).click();
+ await expect(page.getByRole("button",{name:"Known artist fixes queued",exact:true})).toBeDisabled();
+ expect(calls).toBe(1);
+});
