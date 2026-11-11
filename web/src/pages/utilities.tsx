@@ -281,7 +281,7 @@ function DuplicateCandidates({
           <DialogDescription className="m-0 text-sm">
             Move {source?.count ?? "all"} songs from “{source?.label}” to the
             selected {group.kind}. This updates file tags and rescans Navidrome.
-            Audio is preserved and recovery copies are kept.
+            Audio is verified before replacing the original file.
           </DialogDescription>
           <form.Subscribe selector={(state) => state.values.target}>
             {(target) => (

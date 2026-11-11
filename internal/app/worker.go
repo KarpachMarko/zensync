@@ -19,10 +19,8 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	go func() {
 		defer close(done)
 		slog.Info("Background worker started")
-		if removed, err := a.CleanupMetadataBackups(); err != nil {
-			slog.Warn("Metadata recovery cleanup deferred", "error", err)
-		} else if len(removed) > 0 {
-			slog.Info("Published metadata recovery copies pruned", "entries", len(removed))
+		if err := a.cleanupMetadataTemps(); err != nil {
+			slog.Warn("Metadata temporary-file cleanup failed", "error", err)
 		}
 		defer slog.Info("Background worker stopped")
 		cleanupErr := filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
@@ -55,7 +53,6 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 		maintenanceDone := make(chan struct{}, 1)
 		maintenanceRunning := false
 		lastMaintenance := time.Time{}
-		lastBackupCleanup := time.Now()
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -87,16 +84,7 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 					work.Add(1)
 					go func() {
 						defer work.Done()
-						if time.Since(lastBackupCleanup) >= time.Hour {
-							a.opMu.Lock()
-							a.workMu.Lock()
-							if _, err := a.CleanupMetadataBackups(); err != nil {
-								slog.Warn("Metadata recovery cleanup deferred", "error", err)
-							}
-							a.workMu.Unlock()
-							a.opMu.Unlock()
-							lastBackupCleanup = time.Now()
-						}
+
 						a.runDeletion(ctx)
 						a.runMetadata(ctx)
 						a.runMigrationTask(ctx)

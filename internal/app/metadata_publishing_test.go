@@ -160,14 +160,14 @@ func TestMetadataPublishesTagsAndResumesAfterReplacement(t *testing.T) {
 	if e = a.DB.QueryRow("SELECT state FROM metadata_jobs WHERE id=?", result.ID).Scan(&state); e != nil || state != "completed" {
 		t.Fatalf("Resume failed: %s %v", state, e)
 	}
-	files, _ := filepath.Glob(filepath.Join(a.dataDir, "metadata-backups", "*", "original.flac"))
-	if len(files) != 1 {
-		t.Fatal("Recovery copy missing")
+	if _, err := os.Stat(filepath.Join(a.dataDir, "metadata-backups")); !os.IsNotExist(err) {
+		t.Fatal("Persistent backup storage was created")
 	}
-	backupHash, e := hashFile(files[0])
-	if e != nil || backupHash != before {
-		t.Fatal("Original backup changed")
+	files, _ := filepath.Glob(filepath.Join(a.musicDir, ".zensync-tags-*"))
+	if len(files) != 0 {
+		t.Fatal("Working copies retained after publication")
 	}
+
 }
 func TestMetadataAlbumAndArtistMerges(t *testing.T) {
 	for _, kind := range []string{"album", "artist"} {

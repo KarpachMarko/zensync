@@ -99,6 +99,7 @@ func TestCoverUploadThenRemovePreservesSong(t *testing.T) {
 			if err != nil || before != after {
 				t.Fatal("Audio changed", err)
 			}
+			assertNoMetadataCopies(t, a)
 		})
 	}
 }

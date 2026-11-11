@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -269,7 +268,7 @@ func (a *App) runMetadata(ctx context.Context) {
 	state, message := "completed", "Tags updated; Navidrome scan requested. Refresh the library after scanning."
 	if e != nil {
 		state = "failed"
-		message = fmt.Sprintf("%d/%d songs updated: %s. Unfinished recovery copies retained; retry resumes remaining work.", done, len(changes), e.Error())
+		message = fmt.Sprintf("%d/%d songs updated: %s. Original files are unchanged for failed writes; retry resumes remaining work.", done, len(changes), e.Error())
 	}
 	if _, err := a.DB.Exec("UPDATE metadata_jobs SET state=?,message=? WHERE id=?", state, message, jid); err != nil {
 		logger.Error("Metadata job completion persistence failed", "error", err)
@@ -278,9 +277,6 @@ func (a *App) runMetadata(ctx context.Context) {
 		logger.Error("Metadata job failed", "done", done, "error", e)
 	} else {
 		logger.Info("Metadata job completed; Navidrome scan pending", "done", done)
-	}
-	if _, err := a.CleanupMetadataBackups(); err != nil {
-		logger.Warn("Metadata recovery cleanup deferred", "error", err)
 	}
 	a.navIndexMu.Lock()
 	clear(a.navIndexes)
@@ -292,21 +288,8 @@ func (a *App) runMetadata(ctx context.Context) {
 func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, change metadataChange) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	key := jid + "-" + digest(change.Song.ID)
-	dir := filepath.Join(a.dataDir, "metadata-backups", key)
-	music, e := filepath.EvalSymlinks(a.musicDir)
-	if e != nil {
-		return e
-	}
-	data, e := filepath.EvalSymlinks(a.dataDir)
-	if e != nil {
-		return e
-	}
-	if inside, _ := filepath.Rel(music, data); inside == "." || (!strings.HasPrefix(inside, ".."+string(filepath.Separator)) && inside != "..") {
-		return errors.New("Metadata recovery storage must be outside the music library")
-	}
 	var rel, before, after string
-	e = a.DB.QueryRow("SELECT file_path,before_hash,after_hash FROM metadata_files WHERE job_id=? AND song_id=?", jid, change.Song.ID).Scan(&rel, &before, &after)
+	e := a.DB.QueryRow("SELECT file_path,before_hash,after_hash FROM metadata_files WHERE job_id=? AND song_id=?", jid, change.Song.ID).Scan(&rel, &before, &after)
 	if e == sql.ErrNoRows {
 		current, ne := a.nav(ctx, c, "getSong", url.Values{"id": {change.Song.ID}, "realPath": {"true"}})
 		if ne != nil {
@@ -343,35 +326,6 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if hash != before {
 		return errors.New("Source changed since this update was prepared")
 	}
-	if e = os.MkdirAll(dir, 0700); e != nil {
-		return e
-	}
-	backup := filepath.Join(dir, "original"+filepath.Ext(path))
-	_, backupErr := os.Stat(backup)
-	if backupErr != nil && !os.IsNotExist(backupErr) {
-		return backupErr
-	}
-	limit, err := metadataBackupLimit()
-	if err != nil {
-		return err
-	}
-	var reserve int64
-	if os.IsNotExist(backupErr) {
-		reserve = info.Size()
-	}
-	if change.Edit.CoverURL != "" || change.UploadedCover != "" {
-		reserve += maxMetadataCover
-	}
-	if _, err = a.cleanupMetadataBackups(limit, reserve, time.Now()); err != nil {
-		return err
-	}
-	if os.IsNotExist(backupErr) {
-		if e = a.backupMetadataFile(path, backup, before); e != nil {
-			return e
-		}
-	} else if hash, e = hashFile(backup); e != nil || hash != before {
-		return errors.New("Recovery copy verification failed")
-	}
 
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -379,10 +333,14 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	default:
 		return errors.New("Unsupported tag format; use MP3, FLAC, M4A, OGG, OPUS, WAV or AIFF")
 	}
-	if err := diskHeadroom(filepath.Dir(path), uint64(info.Size())+(256<<20)); err != nil {
+	requiredSpace := uint64(info.Size()) + (256 << 20)
+	if change.Edit.CoverURL != "" || change.UploadedCover != "" {
+		requiredSpace += 2 * maxMetadataCover
+	}
+	if err := diskHeadroom(filepath.Dir(path), requiredSpace); err != nil {
 		return errors.New("Not enough free space for metadata working copy plus 256 MiB headroom")
 	}
-	tmp, e := os.CreateTemp(filepath.Dir(path), ".zensync-tags-*"+ext)
+	tmp, e := os.CreateTemp(filepath.Dir(path), ".zensync-tags-"+jid+"-"+digest(change.Song.ID)+"-*"+ext)
 	if e != nil {
 		return e
 	}
@@ -390,7 +348,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	tmp.Close()
 	os.Remove(output)
 	defer os.Remove(output)
-	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", backup}
+	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path}
 	useCover := change.Edit.CoverURL != "" || change.UploadedCover != ""
 	if change.Edit.RemoveCover {
 		args = append(args, "-map", "0:a")
@@ -398,7 +356,13 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		if ext != ".mp3" && ext != ".flac" && ext != ".m4a" {
 			return errors.New("Cover embedding currently supports MP3, FLAC and M4A")
 		}
-		cover := filepath.Join(dir, "selected-cover")
+		coverFile, err := os.CreateTemp(filepath.Dir(path), ".zensync-cover-"+jid+"-"+digest(change.Song.ID)+"-*")
+		if err != nil {
+			return err
+		}
+		cover := coverFile.Name()
+		coverFile.Close()
+		defer os.Remove(cover)
 		if change.UploadedCover != "" {
 			data, err := a.readCoverUpload(change.UploadedCover)
 			if err != nil {
@@ -445,7 +409,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
-	canonicalPath := backup
+	canonicalPath := path
 	if change.MergeKind != "" && change.MergeKind != "credits" && change.Target != nil {
 		canonical, targetPath, e := a.metadataCanonicalTags(ctx, c, *change.Target)
 		if e != nil {
@@ -481,7 +445,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	protectChild(cmd)
 	if change.MergeKind == "credits" {
-		if err := prepareCreditRepairFile(backup, output); err != nil {
+		if err := prepareCreditRepairFile(path, output); err != nil {
 			return err
 		}
 	} else if output, err := cmd.CombinedOutput(); err != nil {
@@ -489,7 +453,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		return errors.New("Could not write audio tags; original file retained")
 	}
 	if change.MergeKind == "" && (useCover || change.Edit.RemoveCover) {
-		if err := preserveArtworkMetadata(ctx, change, backup, output); err != nil {
+		if err := preserveArtworkMetadata(ctx, change, path, output); err != nil {
 			return err
 		}
 	}
@@ -499,7 +463,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		}
 	}
 	if change.MergeKind != "" {
-		if err := preserveMergeCredits(ctx, &change, backup, canonicalPath, output); err != nil {
+		if err := preserveMergeCredits(ctx, &change, path, canonicalPath, output); err != nil {
 			return err
 		}
 		if change.MergeKind != "credits" {
@@ -529,7 +493,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		}
 	}
 	// Compare encoded audio packets, rather than container bytes altered by tags.
-	oldAudio, e := metadataAudioHash(ctx, backup)
+	oldAudio, e := metadataAudioHash(ctx, path)
 	if e != nil {
 		return e
 	}
@@ -578,40 +542,6 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		}
 	}
 	return nil
-}
-func (a *App) backupMetadataFile(source, dest, checksum string) error {
-	in, e := os.Open(source)
-	if e != nil {
-		return e
-	}
-	defer in.Close()
-	info, e := in.Stat()
-	if e != nil {
-		return e
-	}
-	if e = diskHeadroom(filepath.Dir(dest), uint64(info.Size())*2+(256<<20)); e != nil {
-		return e
-	}
-	tmp, e := os.CreateTemp(filepath.Dir(dest), ".backup-")
-	if e != nil {
-		return e
-	}
-	defer tmp.Close()
-	defer os.Remove(tmp.Name())
-	checksumWriter := sha256.New()
-	if _, e = io.Copy(io.MultiWriter(tmp, checksumWriter), in); e != nil {
-		return e
-	}
-	if e = tmp.Sync(); e != nil {
-		return e
-	}
-	if fmt.Sprintf("%x", checksumWriter.Sum(nil)) != checksum {
-		return errors.New("Source changed while creating recovery copy")
-	}
-	if e = os.Link(tmp.Name(), dest); e != nil {
-		return e
-	}
-	return syncDir(filepath.Dir(dest))
 }
 func metadataAudioHash(ctx context.Context, path string) (string, error) {
 	out, e := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path, "-map", "0:a:0", "-c:a", "copy", "-f", "hash", "-hash", "sha256", "-").Output()
