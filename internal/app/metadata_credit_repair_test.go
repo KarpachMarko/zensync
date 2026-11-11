@@ -348,3 +348,49 @@ func TestBulkKnownCreditsAlreadySeparatedNativeTags(t *testing.T) {
 		})
 	}
 }
+
+func TestCreditRepairRetainsNativeAlbumWithDifferentNavidromeDisplay(t *testing.T) {
+	for _, album := range []string{"З4ПР4ВК4 КИД (ДЕЛЮКС П4К)", ""} {
+		t.Run(album, func(t *testing.T) {
+			a, admin, songs := metadataLibraryFixture(t)
+			known := songs["one"]
+			known.Artists = []ArtistCredit{{ID: "mayot", Name: "MAYOT"}, {ID: "vosk", Name: "Voskresenskii"}}
+			songs["one"] = known
+			song := songs["two"]
+			song.Artist = "MAYOT feat. Voskresenskii"
+			song.Artists = []ArtistCredit{{ID: "combined", Name: song.Artist}}
+			song.Album = "Navidrome display album"
+			songs["two"] = song
+			path := filepath.Join(a.musicDir, song.Path)
+			tmp := path + ".flac"
+			output, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-c", "copy", "-metadata", "album="+album, tmp).CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v %s", err, output)
+			}
+			if err := os.Rename(tmp, path); err != nil {
+				t.Fatal(err)
+			}
+			writeNativeCredits(t, path, nativeCredits{[]string{song.Artist, "Guest"}, []string{"Band"}, []string{"compound", "guest"}, []string{"band"}})
+			expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", "", ""), 202)
+			a.runMetadata(context.Background())
+			var jid, state, message string
+			a.DB.QueryRow("SELECT id,state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&jid, &state, &message)
+			if state != "completed" {
+				t.Fatalf("%s %s", state, message)
+			}
+			probe, err := a.probeUpload(path, uploadFormat(".flac"))
+			if err != nil || uploadTags(probe)["album"] != album {
+				t.Fatalf("Native album changed: %v %v", uploadTags(probe), err)
+			}
+			// A retry after a restart must recognize the already published file.
+			a.DB.Exec("UPDATE metadata_jobs SET state='failed',done=0 WHERE id=?", jid)
+			expect(t, admin.call("POST", "/api/v2/metadata/jobs", mustJSON(map[string]string{"id": jid}), ""), 200)
+			a.runMetadata(context.Background())
+			var done int
+			a.DB.QueryRow("SELECT state,done FROM metadata_jobs WHERE id=?", jid).Scan(&state, &done)
+			if state != "completed" || done != 1 {
+				t.Fatalf("Retry did not resume: %s %d", state, done)
+			}
+		})
+	}
+}

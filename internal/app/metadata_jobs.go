@@ -497,8 +497,19 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 				return fmt.Errorf("Grouping tag %s did not update; original file retained", key)
 			}
 		}
-		if written["artist"] != change.Edit.Artist || written["album"] != change.Edit.Album {
-			return errors.New("Written artist or album did not match; original file retained")
+		expectedAlbum := change.Edit.Album
+		if change.MergeKind == "credits" {
+			// Credit repair copies native tags unchanged except artist credits.
+			// Navidrome can normalize the album display (or supply a fallback),
+			// which is not the album value we should write or verify on disk.
+			original, err := a.probeUpload(backup, uploadFormat(ext))
+			if err != nil {
+				return fmt.Errorf("Cannot verify original album tags: %w", err)
+			}
+			expectedAlbum = uploadTags(original)["album"]
+		}
+		if written["artist"] != change.Edit.Artist || written["album"] != expectedAlbum {
+			return fmt.Errorf("Written tags did not match: artist expected %q, found %q; album expected %q, found %q; original file retained", change.Edit.Artist, written["artist"], expectedAlbum, written["album"])
 		}
 	}
 	// Compare encoded audio packets, rather than container bytes altered by tags.
