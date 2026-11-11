@@ -261,6 +261,9 @@ func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params
 	resp, e := client.Do(req)
 	logIntegrationRequest(ctx, "navidrome", req.Method, req.URL.Path, started, resp, e)
 	if e != nil {
+		if errors.Is(e, context.Canceled) {
+			return nil, context.Canceled
+		}
 		return nil, errors.New("Navidrome connection failed; check URL and connectivity")
 	}
 	return resp, nil
