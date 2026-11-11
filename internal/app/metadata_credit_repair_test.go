@@ -424,3 +424,28 @@ func TestCreditRepairRetainsNativeAlbumWithDifferentNavidromeDisplay(t *testing.
 		})
 	}
 }
+
+func TestBulkCreditRepairIncludesUnknownOnlyWhenSelected(t *testing.T) {
+	a, admin, songs := metadataLibraryFixture(t)
+	known := songs["one"]
+	known.Artists = []ArtistCredit{{ID: "known", Name: "Vacio"}}
+	songs["one"] = known
+	song := songs["two"]
+	song.Artist = "Vacio, New Artist"
+	song.Artists = []ArtistCredit{{ID: "combined", Name: song.Artist}}
+	songs["two"] = song
+	path := filepath.Join(a.musicDir, song.Path)
+	writeNativeCredits(t, path, nativeCredits{[]string{song.Artist, "Guest"}, []string{"Band"}, []string{"combined", "guest"}, []string{"band"}})
+	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", "", ""), 409)
+	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", `{"includeUnknown":true}`, ""), 202)
+	a.runMetadata(context.Background())
+	var state, message string
+	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+	if state != "completed" {
+		t.Fatalf("%s %s", state, message)
+	}
+	got := readNativeCredits(t, path)
+	if !reflect.DeepEqual(got.Artists, []string{"Vacio", "New Artist", "Guest"}) || !reflect.DeepEqual(got.ArtistIDs, []string{"", "", "guest"}) {
+		t.Fatalf("Incorrect new credits: %+v", got)
+	}
+}

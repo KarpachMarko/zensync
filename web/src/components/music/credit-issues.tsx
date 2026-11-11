@@ -11,7 +11,7 @@ import type { CreditIssue } from "@/lib/metadata";
 export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[]; limited?: boolean }) {
   const client = useQueryClient();
   const eligible = issues.filter((issue) => issue.parts.length >= 2 && issue.parts.every((part) => issue.knownArtists.some((name) => name.toLowerCase() === part.trim().toLowerCase())));
-  const bulk = useMutation({ mutationFn: () => api<{ songs: number; issues: number }>("/metadata/credits/separate-known", "POST"),
+  const bulk = useMutation({ mutationFn: (includeUnknown: boolean) => api<{ songs: number; issues: number }>("/metadata/credits/separate-known", "POST", { includeUnknown }),
     onSuccess: async (result) => { toast.info(`Queued ${result.issues} credit fixes across ${result.songs} songs`); await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); } });
   if (!issues.length) return null;
   return (
@@ -22,9 +22,11 @@ export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[
         artist entries. You can adjust names and order before applying. Legal names
         are not automatically mapped to stage names.
       </Text>
-      <Button size="sm" disabled={limited || !eligible.length || bulk.isPending || bulk.isSuccess} onClick={() => bulk.mutate()}>{bulk.isSuccess ? "Known artist fixes queued" : `Queue all known artist fixes (${eligible.length})`}</Button>
+      <Button size="sm" disabled={limited || !eligible.length || bulk.isPending || bulk.isSuccess} onClick={() => bulk.mutate(false)}>{bulk.isSuccess && !bulk.variables ? "Known artist fixes queued" : `Queue all known artist fixes (${eligible.length})`}</Button>
+      <Button size="sm" variant="outline" disabled={limited || bulk.isPending || bulk.isSuccess} onClick={() => bulk.mutate(true)}>{bulk.isSuccess && bulk.variables ? "All artist fixes queued" : `Queue all artist fixes (${issues.length})`}</Button>
+      <Text className="my-1 text-xs">Including unknown artists uses the proposed names shown below as new artist credits. Review those names first if needed; legal names are kept as written.</Text>
       {bulk.error && <Text role="alert">{bulk.error.message}</Text>}
-      <Text className="my-1 text-xs">Queues exact matches to existing artist names together. Unmatched names remain for review. Follow progress in Activity.</Text>
+      <Text className="my-1 text-xs">The known-only option queues exact matches and leaves unmatched names for review. Follow progress in Activity.</Text>
       {issues.map((issue) => (
         <Collapsible key={issue.role + issue.id + issue.name} className="rounded border border-solid border-border p-3">
           <div className="flex flex-wrap items-center gap-2">

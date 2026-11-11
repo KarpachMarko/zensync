@@ -648,3 +648,15 @@ test("known combined credits queue together without individual dialogs",async ({
  await expect(page.getByRole("button",{name:"Known artist fixes queued",exact:true})).toBeDisabled();
  expect(calls).toBe(1);
 });
+
+test("bulk credit repair can explicitly include unknown artist names", async ({ page }) => {
+ await fixture(page);
+ await page.route("**/api/v2/metadata/duplicates*", route => route.fulfill({json:{scanned:2,limited:false,groups:[],creditIssues:[{id:"combined",name:"Vacio, New Artist",role:"artist",parts:["Vacio","New Artist"],knownArtists:["Vacio"],tracks:[song]}]}}));
+ let payload: unknown;
+ await page.route("**/api/v2/metadata/credits/separate-known", route => { payload=route.request().postDataJSON();return route.fulfill({status:202,json:{id:"batch",songs:1,issues:1}}); });
+ await page.goto("/utilities?tool=duplicates");
+ await expect(page.getByRole("button",{name:"Queue all known artist fixes (0)",exact:true})).toBeDisabled();
+ await page.getByRole("button",{name:"Queue all artist fixes (1)",exact:true}).click();
+ await expect(page.getByRole("button",{name:"All artist fixes queued",exact:true})).toBeDisabled();
+ expect(payload).toEqual({includeUnknown:true});
+});

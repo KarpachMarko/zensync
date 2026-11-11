@@ -111,6 +111,12 @@ func prepareCreditRepairFile(original, output string) error {
 
 // Queue one job and one write per song, including songs with both roles to fix.
 func (a *App) separateKnownArtistCredits(w http.ResponseWriter, r *http.Request, u User) {
+	var options struct {
+		IncludeUnknown bool `json:"includeUnknown"`
+	}
+	if r.ContentLength != 0 && !decode(w, r, &options) {
+		return
+	}
 	c, err := a.shared()
 	if err != nil {
 		fail(w, 400, err.Error())
@@ -143,7 +149,10 @@ func (a *App) separateKnownArtistCredits(w http.ResponseWriter, r *http.Request,
 					break
 				}
 			}
-			if match == "" || seen[strings.ToLower(match)] {
+			if match == "" && options.IncludeUnknown {
+				match = strings.TrimSpace(part)
+			}
+			if match == "" || len(match) > 500 || seen[strings.ToLower(match)] {
 				names = nil
 				break
 			}
@@ -166,7 +175,11 @@ func (a *App) separateKnownArtistCredits(w http.ResponseWriter, r *http.Request,
 		}
 	}
 	if len(changes) == 0 {
-		fail(w, 409, "No combined credits have all artists matched exactly; review the remaining names")
+		if options.IncludeUnknown {
+			fail(w, 409, "No combined credits have valid separate artist names; review the remaining names")
+		} else {
+			fail(w, 409, "No combined credits have all artists matched exactly; review the remaining names")
+		}
 		return
 	}
 	jid, err := a.queueMetadata(changes, u)
