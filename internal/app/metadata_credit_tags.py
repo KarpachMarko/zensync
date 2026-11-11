@@ -128,7 +128,12 @@ def replace_credit(values, ids, source, target, target_id):
 
 def expand_credit(values, ids, old_name, replacements):
     if not any(name.casefold() == old_name.casefold() for name in values):
-        raise ValueError("The combined credit changed; refresh the review")
+        # Navidrome can retain a combined display identity while the native
+        # plural tag already contains every selected individual. Canonicalize
+        # the display/aliases without splitting again or discarding their IDs.
+        if all(any(value.casefold() == name.casefold() for value in values) for name in replacements):
+            return list(values), list(ids)
+        raise ValueError("Combined credit does not match native tags: expected " + repr(old_name) + "; found " + repr(values) + ". Review this song's artist tags")
     if len(ids) > len(values):
         raise ValueError("Artist names and IDs cannot be aligned safely")
     padded = list(ids) + [""] * (len(values) - len(ids))

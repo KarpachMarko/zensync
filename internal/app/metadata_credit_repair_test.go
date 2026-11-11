@@ -298,3 +298,53 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 		t.Fatalf("Lost a role: %+v", got)
 	}
 }
+
+func TestBulkKnownCreditsAlreadySeparatedNativeTags(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint(partial), func(t *testing.T) {
+			a, admin, songs := metadataLibraryFixture(t)
+			known := songs["one"]
+			known.Artists = []ArtistCredit{{ID: "flesh", Name: "FLESH"}, {ID: "lizer", Name: "LIZER"}}
+			songs["one"] = known
+			song := songs["two"]
+			song.Artist = "FLESH, LIZER"
+			song.ArtistID = "combined"
+			song.Artists = []ArtistCredit{{ID: "combined", Name: "FLESH, LIZER"}}
+			song.AlbumArtist = "FLESH, LIZER"
+			song.AlbumArtists = []ArtistCredit{{ID: "combined", Name: "FLESH, LIZER"}}
+			songs["two"] = song
+			path := filepath.Join(a.musicDir, song.Path)
+			artists := []string{"FLESH", "LIZER", "Guest"}
+			if partial {
+				artists = []string{"FLESH", "Guest"}
+			}
+			before := nativeCredits{artists, []string{"FLESH, LIZER", "Album guest"}, []string{"flesh", "lizer", "guest"}[:len(artists)], []string{"compound", "album-guest"}}
+			writeNativeCredits(t, path, before)
+			audio, err := metadataAudioHash(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", "", ""), 202)
+			a.runMetadata(context.Background())
+			var state, message string
+			a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+			got := readNativeCredits(t, path)
+			if partial {
+				if state != "failed" || !reflect.DeepEqual(got, before) {
+					t.Fatalf("Unsafe partial match: %s %s %+v", state, message, got)
+				}
+				return
+			}
+			if state != "completed" {
+				t.Fatalf("%s %s", state, message)
+			}
+			if !reflect.DeepEqual(got.Artists, artists) || !reflect.DeepEqual(got.ArtistIDs, before.ArtistIDs) || !reflect.DeepEqual(got.AlbumArtists, []string{"FLESH", "LIZER", "Album guest"}) {
+				t.Fatalf("Lost credits: %+v", got)
+			}
+			after, err := metadataAudioHash(context.Background(), path)
+			if err != nil || after != audio {
+				t.Fatal("Audio changed", err)
+			}
+		})
+	}
+}
