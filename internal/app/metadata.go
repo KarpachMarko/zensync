@@ -189,6 +189,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.metadataCoverUpload(w, r, u)
 		return
 	}
+	if path == "/dismissals" && r.Method == "POST" {
+		a.dismissMetadataSuggestion(w, r, u)
+		return
+	}
 	if path == "/credits/separate-known" && r.Method == "POST" {
 		a.separateKnownArtistCredits(w, r, u)
 		return
@@ -226,7 +230,12 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 502, e.Error())
 			return
 		}
-		send(w, 200, map[string]any{"groups": metadataDuplicates(index.songs), "creditIssues": metadataCreditIssues(index.songs), "scanned": len(index.songs), "limited": index.limited})
+		dismissed, err := a.metadataDismissals(c)
+		if err != nil {
+			a.internal(w, err)
+			return
+		}
+		send(w, 200, map[string]any{"groups": reviewedDuplicateGroups(index.songs, dismissed), "creditIssues": reviewedCreditIssues(index.songs, dismissed), "scanned": len(index.songs), "limited": index.limited})
 		return
 	}
 	if (path == "/lyrics" || path == "/covers") && r.Method == "GET" {

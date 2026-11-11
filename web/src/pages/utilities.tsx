@@ -1,3 +1,4 @@
+import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { CreditIssues } from "@/components/music/credit-issues";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
@@ -175,6 +176,7 @@ function DuplicateCandidates({
             {group.reason}{group.kind === "album" && " · Candidates only: compare tracks before merging; matching names do not prove identical recordings."}
           </span>
         </div>
+        <DismissSuggestion rule={{ kind: group.kind, ids: group.members.map((member) => member.id) }} />
         {group.kind !== "song" && (
           <form.Field name="target">
             {(field) => (

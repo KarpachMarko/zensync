@@ -660,3 +660,40 @@ test("bulk credit repair can explicitly include unknown artist names", async ({ 
  await expect(page.getByRole("button",{name:"All artist fixes queued",exact:true})).toBeDisabled();
  expect(payload).toEqual({includeUnknown:true});
 });
+
+test("literal artist names can be dismissed across both roles, undone and kept hidden after reload", async ({ page }) => {
+ await fixture(page);
+ const name="V $ X V PRiNCE";
+ let ignored=false;
+ const requests: unknown[]=[];
+ const issues=(["artist","album artist"] as const).map(role=>({id:"literal",name,role,parts:["V $","V PRiNCE"],knownArtists:["V $","V PRiNCE"],tracks:[song]}));
+ await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:46,limited:false,groups:[],creditIssues:ignored?[]:issues}}));
+ await page.route("**/api/v2/metadata/dismissals",route=>{const body=route.request().postDataJSON();requests.push(body);ignored=!body.restore;return route.fulfill({json:{ok:true}})});
+ await page.goto("/utilities?tool=duplicates");
+ await expect(page.getByRole("button",{name:"Keep as one artist",exact:true})).toHaveCount(2);
+ await page.getByRole("button",{name:"Keep as one artist",exact:true}).first().click();
+ await expect(page.getByRole("button",{name:"Keep as one artist",exact:true})).toHaveCount(0);
+ expect(requests[0]).toEqual({kind:"credit",name});
+ await page.getByRole("button",{name:"Undo",exact:true}).click();
+ await expect(page.getByRole("button",{name:"Keep as one artist",exact:true})).toHaveCount(2);
+ expect(requests[1]).toEqual({kind:"credit",name,restore:true});
+ await page.getByRole("button",{name:"Keep as one artist",exact:true}).first().click();
+ await expect(page.getByRole("button",{name:"Keep as one artist",exact:true})).toHaveCount(0);
+ await page.reload();
+ await expect(page.getByRole("button",{name:"Keep as one artist",exact:true})).toHaveCount(0);
+});
+
+test("duplicate groups have a non-destructive not-duplicates action with undo", async ({ page }) => {
+ await fixture(page);
+ let ignored=false;
+ let payload: unknown;
+ const group={kind:"album",reason:"Same normalized title",members:[{id:"album-b",label:"Distinct edition B",count:1},{id:"album-a",label:"Distinct edition A",count:1}]};
+ await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:2,limited:false,groups:ignored?[]:[group],creditIssues:[]}}));
+ await page.route("**/api/v2/metadata/dismissals",route=>{const body=route.request().postDataJSON();payload=body;ignored=!body.restore;return route.fulfill({json:{ok:true}})});
+ await page.goto("/utilities?tool=duplicates");
+ await page.getByRole("button",{name:"Not duplicates",exact:true}).click();
+ await expect(page.getByText("Distinct edition A",{exact:true})).toHaveCount(0);
+ expect(payload).toEqual({kind:"album",ids:["album-b","album-a"]});
+ await page.getByRole("button",{name:"Undo",exact:true}).click();
+ await expect(page.getByText("Distinct edition A",{exact:true})).toBeVisible();
+});

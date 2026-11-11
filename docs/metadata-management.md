@@ -36,6 +36,10 @@ This discards the old tag-rollback copies. It does not delete music files, job p
 
 ## Utilities: Review duplicates
 
+Use **Keep as one artist** on a combined-credit suggestion when the complete name is one literal artist, such as `V $ X V PRiNCE`. This decision persists across refreshes and restarts and covers both track-artist and album-artist roles, including new library IDs with that name. Both bulk separation actions exclude dismissed names. Pending credit repairs re-check the decision, including immediately before publication. Dismissal does not edit existing tags or undo previously completed changes.
+
+Use **Not duplicates** on a song, album or artist candidate group to hide that exact set of library IDs. A changed group with a new member is reviewed again. The toast offers **Undo**. Decisions apply to all administrators of the configured Navidrome server and are isolated from other server URLs. `POST /api/v2/metadata/dismissals` accepts `{kind:"credit",name}` or `{kind:"song"|"album"|"artist",ids:[...]}`; adding `restore:true` restores the suggestion. Writes require administrator/CSRF authorization.
+
 **Utilities → Review duplicates** finds distinct library IDs with matching normalized names. Artist candidates compare artist names; album candidates compare artist and album names. Song candidates additionally require known durations within two seconds. Normalization ignores case, spaces and punctuation while retaining Unicode letters/numbers/marks and version labels. It is a candidate heuristic, without fingerprints or fuzzy matching.
 
 - Extra songs can be deleted through the existing shared-library deletion and recovery workflow.

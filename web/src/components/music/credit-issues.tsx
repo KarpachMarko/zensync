@@ -1,3 +1,4 @@
+import { DismissSuggestion } from "./dismiss-suggestion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -38,7 +39,7 @@ export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[
           </div>
           <Text className="my-1 text-xs">{issue.knownArtists.length} names match existing artist entries</Text>
           <Text className="my-1 text-xs">{issue.tracks.length} affected {issue.tracks.length === 1 ? "song" : "songs"}</Text>
-          <div className="my-2"><CreditRepairDialog issue={issue} disabled={limited} /></div>
+          <div className="my-2 flex flex-wrap items-start gap-2"><CreditRepairDialog issue={issue} disabled={limited} /><DismissSuggestion rule={{ kind: "credit", name: issue.name }} /></div>
           {limited && <Text className="my-1 text-xs">Changes require a complete library scan.</Text>}
           <CollapsibleTrigger asChild>
             <Button variant="outline" size="sm">Review affected songs</Button>

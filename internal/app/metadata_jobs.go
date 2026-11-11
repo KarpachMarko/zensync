@@ -247,9 +247,25 @@ func (a *App) runMetadata(ctx context.Context) {
 	}
 	for e == nil && done < len(changes) {
 		change := changes[done]
+		if change.MergeKind == "credits" {
+			var skip bool
+			change, skip, e = a.filterDismissedCreditRepairs(c, change)
+			if e != nil {
+				break
+			}
+			if skip {
+				logger.Info("Metadata credit repair skipped; artist marked as indivisible", "song_id", change.Song.ID)
+				done++
+				_, e = a.DB.Exec("UPDATE metadata_jobs SET done=? WHERE id=?", done, jid)
+				continue
+			}
+		}
 		logger.Info("Metadata song update started", "song_id", change.Song.ID, "kind", change.MergeKind, "artist_before", change.Song.Artist, "artist_after", change.Edit.Artist, "album_artist_before", change.Song.AlbumArtist, "album_artist_after", change.Edit.AlbumArtist)
 		e = a.publishMetadata(ctx, c, jid, change)
-		if e != nil {
+		if errors.Is(e, errCreditRepairDismissed) {
+			logger.Info("Metadata credit repair skipped; artist marked as indivisible", "song_id", change.Song.ID)
+			e = nil
+		} else if e != nil {
 			logger.Error("Metadata song update failed", "song_id", change.Song.ID, "error", e)
 		} else {
 			logger.Info("Metadata song tags verified and published", "song_id", change.Song.ID)
@@ -526,6 +542,23 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	check, e := hashFile(path)
 	if e != nil || check != before {
 		return errors.New("Source changed during tag writing; original file retained")
+	}
+	if change.MergeKind == "credits" {
+		// Serialize the final decision with dismissals. A staged write must
+		// not publish a split after the user has marked that name indivisible.
+		a.metadataDecisionMu.Lock()
+		defer a.metadataDecisionMu.Unlock()
+		latest, skip, err := a.filterDismissedCreditRepairs(c, change)
+		if err != nil {
+			return err
+		}
+		planned := len(change.CreditRepairs)
+		if planned == 0 && change.CreditRepair != nil {
+			planned = 1
+		}
+		if skip || len(latest.CreditRepairs) != planned {
+			return errCreditRepairDismissed
+		}
 	}
 	if e = os.Rename(output, path); e != nil {
 		return e

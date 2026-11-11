@@ -56,8 +56,13 @@ func (a *App) separateArtistCredits(w http.ResponseWriter, r *http.Request, u Us
 		fail(w, 409, "Separating credits requires a complete library scan")
 		return
 	}
+	dismissed, err := a.metadataDismissals(c)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
 	var issue *creditIssue
-	for _, candidate := range metadataCreditIssues(index.songs) {
+	for _, candidate := range reviewedCreditIssues(index.songs, dismissed) {
 		if candidate.ID == in.Source && candidate.Role == in.Role && candidate.Name == in.Name {
 			copy := candidate
 			issue = &copy
@@ -134,10 +139,15 @@ func (a *App) separateKnownArtistCredits(w http.ResponseWriter, r *http.Request,
 		fail(w, 409, "Separating credits requires a complete library scan")
 		return
 	}
+	dismissed, err := a.metadataDismissals(c)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
 	changes := []metadataChange{}
 	positions := map[string]int{}
 	count := 0
-	for _, issue := range metadataCreditIssues(index.songs) {
+	for _, issue := range reviewedCreditIssues(index.songs, dismissed) {
 		names := []string{}
 		seen := map[string]bool{}
 		for _, part := range issue.Parts {

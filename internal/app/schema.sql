@@ -196,3 +196,10 @@ CREATE TABLE IF NOT EXISTS metadata_files (
  PRIMARY KEY(job_id,song_id)
 );
 INSERT OR IGNORE INTO schema_version VALUES(8);
+
+CREATE TABLE IF NOT EXISTS metadata_dismissals (
+ server_key TEXT NOT NULL, rule_key TEXT NOT NULL,
+ actor TEXT NOT NULL REFERENCES users(id), created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(server_key,rule_key)
+);
+INSERT OR IGNORE INTO schema_version VALUES(9);
