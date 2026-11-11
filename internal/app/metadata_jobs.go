@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -347,11 +348,13 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		if e = a.backupMetadataFile(path, backup, before); e != nil {
 			return e
 		}
-	} else if e != nil {
-		return e
-	}
-	if hash, e = hashFile(backup); e != nil || hash != before {
-		return errors.New("Recovery copy verification failed")
+	} else {
+		if e != nil {
+			return e
+		}
+		if hash, e = hashFile(backup); e != nil || hash != before {
+			return errors.New("Recovery copy verification failed")
+		}
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -422,8 +425,8 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
-	canonicalPath := ""
-	if change.MergeKind != "" && change.Target != nil {
+	canonicalPath := backup
+	if change.MergeKind != "" && change.MergeKind != "credits" && change.Target != nil {
 		canonical, targetPath, e := a.metadataCanonicalTags(ctx, c, *change.Target)
 		if e != nil {
 			return e
@@ -479,37 +482,30 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		if err := preserveMergeCredits(ctx, &change, backup, canonicalPath, output); err != nil {
 			return err
 		}
-		// The native writer verifies individual list values. ffprobe flattens
-		// native lists, so only compare the single-valued display fields here.
-		for _, key := range []string{"artists", "albumartists", "album artists", "albumartist", "album artist", "album_artist"} {
-			delete(tags, key)
-		}
-		tags["artist"] = change.Edit.Artist
-		p, err := a.probeUpload(output, uploadFormat(ext))
-		if err != nil {
-			return fmt.Errorf("Cannot verify written grouping tags: %w", err)
-		}
-		written := uploadTags(p)
-		for _, key := range []string{"artist", "artists", "album", "albumartist", "album artist", "album_artist", "albumartists", "album artists"} {
-			expected, changed := tags[key]
-			actual, present := written[key]
-			if changed && present && actual != expected {
-				return fmt.Errorf("Grouping tag %s did not update; original file retained", key)
+		if change.MergeKind != "credits" {
+			// The native writer verifies individual list values. ffprobe flattens
+			// native lists, so only compare the single-valued display fields here.
+			for _, key := range []string{"artists", "albumartists", "album artists", "albumartist", "album artist", "album_artist"} {
+				delete(tags, key)
 			}
-		}
-		expectedAlbum := change.Edit.Album
-		if change.MergeKind == "credits" {
-			// Credit repair copies native tags unchanged except artist credits.
-			// Navidrome can normalize the album display (or supply a fallback),
-			// which is not the album value we should write or verify on disk.
-			original, err := a.probeUpload(backup, uploadFormat(ext))
+			tags["artist"] = change.Edit.Artist
+			p, err := a.probeUpload(output, uploadFormat(ext))
 			if err != nil {
-				return fmt.Errorf("Cannot verify original album tags: %w", err)
+				return fmt.Errorf("Cannot verify written grouping tags: %w", err)
 			}
-			expectedAlbum = uploadTags(original)["album"]
-		}
-		if written["artist"] != change.Edit.Artist || written["album"] != expectedAlbum {
-			return fmt.Errorf("Written tags did not match: artist expected %q, found %q; album expected %q, found %q; original file retained", change.Edit.Artist, written["artist"], expectedAlbum, written["album"])
+			written := uploadTags(p)
+			for _, key := range []string{"artist", "artists", "album", "albumartist", "album artist", "album_artist", "albumartists", "album artists"} {
+				expected, changed := tags[key]
+				actual, present := written[key]
+				if changed && present && actual != expected {
+					return fmt.Errorf("Grouping tag %s did not update; original file retained", key)
+				}
+			}
+			expectedAlbum := change.Edit.Album
+
+			if written["artist"] != change.Edit.Artist || written["album"] != expectedAlbum {
+				return fmt.Errorf("Written tags did not match: artist expected %q, found %q; album expected %q, found %q; original file retained", change.Edit.Artist, written["artist"], expectedAlbum, written["album"])
+			}
 		}
 	}
 	// Compare encoded audio packets, rather than container bytes altered by tags.
@@ -582,13 +578,14 @@ func (a *App) backupMetadataFile(source, dest, checksum string) error {
 	}
 	defer tmp.Close()
 	defer os.Remove(tmp.Name())
-	if _, e = io.Copy(tmp, in); e != nil {
+	checksumWriter := sha256.New()
+	if _, e = io.Copy(io.MultiWriter(tmp, checksumWriter), in); e != nil {
 		return e
 	}
 	if e = tmp.Sync(); e != nil {
 		return e
 	}
-	if hash, e := hashFile(tmp.Name()); e != nil || hash != checksum {
+	if fmt.Sprintf("%x", checksumWriter.Sum(nil)) != checksum {
 		return errors.New("Source changed while creating recovery copy")
 	}
 	if e = os.Link(tmp.Name(), dest); e != nil {

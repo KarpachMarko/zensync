@@ -222,7 +222,14 @@ def main():
             output.save()
         print("{}")
         return
-    original, target, output = (load(plan[key]) for key in ("original", "target", "output"))
+    original, output = load(plan["original"]), load(plan["output"])
+    target = original if plan["kind"] == "credits" else load(plan["target"])
+    def album_values(audio):
+        if isinstance(audio.tags, ID3):
+            frame = audio.tags.get("TALB")
+            return list(frame.text) if frame else []
+        return list(audio.tags.get("\xa9alb" if isinstance(audio.tags, MP4Tags) else "album", []))
+    original_album = album_values(original)
     artists = names(original, "artists", "artist", plan["fallbackArtists"])
     albumartists = names(original, "albumartists", "albumartist", plan["fallbackAlbumArtists"])
     artistids, albumartistids = read(original, "artistids"), read(original, "albumartistids")
@@ -283,6 +290,8 @@ def main():
     else:
         output.save()
     checked = load(plan["output"])
+    if plan["kind"] == "credits" and album_values(checked) != original_album:
+        raise ValueError("Credit repair changed the native album tag; original retained")
     for field, values in expected.items():
         if read(checked, field) != values:
             raise ValueError("Written artist credits failed verification: " + field)

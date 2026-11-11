@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -287,7 +289,35 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 		t.Fatalf("Wrong batch: %s", response.Body)
 	}
 	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate-known", "", ""), 409)
+	var getSongs, downloads atomic.Int32
+	transport := a.HTTP.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	clientCopy := *a.HTTP
+	clientCopy.Transport = metadataTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "getSong.view") {
+			getSongs.Add(1)
+		}
+		if strings.HasSuffix(r.URL.Path, "download.view") {
+			downloads.Add(1)
+		}
+		return transport.RoundTrip(r)
+	})
+	a.HTTP = &clientCopy
+	// Credit-only writes must verify native tags in the existing Python
+	// process, without launching ffprobe or looking up a merge destination.
+	a.ffprobePath = filepath.Join(t.TempDir(), "unexpected-ffprobe")
+	if err := os.WriteFile(a.ffprobePath, []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
 	a.runMetadata(context.Background())
+	t.Logf("Credit write: %s, getSong=%d, downloads=%d, ffprobe=0", time.Since(started), getSongs.Load(), downloads.Load())
+	if getSongs.Load() != 1 || downloads.Load() != 1 {
+		t.Fatalf("Repeated verification: getSong=%d download=%d", getSongs.Load(), downloads.Load())
+	}
+
 	var state, message string
 	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
 	if state != "completed" {

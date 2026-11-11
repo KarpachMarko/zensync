@@ -201,7 +201,7 @@ func (a *App) deletionPath(ctx context.Context, c Credentials, s Song) (string, 
 		if err != nil {
 			return "", false, err
 		}
-		match, err := a.sameRemoteAudio(ctx, c, s, rel)
+		match, err := a.sameRemoteAudioHash(ctx, c, s.ID, info.Size(), before)
 		if err != nil || !match {
 			return "", false, err
 		}
