@@ -831,3 +831,31 @@ test("metadata utility filters without submitting and opens missing-cover editin
   await page.getByRole("button", { name: "Edit cover: Song", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
 });
+
+test("duplicate songs expose original playback, quality and size", async ({ page }) => {
+  await fixture(page);
+  const wav=Buffer.alloc(44+160000);
+  wav.write("RIFF",0);wav.writeUInt32LE(wav.length-8,4);wav.write("WAVEfmt ",8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write("data",36);wav.writeUInt32LE(160000,40);
+  await page.route("**/api/v2/metadata/songs/*/audio", route => route.fulfill({contentType:"audio/wav",body:wav}));
+  await page.route("**/api/v2/metadata/duplicates*", route => route.fulfill({ json: { scanned: 2, limited: false, groups: [{ kind: "song", reason: "Matching recordings", members: [
+    { id: "one", label: "Song", song: { ...song, suffix: "flac", bitRate: 900, bitDepth: 24, samplingRate: 96000, size: 10485760 } },
+    { id: "two", label: "Song", song: { ...song, id: "two", suffix: "mp3", bitRate: 320, size: 5242880 } },
+  ] }] } }));
+  await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByText("FLAC · 900 kbps · 24-bit · 96 kHz · 10.00 MiB (10,485,760 bytes)", { exact: true })).toBeVisible();
+  await expect(page.getByText("MP3 · 320 kbps · 5.00 MiB (5,242,880 bytes)", { exact: true })).toBeVisible();
+  const first=page.locator('audio[aria-label="Listen to Song (one)"]');
+  const second=page.locator('audio[aria-label="Listen to Song (two)"]');
+  await expect(first).toHaveAttribute("src", "/api/v2/metadata/songs/one/audio");
+  await expect(first).toHaveAttribute("preload", "none");
+  await expect(second).toHaveAttribute("src", "/api/v2/metadata/songs/two/audio");
+  await first.evaluate(element => (element as HTMLAudioElement).play());
+  await expect.poll(() => first.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false);
+  await second.evaluate(element => (element as HTMLAudioElement).play());
+  await expect.poll(() => first.evaluate(element => (element as HTMLAudioElement).paused)).toBe(true);
+  await second.evaluate(element => (element as HTMLAudioElement).pause());
+  await first.evaluate(element => element.dispatchEvent(new Event("error")));
+  await expect(page.getByRole("alert")).toContainText("Audio could not play");
+  await page.getByRole("button", { name: "Retry audio", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});

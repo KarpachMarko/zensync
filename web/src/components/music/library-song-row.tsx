@@ -1,3 +1,4 @@
+import { DuplicateSongAudio } from "./duplicate-song-audio";
 import { ManualMerge } from "./manual-merge";
 import { parseAsString, useQueryState } from "nuqs";
 import { Actions, Row } from "@/components/layout/content";
@@ -13,10 +14,12 @@ export function LibrarySongRow({
   song,
   canDelete,
   canEdit = false,
+  compareAudio = false,
 }: {
   song: LibrarySong;
   canDelete: boolean;
   canEdit?: boolean;
+  compareAudio?: boolean;
 }) {
   const [, setEditSong] = useQueryState("editSong", parseAsString);
   const { api } = useApiMutation();
@@ -79,6 +82,7 @@ export function LibrarySongRow({
           </Button>
         </Actions>
       </Row>
+      {compareAudio && <DuplicateSongAudio song={song} />}
       {submitted && (
         <Text role="status">
           {canDelete

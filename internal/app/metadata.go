@@ -197,6 +197,11 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.metadataEnrichment(w, r, u)
 		return
 	}
+	parts := strings.Split(strings.TrimPrefix(path, "/songs/"), "/")
+	if strings.HasPrefix(path, "/songs/") && len(parts) == 2 && parts[0] != "" && parts[1] == "audio" {
+		a.metadataAudio(w, r, parts[0])
+		return
+	}
 	if strings.HasPrefix(path, "/songs/") && strings.Contains(path, "/cover-upload") {
 		a.metadataCoverUpload(w, r, u)
 		return

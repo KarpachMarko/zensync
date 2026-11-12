@@ -227,6 +227,7 @@ function DuplicateCandidates({
             }
             canDelete
             canEdit
+            compareAudio
           />
         ))
       ) : (
