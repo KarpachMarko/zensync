@@ -182,6 +182,11 @@ type navAlbum struct {
 	Songs     []Song `json:"song"`
 }
 type NavResponse struct {
+	MusicFolders struct {
+		Folders []struct {
+			ID json.Number `json:"id"`
+		} `json:"musicFolder"`
+	} `json:"musicFolders"`
 	Artists struct {
 		Index []struct {
 			Artists []struct {

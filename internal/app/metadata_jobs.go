@@ -331,10 +331,14 @@ func (a *App) runMetadata(ctx context.Context) {
 		}
 	}
 	if e == nil {
-		_, e = a.nav(ctx, c, "startScan", mapValues("fullScan", "true"))
+		e = a.scanMetadataChanges(ctx, c, jid)
 		if e == nil {
-			logger.Info("Metadata full library scan requested")
+			logger.Info("Metadata incremental scan requested")
 		}
+	}
+	if errors.Is(e, errMetadataScanBusy) {
+		_, _ = a.DB.Exec("UPDATE metadata_jobs SET state='queued',message=? WHERE id=?", e.Error(), jid)
+		return
 	}
 	state, message := "completed", "Tags updated; Navidrome scan requested. Refresh the library after scanning."
 	if e != nil {

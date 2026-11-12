@@ -1,3 +1,4 @@
+import { AutoLoadMore } from "@/components/auto-load-more";
 import { ManualMerge } from "@/components/music/manual-merge";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
@@ -201,15 +202,8 @@ export function Library({
             found.
           </Text>
         )}
-      {result.hasNextPage && (
-        <Button
-          variant="outline"
-          disabled={result.isFetching}
-          onClick={() => void result.fetchNextPage()}
-        >
-          Load more
-        </Button>
-      )}
+      <AutoLoadMore key={`${view}:${state.collection}:${state.q}:${state.contents}`} hasMore={!!result.hasNextPage} loading={result.isFetching}
+        error={result.isFetchNextPageError} loadMore={result.fetchNextPage} />
     </>
   );
 }

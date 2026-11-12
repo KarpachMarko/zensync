@@ -1,3 +1,4 @@
+import { AutoLoadMore } from "@/components/auto-load-more";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
 import { RecordingTools } from "@/components/imports/recording-tools";
 import { PreviewPlayer } from "@/components/imports/preview-player";
@@ -103,10 +104,6 @@ export function Search({
     libraryQuery.isFetching && !libraryQuery.isFetchingNextPage;
   const importLoading = candidateQuery.isFetching;
   const moreLibrary = libraryQuery.hasNextPage;
-  const loadingMore = libraryQuery.isFetchingNextPage;
-  async function loadMoreLibrary() {
-    await libraryQuery.fetchNextPage();
-  }
   async function search(query: string) {
     setError("");
     if (urlQuery === query.trim()) {
@@ -227,16 +224,8 @@ export function Search({
                   canEdit={canEdit}
                 />
               ))}
-              {moreLibrary && (
-                <Button
-                  variant="outline"
-                  className="my-[22px] mx-0"
-                  disabled={loadingMore}
-                  onClick={() => void loadMoreLibrary()}
-                >
-                  {loadingMore ? "Loading…" : "Load more library results"}
-                </Button>
-              )}
+              <AutoLoadMore key={urlQuery} hasMore={!!moreLibrary} loading={libraryQuery.isFetching}
+                error={libraryQuery.isFetchNextPageError} loadMore={libraryQuery.fetchNextPage} />
             </SearchSection>
           </div>
           <SearchSection

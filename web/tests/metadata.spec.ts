@@ -755,6 +755,7 @@ test("duplicate merge applies every other entry to the clicked destination", asy
   } }));
   await page.route("**/api/v2/metadata/jobs", (route) => route.fulfill({ json: [{ id: "merge-job", state: "completed", done: 1, total: 1 }] }));
   await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByRole("button", { name: "Merge into this", exact: true }).last()).toBeVisible();
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 1000));
   await page.getByRole("button", { name: "Merge into this", exact: true }).last().click();
@@ -768,6 +769,7 @@ test("duplicate merge applies every other entry to the clicked destination", asy
 test("leaving duplicate review cancels a delayed merge", async ({ page }) => {
   const state = await fixture(page);
   await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByRole("button", { name: "Merge into this", exact: true }).last()).toBeVisible();
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 1000));
   await page.getByRole("button", { name: "Merge into this", exact: true }).first().click();

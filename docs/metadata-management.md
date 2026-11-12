@@ -88,3 +88,6 @@ Regression coverage includes native library browsing, suggestions, duplicate ide
 Administrators can use **Merge artist**, **Merge album**, or **Merge song** on Library rows, search for a destination by name, select the entry to keep, and confirm. Names do not need to resemble one another. Artist and album merges use the existing queued tag-update pipeline; follow progress in Activity and refresh after Navidrome scans.
 
 A song merge replaces the source entry's encoded audio with the kept recording while retaining the source file location and its album/track metadata. This leaves existing playlist references and per-entry listening history in place, and can leave copies of the kept recording at multiple album locations. It requires matching file formats and verifies the replacement audio before publishing. It does not consolidate Navidrome song IDs or sum their play counts. OpenSubsonic playback reporting is not used to fabricate listening history.
+
+
+Metadata updates request an incremental scan of the changed folders when Navidrome exposes one accessible music library and library-relative song paths. Duplicate folders are scanned once per job. When paths cannot be mapped safely, multiple libraries are accessible, or targeted scanning is rejected, ZenSync requests a regular incremental scan instead. Metadata updates no longer force a full library rescan.
