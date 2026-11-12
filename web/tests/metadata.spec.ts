@@ -269,7 +269,7 @@ test("utilities merge into a chosen duplicate after an undo window", async ({
   const state = await fixture(page);
   await page.goto("/utilities");
   await page
-    .getByRole("button", { name: "Review duplicates", exact: true })
+    .getByRole("link", { name: "Review duplicates", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Delete song: Song", exact: true })
@@ -813,4 +813,21 @@ test("metadata utilities are restricted to administrators", async ({ page }) => 
   await page.goto("/utilities/metadata");
   await expect(page.getByRole("alert")).toContainText("require an administrator");
   await expect(page.getByRole("button", { name: "Fetch all missing covers", exact: true })).toHaveCount(0);
+});
+
+test("metadata utility filters without submitting and opens missing-cover editing", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/v2/metadata/enrichment", route => route.fulfill({ json: { songs: [
+    { ...song, albumId: "missing", albumArtist: "Band" },
+    { ...song, id: "covered", title: "Covered song", album: "Other album", albumId: "covered-album", albumArtist: "Other artist", coverArt: "cover" },
+  ], limited: false } }));
+  await page.goto("/utilities/metadata?view=songs");
+  await expect(page.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  await page.getByRole("switch", { name: "Missing covers only" }).check();
+  await expect(page.getByRole("button", { name: "Edit cover: Covered song", exact: true })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Filter library" }).fill("unmatched");
+  await expect(page.getByText("No matching items.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Filter library" }).fill("Band");
+  await page.getByRole("button", { name: "Edit cover: Song", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
 });

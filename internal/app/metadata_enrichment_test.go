@@ -7,6 +7,8 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -99,6 +101,15 @@ func TestEnrichmentDeezerTrackOrderAndCover(t *testing.T) {
 				codec = "aac"
 			}
 			a, _, songs := metadataLibraryFixtureFormat(t, ext, codec, "")
+			// Existing numbers and aliases must actually be replaced, not appended.
+			source := filepath.Join(a.musicDir, songs["one"].Path)
+			tmp := source + ext
+			if out, err := exec.Command("ffmpeg", "-v", "error", "-i", source, "-c", "copy", "-metadata", "track=20", "-metadata", "disc=3", tmp).CombinedOutput(); err != nil {
+				t.Fatalf("seed order: %v %s", err, out)
+			}
+			if err := os.Rename(tmp, source); err != nil {
+				t.Fatal(err)
+			}
 			var artwork bytes.Buffer
 			if err := png.Encode(&artwork, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
 				t.Fatal(err)
@@ -108,10 +119,10 @@ func TestEnrichmentDeezerTrackOrderAndCover(t *testing.T) {
 					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(artwork.Bytes())), Header: make(http.Header)}, nil
 				}
 				if strings.HasPrefix(r.URL.Path, "/search") {
-					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"album":{"title":"Album"},"duration":1}]}`)), Header: make(http.Header)}, nil
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"album":{"id":88,"title":"Album"},"duration":1}]}`)), Header: make(http.Header)}, nil
 				}
 				if r.URL.Path == "/track/42" {
-					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":42,"title":"Song","track_position":7,"disk_number":2,"album":{"cover_xl":"https://cdn-images.dzcdn.net/image/cover/test.jpg"}}`)), Header: make(http.Header)}, nil
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":42,"title":"Song","track_position":7,"disk_number":2,"album":{"id":88,"cover_xl":"https://cdn-images.dzcdn.net/image/cover/test.jpg"}}`)), Header: make(http.Header)}, nil
 				}
 				return http.DefaultTransport.RoundTrip(r)
 			})
@@ -194,6 +205,38 @@ func TestEnrichmentDeezerTrackOrderAndCover(t *testing.T) {
 				t.Fatal("cover changed audio")
 			}
 
+		})
+	}
+}
+
+func TestAlbumOrderRejectsMixedEditionsAndDuplicatePositions(t *testing.T) {
+	a, _, _ := metadataLibraryFixture(t)
+	c, err := a.shared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"mixed-release", "duplicate-position", "partial"} {
+		t.Run(kind, func(t *testing.T) {
+			changes := []metadataChange{
+				{Song: Song{ID: "a", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 1, DiscNumber: 1}},
+				{Song: Song{ID: "b", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 2, DiscNumber: 1}},
+			}
+			switch kind {
+			case "mixed-release":
+				changes[1].OrderAlbumID = 2
+			case "duplicate-position":
+				changes[1].Edit.TrackNumber = 1
+			case "partial":
+				changes[1].Skip = true
+			}
+			if err := a.prepareAlbumOrder(context.Background(), c, "unused", changes); err != nil {
+				t.Fatal(err)
+			}
+			for _, change := range changes {
+				if !change.Skip {
+					t.Fatalf("unsafe album plan allowed: %+v", changes)
+				}
+			}
 		})
 	}
 }

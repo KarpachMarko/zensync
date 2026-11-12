@@ -21,6 +21,7 @@ import (
 )
 
 type metadataChange struct {
+	OrderAlbumID  int64                `json:"orderAlbumId,omitempty"`
 	Enrichment    string               `json:"enrichment,omitempty"`
 	Resolved      bool                 `json:"resolved,omitempty"`
 	Skip          bool                 `json:"skip,omitempty"`
@@ -65,7 +66,11 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	if e = tx.Commit(); e != nil {
 		return "", e
 	}
-	slog.Info("Metadata job queued", "job_id", jid, "user_id", u.ID, "songs", len(changes))
+	operation := "metadata-edit"
+	if len(changes) > 0 && changes[0].Enrichment != "" {
+		operation = changes[0].Enrichment
+	}
+	slog.Info("Metadata job queued", "job_id", jid, "user_id", u.ID, "songs", len(changes), "operation", operation)
 	return jid, nil
 }
 
@@ -306,6 +311,9 @@ func (a *App) runMetadata(ctx context.Context) {
 	if e == nil {
 		e = ce
 	}
+	if e == nil && len(changes) > 0 && changes[0].Enrichment == "album-order" {
+		e = a.prepareAlbumOrder(ctx, c, jid, changes)
+	}
 	for e == nil && done < len(changes) {
 		change := changes[done]
 		if change.Enrichment != "" && !change.Resolved {
@@ -369,7 +377,7 @@ func (a *App) runMetadata(ctx context.Context) {
 			skipped++
 		}
 	}
-	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
+	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match, inconsistent album order or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
 	if e != nil {
 		state = "failed"
 		message = fmt.Sprintf("%d/%d songs updated: %s. Original files are unchanged for failed writes; retry resumes remaining work.", done, len(changes), e.Error())

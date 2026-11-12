@@ -2,7 +2,7 @@
 import json
 import sys
 import mutagen
-from mutagen.id3 import ID3, TPE1, TPE2, TXXX
+from mutagen.id3 import ID3, TPE1, TPE2, TXXX, TRCK, TPOS
 from mutagen.mp4 import MP4Tags, MP4FreeForm
 
 ALIASES = {
@@ -217,6 +217,25 @@ def main():
                 for key, value in original.tags.items():
                     if logical(key) in fields:
                         output.tags[key] = value
+        for field, frame, atom, canonical, aliases in (
+                ("trackNumber", TRCK, "trkn", "tracknumber", {"track", "tracknumber", "tracktotal", "totaltracks"}),
+                ("discNumber", TPOS, "disk", "discnumber", {"disc", "discnumber", "disctotal", "totaldiscs"})):
+            number = plan.get(field, 0)
+            if number <= 0:
+                continue
+            if isinstance(output.tags, ID3):
+                output.tags.delall(frame.__name__)
+                for key in list(output.tags.keys()):
+                    if key.lower().removeprefix("txxx:") in aliases:
+                        del output.tags[key]
+                output.tags.add(frame(encoding=3, text=[str(number)]))
+            elif isinstance(output.tags, MP4Tags):
+                output.tags[atom] = [(number, 0)]
+            else:
+                for key in list(output.tags.keys()):
+                    if key.lower() in aliases:
+                        del output.tags[key]
+                output.tags[canonical] = [str(number)]
         if isinstance(output.tags, ID3):
             output.save(v2_version=4)
         else:

@@ -1,4 +1,4 @@
-import { Undo2Icon } from "lucide-react";
+import { Undo2Icon, CopyIcon, ImageIcon, ChevronRightIcon } from "lucide-react";
 import { AppLink } from "@/components/navigation";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
@@ -15,11 +15,6 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
 import { api } from "@/lib/api";
 import type { DuplicateGroup, DuplicateReport, MetadataJob } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +23,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export function Utilities({ admin }: { admin: boolean }) {
-  const [tool, setTool] = useQueryState(
+  const [tool] = useQueryState(
     "tool",
     parseAsStringLiteral(["duplicates"] as const),
   );
@@ -55,16 +50,18 @@ export function Utilities({ admin }: { admin: boolean }) {
     return <Text role="alert">Utilities require an administrator.</Text>;
   return (
     <>
-      <PageHeading tabIndex={-1}>Utilities</PageHeading>
-      <div className="mb-3"><AppLink to="/utilities/metadata" className="underline">Covers and lyrics</AppLink></div>
-      <Collapsible
-        open={tool === "duplicates"}
-        onOpenChange={(open) => void setTool(open ? "duplicates" : null)}
-      >
-        <CollapsibleTrigger asChild>
-          <Button variant="outline">Review duplicates</Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-3 space-y-2">
+      {tool !== "duplicates" ? <>
+        <PageHeading tabIndex={-1}>Utilities</PageHeading>
+        <section aria-label="Organize your library" className="mx-auto mt-6 max-w-3xl rounded-xl border border-solid border-border p-4 sm:p-6">
+          <h2 className="m-0 mb-3 text-sm font-medium text-muted-foreground">Organize your library</h2>
+          {[{to:"/utilities?tool=duplicates",label:"Review duplicates",icon:CopyIcon},{to:"/utilities/metadata",label:"Covers and lyrics",icon:ImageIcon}].map(item => <AppLink key={item.to} to={item.to} className="flex items-center gap-4 rounded-md px-2 py-4 hover:bg-accent focus-visible:bg-accent">
+            <item.icon aria-hidden="true" className="size-5 text-primary" /><span className="flex-1 font-medium">{item.label}</span><ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+          </AppLink>)}
+        </section>
+      </> : <>
+        <AppLink to="/utilities" className="text-sm text-muted-foreground">← Utilities</AppLink>
+        <PageHeading tabIndex={-1}>Review duplicates</PageHeading>
+        <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <Text className="m-0 text-xs">
               Review candidates, delete extra songs or merge artist and album
@@ -120,8 +117,8 @@ export function Utilities({ admin }: { admin: boolean }) {
             <Text>No {kind === "all" ? "duplicate" : kind} candidates found.</Text>
           )}
           <CreditIssues issues={visibleCredits} limited={report.data?.limited} />
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      </>}
     </>
   );
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -66,6 +67,13 @@ func (a *App) metadataEnrichment(w http.ResponseWriter, r *http.Request, u User)
 	}
 	for _, aid := range in.AlbumIDs {
 		albums[aid] = true
+	}
+	if in.Mode == "album-order" {
+		for _, song := range index.songs {
+			if selected[song.ID] && song.AlbumID != "" {
+				albums[song.AlbumID] = true
+			}
+		}
 	}
 	changes := []metadataChange{}
 	for _, s := range index.songs {
@@ -192,6 +200,7 @@ func (a *App) resolveEnrichment(ctx context.Context, c Credentials, change metad
 		Disc        int `json:"disk_number"`
 		AlbumDetail struct {
 			Cover string `json:"cover_xl"`
+			ID    int64  `json:"id"`
 		} `json:"album"`
 	}
 	if err = a.deezer(ctx, fmt.Sprintf("/track/%d", matches[0].ID), &detail); err != nil {
@@ -201,10 +210,11 @@ func (a *App) resolveEnrichment(ctx context.Context, c Credentials, change metad
 		return change, errors.New("Deezer returned a different recording")
 	}
 	if change.Enrichment == "album-order" {
-		if detail.Position <= 0 || detail.Disc <= 0 {
+		if detail.Position <= 0 || detail.Disc <= 0 || detail.AlbumDetail.ID <= 0 || detail.AlbumDetail.ID != matches[0].Album.ID {
 			change.Skip = true
 			return change, nil
 		}
+		change.OrderAlbumID = detail.AlbumDetail.ID
 		change.Edit.TrackNumber = detail.Position
 		change.Edit.DiscNumber = detail.Disc
 	} else {
@@ -215,5 +225,47 @@ func (a *App) resolveEnrichment(ctx context.Context, c Credentials, change metad
 		}
 		change.Edit.CoverURL = image.String()
 	}
+	slog.Info("Metadata provider match resolved", "song_id", s.ID, "operation", change.Enrichment, "provider_track_id", detail.ID, "provider_album_id", detail.AlbumDetail.ID, "track_number", change.Edit.TrackNumber, "disc_number", change.Edit.DiscNumber)
 	return change, nil
+}
+
+// Resolve the entire selected album before publishing any track numbers. A partial
+// per-song match can otherwise mix editions or leave duplicate positions behind.
+func (a *App) prepareAlbumOrder(ctx context.Context, c Credentials, jid string, changes []metadataChange) error {
+	for i := range changes {
+		if !changes[i].Resolved {
+			resolved, err := a.resolveEnrichment(ctx, c, changes[i])
+			if err != nil {
+				return err
+			}
+			resolved.Resolved = true
+			changes[i] = resolved
+		}
+	}
+	groups := map[string][]int{}
+	for i, change := range changes {
+		groups[change.Song.AlbumID] = append(groups[change.Song.AlbumID], i)
+	}
+	for _, indices := range groups {
+		release := int64(0)
+		positions := map[string]bool{}
+		valid := true
+		for _, i := range indices {
+			change := changes[i]
+			key := fmt.Sprintf("%d:%d", change.Edit.DiscNumber, change.Edit.TrackNumber)
+			if change.Song.AlbumID == "" || change.Skip || change.OrderAlbumID <= 0 || release != 0 && release != change.OrderAlbumID || positions[key] {
+				valid = false
+			}
+			release = change.OrderAlbumID
+			positions[key] = true
+		}
+		if !valid {
+			slog.Info("Album order skipped; incomplete matches, mixed releases or duplicate positions", "job_id", jid, "album_id", changes[indices[0]].Song.AlbumID, "songs", len(indices))
+			for _, i := range indices {
+				changes[i].Skip = true
+			}
+		}
+	}
+	_, err := a.DB.Exec("UPDATE metadata_jobs SET changes=? WHERE id=?", mustJSON(changes), jid)
+	return err
 }

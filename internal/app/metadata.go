@@ -93,7 +93,11 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 			add("album", metadataKey(albumArtist)+":"+metadataKey(s.Album), s.AlbumID, albumArtist+" — "+s.Album)
 		}
 		if metadataKey(s.Artist) != "" && metadataKey(s.Title) != "" {
-			k := metadataKey(s.Artist) + ":" + metadataKey(s.Title)
+			primaryArtist := s.Artist
+			if len(s.Artists) > 0 && s.Artists[0].Name != "" {
+				primaryArtist = s.Artists[0].Name
+			}
+			k := metadataKey(primaryArtist) + ":" + metadataKey(s.Title)
 			tracks[k] = append(tracks[k], s)
 		}
 	}
@@ -133,7 +137,7 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 			reason = "Matching normalized album artist and album title with distinct library IDs"
 		}
 		if kind == "song" {
-			reason = "Matching artist and title, duration within two seconds; editions may differ"
+			reason = "Matching primary artist and title, duration within two seconds; credits and editions may differ"
 		}
 		for i := range members {
 			members[i].Count = counts[kind+":"+members[i].ID]
