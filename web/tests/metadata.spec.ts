@@ -263,7 +263,7 @@ test("compact TanStack editor supports keyboard autocomplete and provider select
     coverUrl: "https://archive.org/cover.jpg",
   });
 });
-test("utilities resolve duplicate songs and confirm album and artist merges", async ({
+test("utilities merge into a chosen duplicate after an undo window", async ({
   page,
 }) => {
   const state = await fixture(page);
@@ -283,20 +283,22 @@ test("utilities resolve duplicate songs and confirm album and artist merges", as
   expect(state.deletes).toEqual([{ songId: "one" }]);
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   for (const kind of ["album", "artist"]) {
     const group = page.locator("section").filter({ has: page.getByText(kind, { exact: true }) });
-    await group.getByRole("button", { name: "Keep this", exact: true }).click();
-    await expect(group.getByRole("button", { name: "Keeping this", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await group.getByRole("button", { name: "Keep this", exact: true }).click();
-    await page
-      .locator("section").filter({ has: page.getByText(kind, { exact: true }) })
-      .getByRole("button", { name: `Merge into kept ${kind}`, exact: true }).last()
-      .click();
+    const merge = group.getByRole("button", { name: "Merge into this", exact: true }).first();
+    await merge.click();
+    await page.clock.runFor(300);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await page.clock.fastForward(5000);
     expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
-    await page
-      .getByRole("button", { name: "Confirm merge", exact: true })
-      .click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await merge.click();
+    await page.clock.runFor(300);
+    await page.clock.fastForward(4000);
+    expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
+    await page.clock.fastForward(1000);
+    await expect.poll(() => state.merges.length).toBe(kind === "album" ? 1 : 2);
   }
   expect(state.merges).toEqual([
     { kind: "album", source: "album-two", target: "album-one" },
@@ -742,4 +744,35 @@ test("Library song replacement explicitly keeps existing album and playlist refe
   await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(state.merges).toEqual([{ kind: "song", source: "one", target: "kept-recording" }]);
+});
+
+test("duplicate merge applies every other entry to the clicked destination", async ({ page }) => {
+  const state = await fixture(page);
+  await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
+    scanned: 3, limited: false, groups: [{ kind: "artist", reason: "Similar names", members: [
+      { id: "first", label: "First" }, { id: "second", label: "Second" }, { id: "kept", label: "Kept" },
+    ] }], creditIssues: [],
+  } }));
+  await page.route("**/api/v2/metadata/jobs", (route) => route.fulfill({ json: [{ id: "merge-job", state: "completed", done: 1, total: 1 }] }));
+  await page.goto("/utilities?tool=duplicates");
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.getByRole("button", { name: "Merge into this", exact: true }).last().click();
+  await page.clock.fastForward(5000);
+  await expect.poll(() => state.merges).toEqual([
+    { kind: "artist", source: "first", target: "kept" },
+    { kind: "artist", source: "second", target: "kept" },
+  ]);
+});
+
+test("leaving duplicate review cancels a delayed merge", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/utilities?tool=duplicates");
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.getByRole("button", { name: "Merge into this", exact: true }).first().click();
+  await page.getByRole("link", { name: "Library", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+  await page.clock.fastForward(5000);
+  expect(state.merges).toEqual([]);
 });
