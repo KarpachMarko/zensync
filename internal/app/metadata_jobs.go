@@ -86,8 +86,8 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if (in.Kind != "artist" && in.Kind != "album") || in.Source == "" || in.Target == "" || in.Source == in.Target {
-		fail(w, 400, "Choose distinct source and destination artists or albums")
+	if (in.Kind != "artist" && in.Kind != "album" && in.Kind != "song") || in.Source == "" || in.Target == "" || in.Source == in.Target {
+		fail(w, 400, "Choose distinct source and destination artists, albums or songs")
 		return
 	}
 	c, e := a.shared()
@@ -108,6 +108,9 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	source := []Song{}
 	for _, s := range index.songs {
 		key := s.ArtistID
+		if in.Kind == "song" {
+			key = s.ID
+		}
 		if in.Kind == "album" {
 			key = s.AlbumID
 		}
@@ -145,7 +148,7 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 			if identity.ReplaceAlbum {
 				edit.AlbumArtist = replaceCreditDisplay(s.AlbumArtists, in.Source, identity.TargetName, s.AlbumArtist)
 			}
-		} else {
+		} else if in.Kind == "album" {
 			edit.Album = target.Album
 			edit.AlbumArtist = target.AlbumArtist
 			if edit.AlbumArtist == "" {
@@ -350,6 +353,17 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		return errors.New("Unsupported tag format; use MP3, FLAC, M4A, OGG, OPUS, WAV or AIFF")
 	}
 	requiredSpace := uint64(info.Size()) + (256 << 20)
+	if change.MergeKind == "song" && change.Target != nil {
+		_, targetPath, err := a.metadataCanonicalTags(ctx, c, *change.Target)
+		if err != nil {
+			return err
+		}
+		targetInfo, err := os.Stat(targetPath)
+		if err != nil {
+			return err
+		}
+		requiredSpace += uint64(targetInfo.Size())
+	}
 	if change.Edit.CoverURL != "" || change.UploadedCover != "" {
 		requiredSpace += 2 * maxMetadataCover
 	}
@@ -364,9 +378,24 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	tmp.Close()
 	os.Remove(output)
 	defer os.Remove(output)
+	audioPath := path
+	if change.MergeKind == "song" && change.Target != nil {
+		_, audioPath, e = a.metadataCanonicalTags(ctx, c, *change.Target)
+		if e != nil {
+			return e
+		}
+		if strings.ToLower(filepath.Ext(audioPath)) != ext {
+			return errors.New("Recording replacement requires matching file formats; no lossy conversion is performed")
+		}
+	}
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path}
+	if change.MergeKind == "song" {
+		args = append(args, "-i", audioPath, "-map", "1:a", "-map", "0:v?", "-c:v", "copy")
+	}
 	useCover := change.Edit.CoverURL != "" || change.UploadedCover != ""
-	if change.Edit.RemoveCover {
+	if change.MergeKind == "song" {
+		// Keep the original location and metadata; replace only encoded audio.
+	} else if change.Edit.RemoveCover {
 		args = append(args, "-map", "0:a")
 	} else if useCover {
 		if ext != ".mp3" && ext != ".flac" && ext != ".m4a" {
@@ -426,7 +455,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		tags["musicbrainz_releasegroupid"] = ""
 	}
 	canonicalPath := path
-	if change.MergeKind != "" && change.MergeKind != "credits" && change.Target != nil {
+	if change.MergeKind != "" && change.MergeKind != "credits" && change.MergeKind != "song" && change.Target != nil {
 		canonical, targetPath, e := a.metadataCanonicalTags(ctx, c, *change.Target)
 		if e != nil {
 			return e
@@ -468,7 +497,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		slog.Error("Metadata tag writer failed", "job_id", jid, "song_id", change.Song.ID, "error", err, "detail", string(output[:min(len(output), 2000)]))
 		return errors.New("Could not write audio tags; original file retained")
 	}
-	if change.MergeKind == "" {
+	if change.MergeKind == "" || change.MergeKind == "song" {
 		if err := preserveEditedMetadata(ctx, &change, path, output); err != nil {
 			return err
 		}
@@ -478,7 +507,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			return err
 		}
 	}
-	if change.MergeKind != "" {
+	if change.MergeKind != "" && change.MergeKind != "song" {
 		if err := preserveMergeCredits(ctx, &change, path, canonicalPath, output); err != nil {
 			return err
 		}
@@ -509,7 +538,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 		}
 	}
 	// Compare encoded audio packets, rather than container bytes altered by tags.
-	oldAudio, e := metadataAudioHash(ctx, path)
+	oldAudio, e := metadataAudioHash(ctx, audioPath)
 	if e != nil {
 		return e
 	}

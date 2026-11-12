@@ -726,3 +726,46 @@ test("metadata editor uses one row per artist and keeps literal slashes inside a
  await expect(dialog).toHaveCount(0);
  expect(state.edit()).toMatchObject({artist:"Guest / May Wave$ / AC/DC",artistNames:["Guest","May Wave$","AC/DC"],albumArtistNames:["May Waves"]});
 });
+
+test("Library manual merges search unrelated artist and album names and require confirmation", async ({ page }) => {
+  const state = await fixture(page);
+  for (const kind of ["artist", "album"] as const) {
+    await page.goto(`/library/${kind}s`);
+    await page.getByRole("button", { name: `Merge ${kind}: ${kind === "artist" ? "Band" : "Album"}`, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: "Confirm merge", exact: true })).toBeDisabled();
+    await page.route("**/api/v2/library/browse?**", (route) => {
+      const url = new URL(route.request().url());
+      if (!url.searchParams.get("q")) return route.fallback();
+      return route.fulfill({ json: { collections: [{ id: `${kind}-destination`, name: "Эльдар Джарахов", songCount: 2 }], songs: [], nextOffset: -1 } });
+    });
+    await dialog.getByLabel(`Find destination ${kind}`, { exact: true }).fill("Джарахов");
+    await dialog.getByRole("button", { name: "Search", exact: true }).click();
+    await dialog.getByRole("button", { name: /Эльдар Джарахов ·/ }).click();
+    expect(state.merges).toHaveLength(kind === "artist" ? 0 : 1);
+    await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  expect(state.merges).toEqual([
+    { kind: "artist", source: "artist", target: "artist-destination" },
+    { kind: "album", source: "album", target: "album-destination" },
+  ]);
+});
+
+test("Library song replacement explicitly keeps existing album and playlist references", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/library");
+  await page.setViewportSize({ width: 320, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.getByRole("button", { name: "Merge song: Song", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/playlist references are preserved/)).toBeVisible();
+  await page.route("**/api/v2/library?**", (route) => route.fulfill({ json: { songs: [{ ...song, id: "kept-recording", title: "Kept recording" }], nextOffset: -1 } }));
+  await dialog.getByLabel("Find destination song", { exact: true }).fill("Kept");
+  await dialog.getByRole("button", { name: "Search", exact: true }).click();
+  await dialog.getByRole("button", { name: /Kept recording/ }).click();
+  expect(state.merges).toEqual([]);
+  await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(state.merges).toEqual([{ kind: "song", source: "one", target: "kept-recording" }]);
+});

@@ -1,3 +1,4 @@
+import { ManualMerge } from "@/components/music/manual-merge";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
 import { AppLink } from "@/components/navigation";
@@ -148,10 +149,10 @@ export function Library({
       {collections.map((item) => (
         <div
           key={item.id}
-          className="flex items-center justify-between gap-2 border-b border-border py-2"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2"
         >
           <AppLink
-            className="min-w-0 flex-1 no-underline"
+            className="min-w-0 flex-1 break-words no-underline"
             aria-label={
               item.artist ? `${item.name} — ${item.artist}` : item.name
             }
@@ -173,6 +174,7 @@ export function Library({
               </span>
             )}
           </AppLink>
+          {canEdit && view !== "playlists" && <ManualMerge kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
           <span className="text-xs text-muted-foreground">
             {item.songCount}{" "}
             {view === "artists" && !state.collection ? "albums" : "songs"}
