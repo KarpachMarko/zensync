@@ -132,7 +132,7 @@ export function Library({
           compact
           value={state.q}
           label="Filter library"
-          placeholder={`Filter ${state.collection && view !== "artists" ? "songs" : view}…`}
+          placeholder={`Filter ${state.collection ? view === "artists" && state.contents !== "songs" ? "albums" : "songs" : view}…`}
           onSearch={async (q) => {
             await setState({ q });
           }}

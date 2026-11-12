@@ -221,7 +221,8 @@ type NavResponse struct {
 		AdminRole bool   `json:"adminRole"`
 	} `json:"user"`
 	Search struct {
-		Songs []Song `json:"song"`
+		Songs  []Song     `json:"song"`
+		Albums []navAlbum `json:"album"`
 	} `json:"searchResult3"`
 	Song      Song           `json:"song"`
 	Playlist  RemotePlaylist `json:"playlist"`
