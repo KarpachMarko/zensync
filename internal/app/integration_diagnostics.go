@@ -53,6 +53,9 @@ func logIntegrationRequest(ctx context.Context, service, method, endpoint string
 	if err != nil {
 		level = slog.LevelWarn
 		failure = transportFailure(err)
+		if failure == "cancelled" {
+			level = slog.LevelDebug
+		}
 	} else if status >= 300 {
 		level = slog.LevelWarn
 		failure = "http_status"

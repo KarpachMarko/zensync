@@ -177,3 +177,29 @@ CREATE TABLE IF NOT EXISTS compatibility_albums (
  id INTEGER PRIMARY KEY AUTOINCREMENT, server_id TEXT NOT NULL UNIQUE
 );
 INSERT OR IGNORE INTO schema_version VALUES(6);
+
+-- Reviewed metadata stays separate from source tags and acquisition identity.
+CREATE TABLE IF NOT EXISTS metadata_edits (
+ song_id TEXT PRIMARY KEY, metadata TEXT NOT NULL,
+ actor TEXT NOT NULL REFERENCES users(id), updated TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO schema_version VALUES(7);
+
+CREATE TABLE IF NOT EXISTS metadata_jobs (
+ id TEXT PRIMARY KEY, actor TEXT NOT NULL REFERENCES users(id), changes TEXT NOT NULL, server_url TEXT NOT NULL,
+ state TEXT NOT NULL DEFAULT 'queued', message TEXT NOT NULL DEFAULT 'Queued for tag update',
+ done INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS metadata_files (
+ job_id TEXT NOT NULL REFERENCES metadata_jobs(id), song_id TEXT NOT NULL,
+ file_path TEXT NOT NULL, before_hash TEXT NOT NULL, after_hash TEXT NOT NULL,
+ PRIMARY KEY(job_id,song_id)
+);
+INSERT OR IGNORE INTO schema_version VALUES(8);
+
+CREATE TABLE IF NOT EXISTS metadata_dismissals (
+ server_key TEXT NOT NULL, rule_key TEXT NOT NULL,
+ actor TEXT NOT NULL REFERENCES users(id), created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(server_key,rule_key)
+);
+INSERT OR IGNORE INTO schema_version VALUES(9);

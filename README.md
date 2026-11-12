@@ -12,6 +12,8 @@ Search also includes an experimental lossless.am provider for individual FLAC so
 
 See [deployment and first-migration instructions](docs/deployment.md) and the [song deletion API](docs/deletion-api.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
 
+The Library supports song, playlist, artist and album browsing, with compact metadata editing and existing deletion actions on song rows. Administrators can search LRCLIB lyrics and MusicBrainz/Cover Art Archive artwork, publish verified file-tag updates through atomic replacement, and resolve duplicate artists, albums and songs from **Utilities → Review duplicates**. See [library metadata, duplicate resolution and provider research](docs/metadata-management.md).
+
 ## Phase 1
 
 - Go + SQLite backend, compact React/TypeScript UI, Apple/iTunes and Deezer metadata, and acquisition through the existing d-fi Go binary.
@@ -34,6 +36,8 @@ Phase 2 adds followed-artist new-release notifications, without automatic downlo
 Every API request is logged as structured JSON, including successful calls. View logs with `docker compose logs -f zensync`. Set `ZENSYNC_LOG_LEVEL=debug` for upstream request timing and health probes. See [logging and diagnostics](docs/logging.md).
 
 ## Development
+
+Metadata edits and artist/album merges require Python 3 with Mutagen, in addition to ffmpeg/ffprobe, to preserve native multi-valued credits. The Docker image includes these dependencies. For local testing, install your distribution’s Python Mutagen package or set `ZENSYNC_PYTHON` to a virtual environment’s Python executable.
 
 Use **pnpm** for frontend dependencies and scripts. See [frontend structure and component conventions](web/README.md).
 

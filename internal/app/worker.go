@@ -19,6 +19,9 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	go func() {
 		defer close(done)
 		slog.Info("Background worker started")
+		if err := a.cleanupMetadataTemps(); err != nil {
+			slog.Warn("Metadata temporary-file cleanup failed", "error", err)
+		}
 		defer slog.Info("Background worker stopped")
 		cleanupErr := filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
 			if e == nil && !d.IsDir() && d.Name() == "d-fi.config.json" {
@@ -81,7 +84,9 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 					work.Add(1)
 					go func() {
 						defer work.Done()
+
 						a.runDeletion(ctx)
+						a.runMetadata(ctx)
 						a.runMigrationTask(ctx)
 						a.refreshAlbums()
 						maintenanceDone <- struct{}{}

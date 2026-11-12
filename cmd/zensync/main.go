@@ -41,6 +41,10 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 {
+		slog.Error("Unsupported command. Metadata backups and their maintenance commands have been removed.")
+		os.Exit(1)
+	}
 	slog.Info("ZenSync starting", "log_level", level.String())
 	data := env("ZENSYNC_DATA_DIR", "./data")
 	if e := os.MkdirAll(data, 0700); e != nil {
@@ -54,6 +58,7 @@ func main() {
 	}
 	slog.Info("Database and runtime initialized")
 	defer a.DB.Close()
+
 	unlock, err := a.AcquireWorkerLock()
 	if err != nil {
 		slog.Error("startup failed", "error", err)
@@ -68,7 +73,7 @@ func main() {
 			api.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' https://*.dzcdn.net https://*.deezer.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self' https://*.dzcdn.net https://*.deezer.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if r.Method != "GET" && r.Method != "HEAD" {
 			http.Error(w, "Method not allowed", 405)

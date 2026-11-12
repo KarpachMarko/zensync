@@ -26,7 +26,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Brand } from "./content";
 
 const navigation = [
-  { to: "/library/songs", label: "Library", icon: "library" },
+  { to: "/library", label: "Library", icon: "library" },
+  { to: "/utilities", label: "Utilities", icon: "settings" },
   { to: "/search", label: "Search", icon: "search" },
   { to: "/imports", label: "Imports", icon: "imports" },
   { to: "/requests", label: "Requests", icon: "requests" },
@@ -108,34 +109,38 @@ export function WorkspaceSidebar({
           <SidebarGroupContent>
             <nav aria-label="Main navigation">
               <SidebarMenu>
-                {navigation.map(({ to, label, icon }) => (
-                  <SidebarMenuItem key={to}>
-                    <SidebarMenuButton
-                      asChild
-                      tooltip={label}
-                      isActive={location.pathname.startsWith(
-                        "/" + to.split("/")[1],
-                      )}
-                      className="h-auto min-h-9 gap-2.5 px-2 py-1.5 font-normal text-muted-foreground no-underline max-[700px]:min-h-11 data-active:text-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-                    >
-                      <AppLink
-                        to={to}
-                        aria-label={label}
-                        onClick={() => setOpenMobile(false)}
+                {navigation
+                  .filter(
+                    (item) => item.to !== "/utilities" || user.role === "admin",
+                  )
+                  .map(({ to, label, icon }) => (
+                    <SidebarMenuItem key={to}>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip={label}
+                        isActive={location.pathname.startsWith(
+                          "/" + to.split("/")[1],
+                        )}
+                        className="h-auto min-h-9 gap-2.5 px-2 py-1.5 font-normal text-muted-foreground no-underline max-[700px]:min-h-11 data-active:text-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
                       >
-                        <span
-                          data-slot="nav-icon"
-                          className="flex size-5 shrink-0 items-center justify-center"
+                        <AppLink
+                          to={to}
+                          aria-label={label}
+                          onClick={() => setOpenMobile(false)}
                         >
-                          <Icon name={icon} />
-                        </span>
-                        <span className={cn(collapsed && "hidden")}>
-                          {label}
-                        </span>
-                      </AppLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                          <span
+                            data-slot="nav-icon"
+                            className="flex size-5 shrink-0 items-center justify-center"
+                          >
+                            <Icon name={icon} />
+                          </span>
+                          <span className={cn(collapsed && "hidden")}>
+                            {label}
+                          </span>
+                        </AppLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
               </SidebarMenu>
             </nav>
           </SidebarGroupContent>

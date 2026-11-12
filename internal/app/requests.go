@@ -335,7 +335,11 @@ func (a *App) activity(w http.ResponseWriter, u User) {
  ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN (r.target LIKE 'deezer:track:%' OR r.target LIKE 'lossless:track:%') THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
  UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
  UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
- )`
+ `
+	if u.Role == "admin" {
+		query += " UNION ALL SELECT id," + metadataActivityTitleSQL + ",state," + metadataActivityStageSQL + ",created,actor,'metadata' FROM metadata_jobs "
+	}
+	query += ")"
 	args := []any{}
 	if u.Role != "admin" {
 		query += " WHERE owner=?"
@@ -355,7 +359,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 			a.internal(w, e)
 			return
 		}
-		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created}
+		item := map[string]any{"id": id, "title": title, "state": state, "stage": stage, "created": created, "kind": kind}
 		item["canCancel"] = kind == "migration" && (state == "queued" || state == "failed" || state == "blocked") && (owner == u.ID || u.Role == "admin")
 		item["canReview"] = kind == "acquisition" && (state == "failed" || state == "blocked")
 		item["canDismiss"] = kind == "acquisition" && state == "failed"

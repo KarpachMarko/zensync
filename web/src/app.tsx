@@ -1,3 +1,6 @@
+import { UpdateNotice } from "@/components/update-notice";
+import { Utilities } from "@/pages/utilities";
+import { MetadataEditorHost } from "@/components/music/metadata-editor";
 import { AppShell } from "@/components/layout/app-shell";
 import { AuthLayout } from "@/components/layout/content";
 import { Text } from "@/components/typography";
@@ -34,8 +37,13 @@ export function App() {
   if (!user) return <Login setup={setup} error={error} onSubmit={login} />;
   return (
     <AppShell user={user} onSignOut={signOut} onError={setError}>
+      <UpdateNotice />
       {error && <Text role="alert">{error}</Text>}
       <Routes>
+        <Route
+          path="/utilities"
+          element={<Utilities admin={user.role === "admin"} />}
+        />
         <Route path="/requests" element={<Requests user={user} />} />
         <Route
           path="/activity"
@@ -46,15 +54,31 @@ export function App() {
           element={<Settings user={user} reload={load} />}
         />
         <Route
+          path="/library"
+          element={
+            <Library
+              canDelete={user.role === "admin" || user.directDelete}
+              canEdit={user.role === "admin"}
+            />
+          }
+        />
+        <Route path="/metadata" element={<Navigate to="/library" replace />} />
+        <Route
           path="/library/:view"
           element={
-            <Library canDelete={user.role === "admin" || user.directDelete} />
+            <Library
+              canDelete={user.role === "admin" || user.directDelete}
+              canEdit={user.role === "admin"}
+            />
           }
         />
         <Route
           path="/search"
           element={
-            <Search canDelete={user.role === "admin" || user.directDelete} />
+            <Search
+              canDelete={user.role === "admin" || user.directDelete}
+              canEdit={user.role === "admin"}
+            />
           }
         />
         <Route path="/imports" element={<Imports />} />
@@ -73,6 +97,7 @@ export function App() {
         />
         <Route path="*" element={<Navigate to="/imports" replace />} />
       </Routes>
+      {user.role === "admin" && <MetadataEditorHost />}
     </AppShell>
   );
 }

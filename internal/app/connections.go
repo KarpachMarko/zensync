@@ -114,34 +114,98 @@ type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
-type Song struct {
-	ID          string  `json:"id"`
-	Title       string  `json:"title"`
-	Artist      string  `json:"artist"`
-	Album       string  `json:"album"`
-	Duration    float64 `json:"duration"`
-	Path        string  `json:"path"`
-	Starred     string  `json:"starred"`
-	ContentType string  `json:"contentType"`
-	BitRate     int     `json:"bitRate"`
-	Size        int64   `json:"size"`
+type ArtistCredit struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
+type Song struct {
+	CoverArt     string         `json:"coverArt,omitempty"`
+	Artists      []ArtistCredit `json:"artists,omitempty"`
+	AlbumArtists []ArtistCredit `json:"albumArtists,omitempty"`
+	AlbumArtist  string         `json:"albumArtist"`
+	ArtistID     string         `json:"artistId"`
+	AlbumID      string         `json:"albumId"`
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Artist       string         `json:"artist"`
+	Album        string         `json:"album"`
+	Duration     float64        `json:"duration"`
+	Path         string         `json:"path"`
+	Starred      string         `json:"starred"`
+	ContentType  string         `json:"contentType"`
+	BitRate      int            `json:"bitRate"`
+	Size         int64          `json:"size"`
+}
+
+// OpenSubsonic reports album artist credits separately from the legacy
+// albumArtist field. Keep the internal representation consistent for merges.
+func (s *Song) UnmarshalJSON(data []byte) error {
+	type songAlias Song
+	var value struct {
+		songAlias
+		DisplayAlbumArtist string `json:"displayAlbumArtist"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*s = Song(value.songAlias)
+	if s.AlbumArtist == "" {
+		s.AlbumArtist = value.DisplayAlbumArtist
+		if s.AlbumArtist == "" {
+			names := []string{}
+			for _, artist := range s.AlbumArtists {
+				if artist.Name != "" {
+					names = append(names, artist.Name)
+				}
+			}
+			s.AlbumArtist = strings.Join(names, " / ")
+		}
+	}
+	return nil
+}
+
 type RemotePlaylist struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Owner   string `json:"owner"`
-	Comment string `json:"comment"`
-	Public  bool   `json:"public"`
-	Entries []Song `json:"entry"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Owner     string `json:"owner"`
+	Comment   string `json:"comment"`
+	Public    bool   `json:"public"`
+	Entries   []Song `json:"entry"`
+	SongCount int    `json:"songCount"`
+}
+type navAlbum struct {
+	CoverArt  string `json:"coverArt"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SongCount int    `json:"songCount"`
+	Songs     []Song `json:"song"`
 }
 type NavResponse struct {
+	Artists struct {
+		Index []struct {
+			Artists []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				AlbumCount int    `json:"albumCount"`
+			} `json:"artist"`
+		} `json:"index"`
+	} `json:"artists"`
+	Artist struct {
+		Name   string     `json:"name"`
+		Albums []navAlbum `json:"album"`
+	} `json:"artist"`
+	Album navAlbum `json:"album"`
+
 	AlbumList struct {
 		Albums []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Year     int    `json:"year"`
-			CoverArt string `json:"coverArt"`
-			Created  string `json:"created"`
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Artist    string `json:"artist"`
+			SongCount int    `json:"songCount"`
+			Year      int    `json:"year"`
+			CoverArt  string `json:"coverArt"`
+			Created   string `json:"created"`
 		} `json:"album"`
 	} `json:"albumList2"`
 	Type          string `json:"type"`
@@ -197,6 +261,9 @@ func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params
 	resp, e := client.Do(req)
 	logIntegrationRequest(ctx, "navidrome", req.Method, req.URL.Path, started, resp, e)
 	if e != nil {
+		if errors.Is(e, context.Canceled) {
+			return nil, context.Canceled
+		}
 		return nil, errors.New("Navidrome connection failed; check URL and connectivity")
 	}
 	return resp, nil

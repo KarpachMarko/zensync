@@ -133,6 +133,10 @@ func apiDiagnostics(next http.Handler) http.Handler {
 			} else if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 				level = slog.LevelDebug
 			}
+			if panicValue == nil && r.Context().Err() == context.Canceled {
+				level = slog.LevelInfo
+				message = "API request cancelled"
+			}
 			requestLogger(r.Context()).Log(r.Context(), level, message, "method", r.Method, "path", path, "status", response.status, "response_bytes", response.bytes, "reason", response.reason, "write_failed", response.writeFailed, "cancelled", r.Context().Err() != nil, "duration_ms", time.Since(started).Milliseconds())
 			if panicValue != nil {
 				panic(panicValue)

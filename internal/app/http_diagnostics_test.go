@@ -146,3 +146,26 @@ func TestHealthProbeLoggingRequiresDebug(t *testing.T) {
 		t.Fatal(logs.String())
 	}
 }
+
+func TestCancelledReadDoesNotReportConnectionFailure(t *testing.T) {
+	logs := captureDiagnosticLogs(t, slog.LevelInfo)
+	a := &App{HTTP: &http.Client{Transport: metadataTransport(func(r *http.Request) (*http.Response, error) { return nil, context.Canceled })}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := a.navRaw(ctx, Credentials{URL: "http://localhost", Username: "test", Password: "private"}, "search3", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Cancellation was hidden: %v", err)
+	}
+	handler := apiDiagnostics(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fail(w, 502, "context canceled") }))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://localhost/api/v2/metadata/duplicates", nil).WithContext(ctx))
+	var record struct {
+		Level, Msg string
+		Cancelled  bool
+	}
+	if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+		t.Fatal(err, logs.String())
+	}
+	if record.Level != "INFO" || record.Msg != "API request cancelled" || !record.Cancelled {
+		t.Fatal(logs.String())
+	}
+}
