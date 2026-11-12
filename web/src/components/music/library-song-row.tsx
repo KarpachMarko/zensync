@@ -8,17 +8,19 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong } from "@/lib/api";
 import { requestKey, time } from "@/lib/api";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { DeletionDialog } from "./deletion-dialog";
 export function LibrarySongRow({
   song,
   canDelete,
   canEdit = false,
   audioPreview,
+  duplicateAction,
 }: {
   song: LibrarySong;
   canDelete: boolean;
   canEdit?: boolean;
+  duplicateAction?: ReactNode;
   audioPreview?: Parameters<typeof DuplicateSongAudio>[0]["preview"];
 }) {
   const [, setEditSong] = useQueryState("editSong", parseAsString);
@@ -51,6 +53,7 @@ export function LibrarySongRow({
           </Caption>
         </div>
         <Actions className="max-w-full">
+          {duplicateAction}
           {canEdit && !audioPreview && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
           {canEdit && (
             <Button

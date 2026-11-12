@@ -859,3 +859,54 @@ test("duplicate songs expose original playback, quality and size", async ({ page
     await expect.poll(async()=>{const row=await last.boundingBox(),player=await dock.boundingBox();return !!row && !!player && row.y+row.height<=player.y;}).toBe(true);
   }
 });
+
+test("Keep song deletes only the prepared alternatives after undo expires", async ({ page }) => {
+  const state=await fixture(page);
+  await page.goto("/utilities?tool=duplicates");
+  const keep=page.getByRole("button",{name:"Keep song: two",exact:true});
+  await expect(keep).toBeVisible();
+  await expect(page.getByRole("button",{name:"Delete song: Song",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Merge song: Song",exact:true})).toHaveCount(0);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now()+1000));
+  await keep.click();
+  await page.clock.runFor(300);
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await page.clock.fastForward(5000);
+  expect(state.deletes).toEqual([]);
+  await keep.click();
+  await page.clock.fastForward(4999);
+  expect(state.deletes).toEqual([]);
+  await page.clock.fastForward(1);
+  await expect.poll(()=>state.deletes.length).toBe(1);
+  expect(state.deletes).toEqual([{songId:"one"}]);
+  expect(state.merges).toEqual([]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(keep).toBeDisabled();
+});
+
+test("Keep song handles larger groups and retries partially queued deletions without new keys", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:3,limited:false,groups:[{kind:"song",reason:"Duplicates",members:["one","two","three"].map(id=>({id,label:"Song",song:{...song,id}}))}]}}));
+  const calls:{songId:string;key:string}[]=[];
+  let fail=true;
+  await page.route("**/api/v2/deletion-requests",route=>{
+    const body=route.request().postDataJSON() as {songId:string};
+    calls.push({...body,key:route.request().headers()["idempotency-key"]});
+    return route.fulfill(body.songId==="three" && fail ? {status:409,json:{error:"Temporary failure"}} : {status:201,json:{id:body.songId}});
+  });
+  await page.goto("/utilities?tool=duplicates");
+  const keep=page.getByRole("button",{name:"Keep song: two",exact:true});
+  await expect(keep).toBeVisible();
+  await page.clock.install();
+  await keep.click();await page.clock.fastForward(5000);
+  await expect.poll(()=>calls.length).toBe(2);
+  await expect(page.getByRole("alert")).toContainText("1 of 2 deletions queued");
+  fail=false;
+  await keep.click();await page.clock.fastForward(5000);
+  await expect.poll(()=>calls.length).toBe(4);
+  expect(calls.map(call=>call.songId)).toEqual(["one","three","one","three"]);
+  expect(calls[0]?.key).toBeTruthy();
+  expect(calls[0]?.key).toBe(calls[2]?.key);
+  expect(calls[1]?.key).toBe(calls[3]?.key);
+});

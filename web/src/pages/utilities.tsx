@@ -18,7 +18,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import { api, requestKey } from "@/lib/api";
 import type { DuplicateGroup, DuplicateReport, MetadataJob } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
@@ -143,6 +143,7 @@ function DuplicateCandidates({
 }) {
   const client = useQueryClient();
   const [scheduled, setScheduled] = useState<string | null>(null);
+  const deletionKeys = useRef(new Map<string,string>());
   const pending = useRef<{ timer: ReturnType<typeof setTimeout>; toast: string | number } | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => {
@@ -160,6 +161,17 @@ function DuplicateCandidates({
       let songs = 0;
       for (const [index, source] of sources.entries()) {
         abort.signal.throwIfAborted();
+        if (group.kind === "song") {
+          let key=deletionKeys.current.get(source.id);
+          if (!key) {key=requestKey();deletionKeys.current.set(source.id,key);}
+          try {
+            await api("/deletion-requests","POST",{songId:source.id},key,abort.signal);
+          } catch (error) {
+            throw new Error(`${songs} of ${sources.length} deletions queued. ${error instanceof Error ? error.message : "Deletion request failed"}. Retry Keep song to queue the remaining items.`);
+          }
+          songs++;
+          continue;
+        }
         const result = await api<{ id: string; songs: number }>("/metadata/merge", "POST", {
           kind: group.kind, source: source.id, target,
         }, undefined, abort.signal);
@@ -182,16 +194,18 @@ function DuplicateCandidates({
       }
       return { songs };
     },
-    onSuccess: (data) => { if (!controller.current?.signal.aborted) toast.success(`Merge queued for ${data.songs} songs`); },
+    onSuccess: (data) => { if (!controller.current?.signal.aborted) toast.success(group.kind === "song" ? `Deletion queued for ${data.songs} duplicates` : `Merge queued for ${data.songs} songs`); },
     onError: (error) => { if (!controller.current?.signal.aborted) toast.error(error.message); },
-    onSettled: async () => { await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); },
+    onSettled: async () => {
+      await client.invalidateQueries({ predicate: query => query.queryKey[0]==="api" && (group.kind === "song" ? ["/activity","/requests"].some(path => typeof query.queryKey[1]==="string" && query.queryKey[1].startsWith(path)) : query.queryKey[1]==="/metadata/jobs") });
+    },
   });
   function scheduleMerge(member: DuplicateGroup["members"][number]) {
     if (pending.current || merge.isPending || merge.isSuccess) return;
     merge.reset();
     setScheduled(member.id);
-    const notification = toast("Merge starts in 5 seconds", {
-      description: `Keep “${member.label}” and merge the other ${group.kind} entries.`,
+    const notification = toast(group.kind === "song" ? "Duplicate deletion starts in 5 seconds" : "Merge starts in 5 seconds", {
+      description: group.kind === "song" ? `Keep “${member.label}” and delete the other recordings. Album and playlist references may be lost.` : `Keep “${member.label}” and merge the other ${group.kind} entries.`,
       duration: 5000,
       action: { label: <><Undo2Icon className="size-3.5 shrink-0" aria-hidden="true" />Undo</>, onClick: () => {
         if (!pending.current) return;
@@ -240,6 +254,9 @@ function DuplicateCandidates({
             canDelete
             canEdit
             audioPreview={audioPreview}
+            duplicateAction={<Button size="sm" variant="outline" aria-label={`Keep song: ${member.id}`}
+              disabled={limited || scheduled !== null || merge.isPending || merge.isSuccess}
+              onClick={() => scheduleMerge(member)}>Keep song</Button>}
           />
         ))
       ) : (
@@ -280,7 +297,9 @@ function DuplicateCandidates({
               </div>
             ))
       )}
-      {scheduled && <Text role="status" className="my-1 text-xs">Merge scheduled. Use Undo in the notification to cancel.</Text>}
+      {group.kind === "song" && <Text className="my-1 text-xs">Keep one recording and delete the others. Album and playlist references to deleted songs may be lost.</Text>}
+      {scheduled && <Text role="status" className="my-1 text-xs">{group.kind === "song" ? "Deletion" : "Merge"} scheduled. Use Undo in the notification to cancel.</Text>}
+      {group.kind === "song" && merge.isSuccess && <Text role="status" className="my-1 text-xs">Duplicate deletions queued. Follow progress in Activity; refresh candidates after the library scan.</Text>}
       {merge.error && !controller.current?.signal.aborted && <Text role="alert">{merge.error.message}</Text>}
 
     </section>
