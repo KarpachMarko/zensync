@@ -284,8 +284,13 @@ test("utilities resolve duplicate songs and confirm album and artist merges", as
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
   for (const kind of ["album", "artist"]) {
+    const group = page.locator("section").filter({ has: page.getByText(kind, { exact: true }) });
+    await group.getByRole("button", { name: "Keep this", exact: true }).click();
+    await expect(group.getByRole("button", { name: "Keeping this", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await group.getByRole("button", { name: "Keep this", exact: true }).click();
     await page
-      .getByRole("button", { name: `Merge into selected ${kind}`, exact: true })
+      .locator("section").filter({ has: page.getByText(kind, { exact: true }) })
+      .getByRole("button", { name: `Merge into kept ${kind}`, exact: true }).last()
       .click();
     expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
     await page
@@ -405,7 +410,7 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
     scanned: 3, limited: false, groups: [],
     creditIssues: scanComplete ? [] : [{ id: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist",
-      parts: ["Vacio", "ЛСП"], knownArtists: ["Vacio", "ЛСП"],
+      parts: ["Vacio", "ЛСП", " vacio ", "лсп"], knownArtists: ["Vacio", "ЛСП"],
       tracks: [{ ...song, title: "Skate", album: "Skate", artist: "Vacio, ЛСП • Васильев Николай Михайлович, Олег Вадимович Савченко" }],
     }],
   }}));
@@ -418,6 +423,7 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Artist 1", { exact: true })).toHaveValue("Vacio");
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  await expect(dialog.getByLabel("Artist 3", { exact: true })).toHaveCount(0);
   expect(writes).toEqual([]);
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
@@ -432,6 +438,7 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("Extra artist");
   await dialog.getByRole("button", { name: "Remove artist 2", exact: true }).click();
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  await expect(dialog.getByLabel("Artist 3", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("Artist 2", { exact: true }).fill("Vacio");
   await dialog.getByRole("button", { name: "Confirm separate artists", exact: true }).click();
   await expect(dialog.getByRole("alert")).toBeVisible();

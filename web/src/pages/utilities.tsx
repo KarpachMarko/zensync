@@ -24,13 +24,11 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
-import { useAppForm } from "@/hooks/use-app-form";
 import { api } from "@/lib/api";
 import type { DuplicateGroup, DuplicateReport } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import { useId, useState } from "react";
-import { z } from "zod";
 import { toast } from "sonner";
 
 export function Utilities({ admin }: { admin: boolean }) {
@@ -130,7 +128,6 @@ export function Utilities({ admin }: { admin: boolean }) {
     </>
   );
 }
-const mergeSchema = z.object({ target: z.string().min(1) });
 function DuplicateCandidates({
   group,
   limited,
@@ -139,29 +136,20 @@ function DuplicateCandidates({
   limited: boolean;
 }) {
   const client = useQueryClient();
-  const id = useId();
+  const [kept, setKept] = useState(group.members[0].id);
   const [source, setSource] = useState<
     DuplicateGroup["members"][number] | null
   >(null);
   const merge = useMutation({
-    mutationFn: (target: string) =>
-      api<{ id: string; songs: number }>("/metadata/merge", "POST", {
-        kind: group.kind,
-        source: source?.id,
-        target,
-      }),
-    onSuccess: async (data) => {
+    mutationFn: (sourceID: string) => api<{ id: string; songs: number }>("/metadata/merge", "POST", {
+      kind: group.kind, source: sourceID, target: kept,
+    }),
+    onSuccess: (data) => {
       toast.success(`Merge queued for ${data.songs} songs`);
       setSource(null);
-      await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] });
     },
-  });
-  const form = useAppForm({
-    defaultValues: { target: group.members[0].id },
-    validators: { onSubmit: mergeSchema },
-    onSubmit: async ({ value }) => {
-      if (source && source.id !== value.target)
-        await merge.mutateAsync(value.target).catch(() => undefined);
+    onSettled: async () => {
+      await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] });
     },
   });
   return (
@@ -177,32 +165,7 @@ function DuplicateCandidates({
           </span>
         </div>
         <DismissSuggestion rule={{ kind: group.kind, ids: group.members.map((member) => member.id) }} />
-        {group.kind !== "song" && (
-          <form.Field name="target">
-            {(field) => (
-              <div className="flex items-center gap-2">
-                <Label htmlFor={id} className="text-xs">
-                  Keep {group.kind}
-                </Label>
-                <Select
-                  value={field.state.value}
-                  onValueChange={field.handleChange}
-                >
-                  <SelectTrigger id={id} className="h-8 max-w-60 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {group.members.map((member) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.label} ({member.id.slice(0, 6)})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </form.Field>
-        )}
+
       </div>
       {group.kind === "song" ? (
         group.members.map((member) => (
@@ -222,12 +185,10 @@ function DuplicateCandidates({
           />
         ))
       ) : (
-        <form.Subscribe selector={(state) => state.values.target}>
-          {(target) =>
-            group.members.map((member) => (
+        group.members.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center justify-between gap-2 border-t border-border py-1.5"
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-1.5"
               >
                 <div className="min-w-0">
                   <strong className="text-sm">{member.label}</strong>
@@ -253,22 +214,21 @@ function DuplicateCandidates({
                     </details>
                   )}
                 </div>
-                {member.id === target ? (
-                  <Badge variant="outline">Keep</Badge>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button size="sm" variant={member.id === kept ? "secondary" : "outline"}
+                    aria-pressed={member.id === kept}
                     disabled={limited || merge.isPending}
-                    onClick={() => setSource(member)}
-                  >
-                    Merge into selected {group.kind}
+                    onClick={() => { setKept(member.id); merge.reset(); }}>
+                    {member.id === kept ? "Keeping this" : "Keep this"}
                   </Button>
-                )}
+                  <Button size="sm" variant="outline"
+                    disabled={limited || merge.isPending || member.id === kept || merge.isSuccess}
+                    onClick={() => { merge.reset(); setSource(member); }}>
+                    Merge into kept {group.kind}
+                  </Button>
+                </div>
               </div>
             ))
-          }
-        </form.Subscribe>
       )}
       <Dialog
         open={!!source}
@@ -281,18 +241,10 @@ function DuplicateCandidates({
             Merge {group.kind}
           </DialogTitle>
           <DialogDescription className="m-0 text-sm">
-            Move {source?.count ?? "all"} songs from “{source?.label}” to the
-            selected {group.kind}. This updates file tags and rescans Navidrome.
+            Merge “{source?.label}” into “{group.members.find((member) => member.id === kept)?.label}”.
+            This updates file tags and rescans Navidrome.
             Audio is verified before replacing the original file.
           </DialogDescription>
-          <form.Subscribe selector={(state) => state.values.target}>
-            {(target) => (
-              <Text className="my-1 text-sm">
-                Destination:{" "}
-                {group.members.find((member) => member.id === target)?.label}
-              </Text>
-            )}
-          </form.Subscribe>
           {merge.error && (
             <Text role="alert" className="my-1 text-xs">
               {merge.error.message}
@@ -310,7 +262,7 @@ function DuplicateCandidates({
             <Button
               size="sm"
               disabled={merge.isPending}
-              onClick={() => void form.handleSubmit()}
+              onClick={() => { if (source) void merge.mutateAsync(source.id).catch(() => undefined); }}
             >
               Confirm merge
             </Button>
