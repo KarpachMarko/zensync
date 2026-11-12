@@ -148,6 +148,8 @@ func removeMetadataArtwork(ctx context.Context, path string) error {
 
 func preserveEditedMetadata(ctx context.Context, change *metadataChange, original, output string) error {
 	changed := map[string]bool{
+		"track":       change.Edit.TrackNumber > 0,
+		"disc":        change.Edit.DiscNumber > 0,
 		"title":       change.Edit.Title != change.Song.Title,
 		"album":       change.Edit.Album != change.Song.Album,
 		"artist":      metadataTrackArtistsChanged(*change),

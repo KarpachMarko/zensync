@@ -778,3 +778,39 @@ test("leaving duplicate review cancels a delayed merge", async ({ page }) => {
   await page.clock.fastForward(5000);
   expect(state.merges).toEqual([]);
 });
+
+test("metadata utilities apply missing and selected updates without approval", async ({ page }) => {
+  await fixture(page);
+  const requests: { mode: string; songIds: string[]; albumIds: string[] }[] = [];
+  await page.route("**/api/v2/metadata/enrichment", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { songs: [{ ...song, albumId: "album-one", albumArtist: "Band" }], limited: false } });
+    requests.push(route.request().postDataJSON() as typeof requests[number]);
+    return route.fulfill({ status: 202, json: { id: "job", songs: 1 } });
+  });
+  await page.goto("/utilities");
+  await page.getByRole("link", { name: "Covers and lyrics", exact: true }).click();
+  await page.getByRole("button", { name: "Fetch all missing covers", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  await page.getByRole("button", { name: "Fetch all missing lyrics", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole("button", { name: "Replace selected covers", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Replace selected covers", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2]).toEqual({ mode: "force-covers", songIds: [], albumIds: ["album-one"] });
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await page.getByRole("tab", { name: "Songs", exact: true }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Correct selected track order", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(4);
+  expect(requests[3]).toEqual({ mode: "album-order", songIds: ["one"], albumIds: [] });
+  expect(requests.slice(0,2).map(request => request.mode)).toEqual(["missing-covers", "missing-lyrics"]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("metadata utilities are restricted to administrators", async ({ page }) => {
+  await fixture(page, false);
+  await page.goto("/utilities/metadata");
+  await expect(page.getByRole("alert")).toContainText("require an administrator");
+  await expect(page.getByRole("button", { name: "Fetch all missing covers", exact: true })).toHaveCount(0);
+});

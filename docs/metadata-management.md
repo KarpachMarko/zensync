@@ -91,3 +91,16 @@ A song merge replaces the source entry's encoded audio with the kept recording w
 
 
 Metadata updates request an incremental scan of the changed folders when Navidrome exposes one accessible music library and library-relative song paths. Duplicate folders are scanned once per job. When paths cannot be mapped safely, multiple libraries are accessible, or targeted scanning is rejected, ZenSync requests a regular incremental scan instead. Metadata updates no longer force a full library rescan.
+
+## Utilities: Covers and lyrics
+
+**Utilities → Covers and lyrics** (`/utilities/metadata`) queues administrator-only jobs:
+
+- **Fetch all missing covers** checks songs without Navidrome artwork and preserves existing embedded covers.
+- **Fetch all missing lyrics** inspects file tags and preserves existing lyrics. LRCLIB supplies plain and synced lyrics; synced lyrics take priority when embedding.
+- Select songs or albums and choose **Replace selected covers** to overwrite their artwork directly. Album selection updates every song in that album.
+- **Correct selected track order** writes Deezer's track and disc numbers without moving files or reordering playlists.
+
+These actions apply successful matches directly, without a separate approval step. Deezer supplies covers and ordering through the existing public metadata client; no new credentials are required. Apple Music and Spotify integrations are not included. MusicBrainz/Cover Art Archive remains available in the individual metadata editor.
+
+Automatic matching requires normalized title, artist and album equality and a known duration within two seconds. Ambiguous results, instrumental lyrics, unavailable matches and unsupported cover containers are skipped. Covers support MP3, FLAC and M4A. A failed provider request fails the job visibly and can be retried from Activity; resolved results and completed writes are persisted so retries resume remaining work. Activity reports updated and skipped totals. The 50,000-song index limit blocks incomplete bulk operations. Independent jobs can queue together; overlapping file updates retain the existing conflict protection. Completed writes use the same atomic replacement, audio verification and targeted/incremental scan workflow as manual metadata edits.

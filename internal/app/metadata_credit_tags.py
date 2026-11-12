@@ -170,7 +170,8 @@ def main():
         original, output = load(plan["original"]), load(plan["output"])
         changed = plan["changed"]
         cover_keys = {"covr", "metadata_block_picture", "coverart", "coverartmime"}
-        mutable = {"tit2": "title", "\xa9nam": "title", "title": "title",
+        mutable = {"trck": "track", "trkn": "track", "track": "track", "tracknumber": "track", "tpos": "disc", "disk": "disc", "disc": "disc", "discnumber": "disc",
+                   "tit2": "title", "\xa9nam": "title", "title": "title",
                    "talb": "album", "\xa9alb": "album", "album": "album",
                    "uslt": "lyrics", "sylt": "lyrics", "\xa9lyr": "lyrics",
                    "lyrics": "lyrics", "syncedlyrics": "lyrics", "unsyncedlyrics": "lyrics"}

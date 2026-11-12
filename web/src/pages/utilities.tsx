@@ -1,4 +1,5 @@
 import { Undo2Icon } from "lucide-react";
+import { AppLink } from "@/components/navigation";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { CreditIssues } from "@/components/music/credit-issues";
@@ -55,6 +56,7 @@ export function Utilities({ admin }: { admin: boolean }) {
   return (
     <>
       <PageHeading tabIndex={-1}>Utilities</PageHeading>
+      <div className="mb-3"><AppLink to="/utilities/metadata" className="underline">Covers and lyrics</AppLink></div>
       <Collapsible
         open={tool === "duplicates"}
         onOpenChange={(open) => void setTool(open ? "duplicates" : null)}

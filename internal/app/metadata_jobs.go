@@ -21,6 +21,9 @@ import (
 )
 
 type metadataChange struct {
+	Enrichment    string               `json:"enrichment,omitempty"`
+	Resolved      bool                 `json:"resolved,omitempty"`
+	Skip          bool                 `json:"skip,omitempty"`
 	CreditRepairs []creditRepairPlan   `json:"creditRepairs,omitempty"`
 	UploadedCover string               `json:"uploadedCover,omitempty"`
 	CreditRepair  *creditRepairPlan    `json:"creditRepair,omitempty"`
@@ -46,6 +49,9 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	}
 	jid := id()
 	for _, change := range changes {
+		if change.Enrichment != "" {
+			continue
+		}
 		if _, e = tx.Exec("INSERT INTO metadata_edits(song_id,metadata,actor) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE SET metadata=excluded.metadata,actor=excluded.actor,updated=CURRENT_TIMESTAMP", change.Song.ID, mustJSON(change.Edit), u.ID); e != nil {
 			return "", e
 		}
@@ -302,6 +308,23 @@ func (a *App) runMetadata(ctx context.Context) {
 	}
 	for e == nil && done < len(changes) {
 		change := changes[done]
+		if change.Enrichment != "" && !change.Resolved {
+			change, e = a.resolveEnrichment(ctx, c, change)
+			if e != nil {
+				break
+			}
+			change.Resolved = true
+			changes[done] = change
+			_, e = a.DB.Exec("UPDATE metadata_jobs SET changes=? WHERE id=?", mustJSON(changes), jid)
+			if e != nil {
+				break
+			}
+		}
+		if change.Skip {
+			done++
+			_, e = a.DB.Exec("UPDATE metadata_jobs SET done=? WHERE id=?", done, jid)
+			continue
+		}
 		if change.MergeKind == "credits" {
 			var skip bool
 			change, skip, e = a.filterDismissedCreditRepairs(c, change)
@@ -340,7 +363,13 @@ func (a *App) runMetadata(ctx context.Context) {
 		_, _ = a.DB.Exec("UPDATE metadata_jobs SET state='queued',message=? WHERE id=?", e.Error(), jid)
 		return
 	}
-	state, message := "completed", "Tags updated; Navidrome scan requested. Refresh the library after scanning."
+	skipped := 0
+	for _, change := range changes {
+		if change.Skip {
+			skipped++
+		}
+	}
+	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
 	if e != nil {
 		state = "failed"
 		message = fmt.Sprintf("%d/%d songs updated: %s. Original files are unchanged for failed writes; retry resumes remaining work.", done, len(changes), e.Error())
@@ -481,6 +510,12 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	}
 	args = append(args, "-map_metadata", "0", "-c:a", "copy")
 	tags := map[string]string{"title": change.Edit.Title, "artist": change.Edit.Artist, "album": change.Edit.Album}
+	if change.Edit.TrackNumber > 0 {
+		tags["track"] = fmt.Sprint(change.Edit.TrackNumber)
+	}
+	if change.Edit.DiscNumber > 0 {
+		tags["disc"] = fmt.Sprint(change.Edit.DiscNumber)
+	}
 	if change.MergeKind == "credits" {
 		tags = map[string]string{}
 	}
@@ -654,7 +689,12 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	{
 		change.Edit.RemoveCover = false
 		change.Edit.CoverUploadID = ""
-		_, err := a.DB.Exec("UPDATE metadata_edits SET metadata=? WHERE song_id=?", mustJSON(change.Edit), change.Song.ID)
+		var err error
+		if change.Enrichment != "" {
+			_, err = a.DB.Exec("INSERT INTO metadata_edits(song_id,metadata,actor) SELECT ?,?,actor FROM metadata_jobs WHERE id=? ON CONFLICT(song_id) DO UPDATE SET metadata=excluded.metadata,actor=excluded.actor,updated=CURRENT_TIMESTAMP", change.Song.ID, mustJSON(change.Edit), jid)
+		} else {
+			_, err = a.DB.Exec("UPDATE metadata_edits SET metadata=? WHERE song_id=?", mustJSON(change.Edit), change.Song.ID)
+		}
 		if err != nil {
 			return err
 		}

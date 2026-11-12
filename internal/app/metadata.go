@@ -19,6 +19,8 @@ import (
 
 // Metadata edits are a review layer, independent of acquisition and file identity.
 type MetadataEdit struct {
+	TrackNumber      int      `json:"trackNumber,omitempty"`
+	DiscNumber       int      `json:"discNumber,omitempty"`
 	ArtistNames      []string `json:"artistNames,omitempty"`
 	AlbumArtistNames []string `json:"albumArtistNames"`
 	RemoveCover      bool     `json:"removeCover,omitempty"`
@@ -187,6 +189,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v2/metadata")
+	if path == "/enrichment" {
+		a.metadataEnrichment(w, r, u)
+		return
+	}
 	if strings.HasPrefix(path, "/songs/") && strings.Contains(path, "/cover-upload") {
 		a.metadataCoverUpload(w, r, u)
 		return

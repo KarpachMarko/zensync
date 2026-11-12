@@ -87,3 +87,6 @@ export function suggestedCreditArtists(issue: CreditIssue): string[] {
       return true;
     });
 }
+
+export type EnrichmentLibrary = { songs: (LibrarySong & { albumId: string; albumArtist: string })[]; limited: boolean };
+export type EnrichmentMode = "missing-covers" | "force-covers" | "missing-lyrics" | "album-order";
