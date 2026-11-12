@@ -14,12 +14,12 @@ export function LibrarySongRow({
   song,
   canDelete,
   canEdit = false,
-  compareAudio = false,
+  audioPreview,
 }: {
   song: LibrarySong;
   canDelete: boolean;
   canEdit?: boolean;
-  compareAudio?: boolean;
+  audioPreview?: Parameters<typeof DuplicateSongAudio>[0]["preview"];
 }) {
   const [, setEditSong] = useQueryState("editSong", parseAsString);
   const { api } = useApiMutation();
@@ -82,7 +82,7 @@ export function LibrarySongRow({
           </Button>
         </Actions>
       </Row>
-      {compareAudio && <DuplicateSongAudio song={song} />}
+      {audioPreview && <DuplicateSongAudio song={song} preview={audioPreview} />}
       {submitted && (
         <Text role="status">
           {canDelete

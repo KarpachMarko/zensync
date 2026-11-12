@@ -1,3 +1,6 @@
+import { useAudioPreview } from "@/hooks/use-audio-preview";
+import type { LibrarySong } from "@/lib/api";
+import { DuplicateAudioPlayer } from "@/components/music/duplicate-song-audio";
 import { Undo2Icon, CopyIcon, ImageIcon, ChevronRightIcon } from "lucide-react";
 import { AppLink } from "@/components/navigation";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
@@ -29,6 +32,11 @@ export function Utilities({ admin }: { admin: boolean }) {
   );
   const kinds = ["all", "song", "album", "artist", "credits"] as const;
   const [kind, setKind] = useQueryState("kind", parseAsStringLiteral(kinds).withDefault("all"));
+  const audioPreview = useAudioPreview<LibrarySong>({
+    resolveURL: song => `/api/v2/metadata/songs/${encodeURIComponent(song.id)}/audio`,
+    keyFor: song => song.id,
+    errorMessage: "Audio could not play. The file may be unavailable or its format unsupported by your browser.",
+  });
   const filterID = useId();
   const report = useQuery({
     queryKey: ["api", "/metadata/duplicates"],
@@ -106,10 +114,12 @@ export function Utilities({ admin }: { admin: boolean }) {
                 " Partial scan: 50,000-song limit reached. Merges are disabled."}
             </Text>
           )}
+          <DuplicateAudioPlayer preview={audioPreview} />
           {visibleGroups.map((group) => (
             <DuplicateCandidates
               key={`${group.kind}:${group.members.map((m) => m.id).join(":")}`}
               group={group}
+              audioPreview={audioPreview}
               limited={report.data?.limited ?? false}
             />
           ))}
@@ -125,7 +135,9 @@ export function Utilities({ admin }: { admin: boolean }) {
 function DuplicateCandidates({
   group,
   limited,
+  audioPreview,
 }: {
+  audioPreview: Parameters<typeof DuplicateAudioPlayer>[0]["preview"];
   group: DuplicateGroup;
   limited: boolean;
 }) {
@@ -227,7 +239,7 @@ function DuplicateCandidates({
             }
             canDelete
             canEdit
-            compareAudio
+            audioPreview={audioPreview}
           />
         ))
       ) : (
