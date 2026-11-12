@@ -41,12 +41,8 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 		return "", e
 	}
 	defer tx.Rollback()
-	var busy int
-	if e = tx.QueryRow("SELECT count(*) FROM metadata_jobs WHERE state IN ('queued','running')").Scan(&busy); e != nil {
+	if e = metadataQueueConflict(tx, changes); e != nil {
 		return "", e
-	}
-	if busy > 0 {
-		return "", errors.New("A metadata update is already queued or running; wait for it to finish")
 	}
 	jid := id()
 	for _, change := range changes {
@@ -66,6 +62,40 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	slog.Info("Metadata job queued", "job_id", jid, "user_id", u.ID, "songs", len(changes))
 	return jid, nil
 }
+
+// Jobs execute serially, but snapshots for overlapping files cannot safely be
+// prepared in advance. Shared read-only destinations are allowed.
+func metadataQueueConflict(tx *sql.Tx, changes []metadataChange) error {
+	writes, reads := map[string]bool{}, map[string]bool{}
+	for _, change := range changes {
+		writes[change.Song.ID] = true
+		if change.Target != nil {
+			reads[change.Target.ID] = true
+		}
+	}
+	rows, err := tx.Query("SELECT changes FROM metadata_jobs WHERE state IN ('queued','running')")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return err
+		}
+		var previous []metadataChange
+		if err := json.Unmarshal([]byte(raw), &previous); err != nil {
+			return errors.New("An active metadata job is unreadable; review Activity before queuing changes")
+		}
+		for _, change := range previous {
+			if writes[change.Song.ID] || reads[change.Song.ID] || (change.Target != nil && writes[change.Target.ID]) {
+				return errors.New("A queued or running metadata update uses the same song or merge destination; wait for that operation and refresh before editing these files")
+			}
+		}
+	}
+	return rows.Err()
+}
+
 func (a *App) existingMetadataEdit(s Song) (MetadataEdit, error) {
 	edit := MetadataEdit{Title: s.Title, Artist: s.Artist, Album: s.Album, AlbumArtist: s.AlbumArtist}
 	var raw string
@@ -208,14 +238,36 @@ func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &in) {
 			return
 		}
-		result, e := a.DB.Exec("UPDATE metadata_jobs SET state='queued',message='Retry queued' WHERE id=? AND state='failed' AND NOT EXISTS (SELECT 1 FROM metadata_jobs WHERE state IN ('queued','running'))", in.ID)
+		tx, e := a.DB.Begin()
 		if e != nil {
 			a.internal(w, e)
 			return
 		}
-		n, _ := result.RowsAffected()
-		if n != 1 {
-			fail(w, 409, "Only a failed operation can be retried, with no other metadata operation active")
+		defer tx.Rollback()
+		var raw string
+		if e = tx.QueryRow("SELECT changes FROM metadata_jobs WHERE id=? AND state='failed'", in.ID).Scan(&raw); e != nil {
+			if e == sql.ErrNoRows {
+				fail(w, 409, "Only a failed operation can be retried")
+			} else {
+				a.internal(w, e)
+			}
+			return
+		}
+		var changes []metadataChange
+		if e = json.Unmarshal([]byte(raw), &changes); e != nil {
+			fail(w, 409, "The failed operation is unreadable")
+			return
+		}
+		if e = metadataQueueConflict(tx, changes); e != nil {
+			fail(w, 409, e.Error())
+			return
+		}
+		if _, e = tx.Exec("UPDATE metadata_jobs SET state='queued',message='Retry queued' WHERE id=? AND state='failed'", in.ID); e != nil {
+			a.internal(w, e)
+			return
+		}
+		if e = tx.Commit(); e != nil {
+			a.internal(w, e)
 			return
 		}
 		send(w, 200, map[string]bool{"ok": true})

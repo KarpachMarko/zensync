@@ -1,3 +1,4 @@
+import { Undo2Icon } from "lucide-react";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { CreditIssues } from "@/components/music/credit-issues";
@@ -152,8 +153,8 @@ function DuplicateCandidates({
           kind: group.kind, source: source.id, target,
         }, undefined, abort.signal);
         songs += result.songs;
-        // The server permits one active metadata job. Finish each before
-        // submitting another source in a larger duplicate group.
+        // Larger groups can touch the same files. Finish each source before
+        // preparing the next merge snapshot.
         if (index < sources.length - 1) {
           while (true) {
             abort.signal.throwIfAborted();
@@ -178,9 +179,10 @@ function DuplicateCandidates({
     if (pending.current || merge.isPending || merge.isSuccess) return;
     merge.reset();
     setScheduled(member.id);
-    const notification = toast(`Merging other ${group.kind} entries into “${member.label}” in 5 seconds`, {
+    const notification = toast("Merge starts in 5 seconds", {
+      description: `Keep “${member.label}” and merge the other ${group.kind} entries.`,
       duration: 5000,
-      action: { label: "Undo", onClick: () => {
+      action: { label: <><Undo2Icon className="size-3.5 shrink-0" aria-hidden="true" />Undo</>, onClick: () => {
         if (!pending.current) return;
         clearTimeout(pending.current.timer);
         toast.dismiss(pending.current.toast);
