@@ -114,7 +114,6 @@ export function Utilities({ admin }: { admin: boolean }) {
                 " Partial scan: 50,000-song limit reached. Merges are disabled."}
             </Text>
           )}
-          <DuplicateAudioPlayer preview={audioPreview} />
           {visibleGroups.map((group) => (
             <DuplicateCandidates
               key={`${group.kind}:${group.members.map((m) => m.id).join(":")}`}
@@ -127,6 +126,7 @@ export function Utilities({ admin }: { admin: boolean }) {
             <Text>No {kind === "all" ? "duplicate" : kind} candidates found.</Text>
           )}
           <CreditIssues issues={visibleCredits} limited={report.data?.limited} />
+          <DuplicateAudioPlayer preview={audioPreview} />
         </div>
       </>}
     </>

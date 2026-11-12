@@ -271,16 +271,9 @@ test("utilities merge into a chosen duplicate after an undo window", async ({
   await page
     .getByRole("link", { name: "Review duplicates", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Delete song: Song", exact: true })
-    .first()
-    .click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete song", exact: true })
-    .click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  expect(state.deletes).toEqual([{ songId: "one" }]);
+  await expect(page.getByRole("button", { name: "Delete song: Song", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Merge song: Song", exact: true })).toHaveCount(0);
+  expect(state.deletes).toEqual([]);
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
   await page.clock.install();
@@ -840,6 +833,7 @@ test("duplicate songs expose original playback, quality and size", async ({ page
   await page.route("**/api/v2/metadata/duplicates*", route => route.fulfill({ json: { scanned: 2, limited: false, groups: [{ kind: "song", reason: "Matching recordings", members: [
     { id: "one", label: "Song", song: { ...song, suffix: "flac", bitRate: 900, bitDepth: 24, samplingRate: 96000, size: 10485760 } },
     { id: "two", label: "Song", song: { ...song, id: "two", suffix: "mp3", bitRate: 320, size: 5242880 } },
+    ...Array.from({length:20},(_,i)=>({id:`extra-${i}`,label:`Extra ${i}`,song:{...song,id:`extra-${i}`,title:`Extra ${i}`}})),
   ] }] } }));
   await page.goto("/utilities?tool=duplicates");
   await expect(page.getByText("FLAC · 900 kbps · 24-bit · 96 kHz · 10.00 MiB", { exact: true })).toBeVisible();
@@ -857,4 +851,11 @@ test("duplicate songs expose original playback, quality and size", async ({ page
   await expect(page.getByRole("alert")).toContainText("Audio could not play");
   await page.getByRole("button", {name:"Play Song (two)",exact:true}).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  const dock=page.getByRole("region",{name:"Duplicate comparison player",exact:true});
+  for (const width of [375,1280]) {
+    await page.setViewportSize({width,height:700});
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+    const last=page.locator('[data-slot="library-song"]').last();
+    await expect.poll(async()=>{const row=await last.boundingBox(),player=await dock.boundingBox();return !!row && !!player && row.y+row.height<=player.y;}).toBe(true);
+  }
 });

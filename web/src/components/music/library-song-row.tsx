@@ -42,8 +42,8 @@ export function LibrarySongRow({
     }
   }
   return (
-    <article data-slot="library-song">
-      <Row className="flex-wrap">
+    <article data-slot="library-song" className={audioPreview ? "border-b border-solid border-border py-2 last:border-b-0" : undefined}>
+      <Row className={audioPreview ? "flex-wrap border-b-0" : "flex-wrap"}>
         <div className="min-w-0 flex-1">
           <strong>{song.title}</strong>
           <Caption>
@@ -51,7 +51,7 @@ export function LibrarySongRow({
           </Caption>
         </div>
         <Actions className="max-w-full">
-          {canEdit && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
+          {canEdit && !audioPreview && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
           {canEdit && (
             <Button
               size="sm"
@@ -62,7 +62,7 @@ export function LibrarySongRow({
               Edit metadata
             </Button>
           )}
-          <Button
+          {!audioPreview && <Button
             size="sm"
             variant="outline"
             type="button"
@@ -79,7 +79,7 @@ export function LibrarySongRow({
                 : canDelete
                   ? "Delete song"
                   : "Request deletion"}
-          </Button>
+          </Button>}
         </Actions>
       </Row>
       {audioPreview && <DuplicateSongAudio song={song} preview={audioPreview} />}
