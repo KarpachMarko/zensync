@@ -84,7 +84,7 @@ export function Library({
         value={view}
         onValueChange={(value) => navigate(`/library/${value}`)}
       >
-        <TabsList>
+        <TabsList className="max-w-full flex-wrap h-auto!">
           <TabsTrigger value="songs">Songs</TabsTrigger>
           <TabsTrigger value="playlists">Playlists</TabsTrigger>
           <TabsTrigger value="artists">Artists</TabsTrigger>
