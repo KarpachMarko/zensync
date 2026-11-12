@@ -308,6 +308,7 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 	a.HTTP = &clientCopy
 	// Credit-only writes must verify native tags in the existing Python
 	// process, without launching ffprobe or looking up a merge destination.
+	// One getSong verifies the source; another resolves the scan target folder.
 	a.ffprobePath = filepath.Join(t.TempDir(), "unexpected-ffprobe")
 	if err := os.WriteFile(a.ffprobePath, []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 		t.Fatal(err)
@@ -315,8 +316,8 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 	started := time.Now()
 	a.runMetadata(context.Background())
 	t.Logf("Credit write: %s, getSong=%d, downloads=%d, ffprobe=0", time.Since(started), getSongs.Load(), downloads.Load())
-	if getSongs.Load() != 1 || downloads.Load() != 1 {
-		t.Fatalf("Repeated verification: getSong=%d download=%d", getSongs.Load(), downloads.Load())
+	if getSongs.Load() != 2 || downloads.Load() != 1 {
+		t.Fatalf("Unexpected verification/scan traffic: getSong=%d download=%d", getSongs.Load(), downloads.Load())
 	}
 
 	var state, message string
