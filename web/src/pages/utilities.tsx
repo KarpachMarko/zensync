@@ -165,7 +165,7 @@ function DuplicateCandidates({
           let key=deletionKeys.current.get(source.id);
           if (!key) {key=requestKey();deletionKeys.current.set(source.id,key);}
           try {
-            await api("/deletion-requests","POST",{songId:source.id},key,abort.signal);
+            await api("/deletion-requests","POST",{songId:source.id,keepSongId:target},key,abort.signal);
           } catch (error) {
             throw new Error(`${songs} of ${sources.length} deletions queued. ${error instanceof Error ? error.message : "Deletion request failed"}. Retry Keep song to queue the remaining items.`);
           }
@@ -205,7 +205,7 @@ function DuplicateCandidates({
     merge.reset();
     setScheduled(member.id);
     const notification = toast(group.kind === "song" ? "Duplicate deletion starts in 5 seconds" : "Merge starts in 5 seconds", {
-      description: group.kind === "song" ? `Keep “${member.label}” and delete the other recordings. Album and playlist references may be lost.` : `Keep “${member.label}” and merge the other ${group.kind} entries.`,
+      description: group.kind === "song" ? `Keep “${member.label}” and delete the other recordings. Editable playlists are updated first. Album placement and inaccessible playlists are not preserved.` : `Keep “${member.label}” and merge the other ${group.kind} entries.`,
       duration: 5000,
       action: { label: <><Undo2Icon className="size-3.5 shrink-0" aria-hidden="true" />Undo</>, onClick: () => {
         if (!pending.current) return;
@@ -297,7 +297,7 @@ function DuplicateCandidates({
               </div>
             ))
       )}
-      {group.kind === "song" && <Text className="my-1 text-xs">Keep one recording and delete the others. Album and playlist references to deleted songs may be lost.</Text>}
+      {group.kind === "song" && <Text className="my-1 text-xs">Keep one recording and delete the others. Editable playlists are updated before deletion. Album placement and inaccessible playlists are not preserved.</Text>}
       {scheduled && <Text role="status" className="my-1 text-xs">{group.kind === "song" ? "Deletion" : "Merge"} scheduled. Use Undo in the notification to cancel.</Text>}
       {group.kind === "song" && merge.isSuccess && <Text role="status" className="my-1 text-xs">Duplicate deletions queued. Follow progress in Activity; refresh candidates after the library scan.</Text>}
       {merge.error && !controller.current?.signal.aborted && <Text role="alert">{merge.error.message}</Text>}

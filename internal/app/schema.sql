@@ -203,3 +203,17 @@ CREATE TABLE IF NOT EXISTS metadata_dismissals (
  PRIMARY KEY(server_key,rule_key)
 );
 INSERT OR IGNORE INTO schema_version VALUES(9);
+
+-- Keep-song deletions update accessible playlists before removing their source file.
+CREATE TABLE IF NOT EXISTS deletion_replacements (
+ request_id TEXT PRIMARY KEY REFERENCES song_deletions(request_id),
+ keep_song_id TEXT NOT NULL, server_url TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deletion_playlist_updates (
+ request_id TEXT NOT NULL REFERENCES deletion_replacements(request_id),
+ account_key TEXT NOT NULL, playlist_id TEXT NOT NULL,
+ before_ids TEXT NOT NULL, after_ids TEXT NOT NULL,
+ state TEXT NOT NULL DEFAULT 'prepared',
+ PRIMARY KEY(request_id,account_key,playlist_id)
+);
+INSERT OR IGNORE INTO schema_version VALUES(10);

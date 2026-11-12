@@ -879,7 +879,7 @@ test("Keep song deletes only the prepared alternatives after undo expires", asyn
   expect(state.deletes).toEqual([]);
   await page.clock.fastForward(1);
   await expect.poll(()=>state.deletes.length).toBe(1);
-  expect(state.deletes).toEqual([{songId:"one"}]);
+  expect(state.deletes).toEqual([{songId:"one",keepSongId:"two"}]);
   expect(state.merges).toEqual([]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(keep).toBeDisabled();
@@ -888,10 +888,10 @@ test("Keep song deletes only the prepared alternatives after undo expires", asyn
 test("Keep song handles larger groups and retries partially queued deletions without new keys", async ({ page }) => {
   await fixture(page);
   await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:3,limited:false,groups:[{kind:"song",reason:"Duplicates",members:["one","two","three"].map(id=>({id,label:"Song",song:{...song,id}}))}]}}));
-  const calls:{songId:string;key:string}[]=[];
+  const calls:{songId:string;keepSongId:string;key:string}[]=[];
   let fail=true;
   await page.route("**/api/v2/deletion-requests",route=>{
-    const body=route.request().postDataJSON() as {songId:string};
+    const body=route.request().postDataJSON() as {songId:string;keepSongId:string};
     calls.push({...body,key:route.request().headers()["idempotency-key"]});
     return route.fulfill(body.songId==="three" && fail ? {status:409,json:{error:"Temporary failure"}} : {status:201,json:{id:body.songId}});
   });
@@ -906,6 +906,7 @@ test("Keep song handles larger groups and retries partially queued deletions wit
   await keep.click();await page.clock.fastForward(5000);
   await expect.poll(()=>calls.length).toBe(4);
   expect(calls.map(call=>call.songId)).toEqual(["one","three","one","three"]);
+  expect(calls.every(call=>call.keepSongId==="two")).toBe(true);
   expect(calls[0]?.key).toBeTruthy();
   expect(calls[0]?.key).toBe(calls[2]?.key);
   expect(calls[1]?.key).toBe(calls[3]?.key);

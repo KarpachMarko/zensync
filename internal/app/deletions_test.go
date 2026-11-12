@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,9 +21,21 @@ type deletionFixture struct {
 	scans                 atomic.Int32
 }
 
-func newDeletionFixture(t *testing.T) *deletionFixture {
+func newDeletionFixture(t *testing.T, legacyDefaults ...bool) *deletionFixture {
 	t.Helper()
-	a, e := Open(filepath.Join(t.TempDir(), "test.db"))
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if len(legacyDefaults) > 0 && legacyDefaults[0] {
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.Exec(`CREATE TABLE jobs(id TEXT PRIMARY KEY,request_id TEXT NOT NULL UNIQUE REFERENCES requests(id),state TEXT NOT NULL DEFAULT 'blocked',stage TEXT NOT NULL DEFAULT 'Integration not configured',created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+		db.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, e := Open(dbPath)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -375,4 +388,57 @@ func TestSongPathResolutionWithDuplicateCopies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeletionLegacyDefaultAndStartupRecovery(t *testing.T) {
+	f := newDeletionFixture(t, true)
+	rid := f.request(t, f.admin, "legacy-delete-test")
+	var state, stage string
+	if err := f.a.DB.QueryRow("SELECT state,stage FROM jobs WHERE request_id=?", rid).Scan(&state, &stage); err != nil || state != "queued" || stage != "Queued for library removal" {
+		t.Fatalf("legacy insert: %s %s %v", state, stage, err)
+	}
+	// Simulate an already-stuck deletion created by the previous version.
+	if _, err := f.a.DB.Exec("UPDATE jobs SET state='blocked' WHERE request_id=?", rid); err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range []struct{ id, decision, stage string }{
+		{"real-block", "approved", "Deletion requires administrator approval"},
+		{"unapproved", "awaiting_approval", "Queued for library removal"},
+		{"failed", "approved", "Queued for library removal"},
+	} {
+		if _, err := f.a.DB.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision) SELECT ?,owner,?,'navidrome:song:other','Other','Artist',0,'[]',? FROM requests WHERE id=?", seed.id, seed.id, seed.decision, rid); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.a.DB.Exec("INSERT INTO song_deletions(request_id,song_id,file_path,checksum) SELECT ?,'other',file_path,checksum FROM song_deletions WHERE request_id=?", seed.id, rid); err != nil {
+			t.Fatal(err)
+		}
+		initial := "blocked"
+		if seed.id == "failed" {
+			initial = "failed"
+		}
+		if _, err := f.a.DB.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,?,?)", seed.id, seed.id, initial, seed.stage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A cancelled worker still performs startup recovery, then exits before running jobs.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	<-f.a.StartWorker(ctx)
+	if err := f.a.DB.QueryRow("SELECT state FROM jobs WHERE request_id=?", rid).Scan(&state); err != nil || state != "queued" {
+		t.Fatal("stuck deletion not recovered", state, err)
+	}
+	for _, id := range []string{"real-block", "unapproved", "failed"} {
+		want := "blocked"
+		if id == "failed" {
+			want = "failed"
+		}
+		if err := f.a.DB.QueryRow("SELECT state FROM jobs WHERE id=?", id).Scan(&state); err != nil || state != want {
+			t.Fatalf("recovery changed %s: %s %v", id, state, err)
+		}
+	}
+	f.a.runDeletion(context.Background())
+	if err := f.a.DB.QueryRow("SELECT state FROM jobs WHERE request_id=?", rid).Scan(&state); err != nil || state != "completed" {
+		t.Fatal("recovered deletion not executed", state, err)
+	}
+	assertFile(t, f.path, false)
 }

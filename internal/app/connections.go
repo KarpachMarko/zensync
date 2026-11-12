@@ -168,6 +168,7 @@ func (s *Song) UnmarshalJSON(data []byte) error {
 }
 
 type RemotePlaylist struct {
+	Readonly  bool   `json:"readonly,omitempty"`
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Owner     string `json:"owner"`

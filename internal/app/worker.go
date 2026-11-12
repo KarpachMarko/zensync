@@ -34,6 +34,9 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 		}
 		// Remote journals are reconciled on retry; never blindly replay an uncertain favorite.
 		for _, recovery := range []struct{ name, query string }{
+			// Old databases retain jobs.state DEFAULT 'blocked': CREATE TABLE
+			// IF NOT EXISTS does not change that default during an upgrade.
+			{"legacy_deletions_resumed", "UPDATE jobs SET state='queued' WHERE state='blocked' AND stage='Queued for library removal' AND request_id IN (SELECT d.request_id FROM song_deletions d JOIN requests r ON r.id=d.request_id WHERE r.decision='approved')"},
 			{"migration_tasks_resumed", "UPDATE migration_tasks SET state='queued',message='Resuming after restart' WHERE state='running'"},
 			{"interrupted_acquisitions", "UPDATE jobs SET state='failed',stage='Interrupted during acquisition. Retry to reconcile staged files and library placement.' WHERE state IN ('downloading','validating','importing')"},
 			{"blocked_acquisitions_resumed", "UPDATE jobs SET state='queued',stage='Queued for acquisition' WHERE state='blocked' AND stage='Integration not configured'"},
