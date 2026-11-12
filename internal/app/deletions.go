@@ -395,6 +395,9 @@ func (a *App) removeLibrarySong(ctx context.Context, rid, owner, actor, rel, che
 				return errors.New("Song file changed since the deletion request; submit a new request after review")
 			}
 			if phase == "pending" {
+				if e = a.reserveDeletionTrash(rid, info.Size()); e != nil {
+					return e
+				}
 				if e = os.MkdirAll(backupDir, 0700); e != nil {
 					return errors.New("Cannot create recovery directory")
 				}
@@ -408,7 +411,7 @@ func (a *App) removeLibrarySong(ctx context.Context, rid, owner, actor, rel, che
 					src.Close()
 					return e
 				}
-				_, e = io.Copy(dst, src)
+				_, e = io.Copy(dst, io.LimitReader(src, info.Size()))
 				src.Close()
 				if e == nil {
 					e = dst.Sync()

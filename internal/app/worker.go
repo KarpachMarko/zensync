@@ -19,6 +19,12 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 	go func() {
 		defer close(done)
 		slog.Info("Background worker started")
+		if err := a.pruneDeletionTrash(); err != nil {
+			slog.Error("Trash retention cleanup failed", "error", err)
+		}
+		if err := a.cleanupDeletionRestoreTemps(); err != nil {
+			slog.Error("Restore temporary-file cleanup failed", "error", err)
+		}
 		if err := a.cleanupMetadataTemps(); err != nil {
 			slog.Warn("Metadata temporary-file cleanup failed", "error", err)
 		}
@@ -88,6 +94,9 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 					go func() {
 						defer work.Done()
 
+						if err := a.pruneDeletionTrash(); err != nil {
+							slog.Error("Trash retention cleanup failed", "error", err)
+						}
 						a.runDeletion(ctx)
 						a.runMetadata(ctx)
 						a.runMigrationTask(ctx)

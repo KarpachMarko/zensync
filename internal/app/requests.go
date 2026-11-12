@@ -372,5 +372,28 @@ func (a *App) activity(w http.ResponseWriter, u User) {
 		a.internal(w, e)
 		return
 	}
+	rows.Close() // SQLite uses a single connection; enrich only after releasing rows.
+	for _, item := range out {
+		if item["state"] != "completed" {
+			continue
+		}
+		var rid, phase, restorePhase string
+		err := a.DB.QueryRow(`SELECT d.request_id,d.phase,COALESCE(x.phase,'') FROM song_deletions d JOIN jobs j ON j.request_id=d.request_id LEFT JOIN deletion_restores x ON x.request_id=d.request_id WHERE j.id=?`, item["id"]).Scan(&rid, &phase, &restorePhase)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			a.internal(w, err)
+			return
+		}
+		item["canRestore"] = u.Role == "admin" && phase == "removed" && (a.availableDeletionCopy(rid) || restorePhase == "published")
+		if phase == "restored" {
+			item["stage"] = "Deleted file restored; playlist replacements unchanged"
+		} else if restorePhase == "published" {
+			item["stage"] = "File restored; retry Restore to request a library scan"
+		} else if !a.availableDeletionCopy(rid) {
+			item["stage"] = "Removed from shared library; recovery copy expired or removed"
+		}
+	}
 	send(w, 200, out)
 }

@@ -72,7 +72,9 @@ func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bo
 	case strings.HasPrefix(path, "/api/v2/imports/"):
 		a.migrationRoute(w, r, u)
 	case strings.HasPrefix(path, "/api/v2/tasks/") && r.Method == "POST":
-		if strings.HasSuffix(path, "/dismiss") {
+		if strings.HasSuffix(path, "/restore") {
+			a.restoreDeletedSong(w, r, u)
+		} else if strings.HasSuffix(path, "/dismiss") {
 			a.dismissAcquisitionFailure(w, r, u)
 		} else if strings.HasSuffix(path, "/cancel") {
 			a.cancelMigrationTask(w, r, u)

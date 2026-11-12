@@ -217,3 +217,9 @@ CREATE TABLE IF NOT EXISTS deletion_playlist_updates (
  PRIMARY KEY(request_id,account_key,playlist_id)
 );
 INSERT OR IGNORE INTO schema_version VALUES(10);
+
+CREATE TABLE IF NOT EXISTS deletion_restores (
+ request_id TEXT PRIMARY KEY REFERENCES song_deletions(request_id),
+ phase TEXT NOT NULL DEFAULT 'preparing', server_url TEXT NOT NULL
+);
+INSERT OR IGNORE INTO schema_version VALUES(11);

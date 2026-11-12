@@ -22,20 +22,22 @@ export function Activity({ admin }: { admin: boolean }) {
   const error = actionError || result.error?.message;
   const loading = result.isPending;
   const load = result.reload;
-  async function taskAction(item: ActivityItem, cancel = false, dismiss = false) {
+  async function taskAction(item: ActivityItem, cancel = false, dismiss = false, restore = false) {
     const id = item.id;
     if (pendingTask) return;
     setPendingTask(id);
     setError("");
     try {
-      if (item.kind === "metadata") {
+      if (restore) {
+        await api("/tasks/"+id+"/restore","POST");
+      } else if (item.kind === "metadata") {
         await api("/metadata/jobs", "POST", { id });
       } else {
         await api("/tasks/" + id + (dismiss ? "/dismiss" : cancel ? "/cancel" : ""), "POST");
       }
       await load();
       toast.success(
-        dismiss
+        restore ? "File restored. Playlist replacements are unchanged." : dismiss
           ? "Failure dismissed. Music files are kept."
           : cancel
             ? "Migration task cancelled."
@@ -72,6 +74,7 @@ export function Activity({ admin }: { admin: boolean }) {
                   key={`${r.kind ?? "task"}:${r.id}`}
                   item={r}
                   busy={pendingTask !== null}
+                  onRestore={admin ? () => void taskAction(r, false, false, true) : undefined}
                   onRetry={() => void taskAction(r)}
                   onDismiss={() => void taskAction(r, false, true)}
                   onCancel={() => void taskAction(r, true)}

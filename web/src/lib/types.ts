@@ -41,5 +41,6 @@ export type ActivityItem = {
   canCancel?: boolean;
   canReview?: boolean;
   canDismiss?: boolean;
+  canRestore?: boolean;
   transfer?: TransferProgress;
 };
