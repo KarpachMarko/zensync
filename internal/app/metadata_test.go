@@ -342,3 +342,30 @@ func TestScreenshotReviewAPI(t *testing.T) {
 		t.Fatal("Review must not queue metadata writes", err)
 	}
 }
+
+func TestCreditReviewAmpersandSeparator(t *testing.T) {
+	for _, role := range []string{"artist", "album artist"} {
+		t.Run(role, func(t *testing.T) {
+			combined := Song{ID: "combined", ArtistID: "combined", Artist: "163ONMYNECK & Polyana"}
+			if role == "album artist" {
+				combined.Artist = "Guest"
+				combined.AlbumArtists = []ArtistCredit{{ID: "combined", Name: "163ONMYNECK & Polyana"}}
+			}
+			// Punctuation alone must not be enough to suggest a split.
+			if issues := metadataCreditIssues([]Song{combined}); len(issues) != 0 {
+				t.Fatalf("Unexpected suggestion without known artists: %+v", issues)
+			}
+			songs := []Song{
+				{ID: "known", ArtistID: "solo", Artist: "163ONMYNECK"},
+				combined,
+				{ID: "band", Artist: "Earth, Wind & Fire"},
+				{ID: "unspaced", Artist: "163ONMYNECK&Polyana"},
+				{ID: "separate", Artists: []ArtistCredit{{ID: "solo", Name: "163ONMYNECK"}, {ID: "polyana", Name: "Polyana"}}},
+			}
+			issues := metadataCreditIssues(songs)
+			if len(issues) != 1 || issues[0].Role != role || mustJSON(issues[0].Parts) != mustJSON([]string{"163ONMYNECK", "Polyana"}) {
+				t.Fatalf("Ampersand credit review: %+v", issues)
+			}
+		})
+	}
+}

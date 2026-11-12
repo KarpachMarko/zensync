@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Text } from "@/components/typography";
-import type { CreditIssue } from "@/lib/metadata";
+import { suggestedCreditArtists, type CreditIssue } from "@/lib/metadata";
 
 export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[]; limited?: boolean }) {
   const client = useQueryClient();
@@ -35,7 +35,7 @@ export function CreditIssues({ issues, limited = false }: { issues: CreditIssue[
             <strong className="min-w-0 break-words text-sm">{issue.name}</strong>
           </div>
           <div className="my-2 flex flex-wrap items-center gap-1.5">
-            {issue.parts.map((part, index) => <Badge key={index} variant="secondary" className="max-w-full whitespace-normal break-words">{part}</Badge>)}
+            {suggestedCreditArtists(issue).map((part, index) => <Badge key={index} variant="secondary" className="max-w-full whitespace-normal break-words">{part}</Badge>)}
           </div>
           <Text className="my-1 text-xs">{issue.knownArtists.length} names match existing artist entries</Text>
           <Text className="my-1 text-xs">{issue.tracks.length} affected {issue.tracks.length === 1 ? "song" : "songs"}</Text>

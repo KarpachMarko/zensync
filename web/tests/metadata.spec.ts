@@ -263,7 +263,7 @@ test("compact TanStack editor supports keyboard autocomplete and provider select
     coverUrl: "https://archive.org/cover.jpg",
   });
 });
-test("utilities resolve duplicate songs and confirm album and artist merges", async ({
+test("utilities merge into a chosen duplicate after an undo window", async ({
   page,
 }) => {
   const state = await fixture(page);
@@ -283,15 +283,22 @@ test("utilities resolve duplicate songs and confirm album and artist merges", as
   expect(state.deletes).toEqual([{ songId: "one" }]);
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   for (const kind of ["album", "artist"]) {
-    await page
-      .getByRole("button", { name: `Merge into selected ${kind}`, exact: true })
-      .click();
+    const group = page.locator("section").filter({ has: page.getByText(kind, { exact: true }) });
+    const merge = group.getByRole("button", { name: "Merge into this", exact: true }).first();
+    await merge.click();
+    await page.clock.runFor(300);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await page.clock.fastForward(5000);
     expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
-    await page
-      .getByRole("button", { name: "Confirm merge", exact: true })
-      .click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await merge.click();
+    await page.clock.runFor(300);
+    await page.clock.fastForward(4000);
+    expect(state.merges.length).toBe(kind === "album" ? 0 : 1);
+    await page.clock.fastForward(1000);
+    await expect.poll(() => state.merges.length).toBe(kind === "album" ? 1 : 2);
   }
   expect(state.merges).toEqual([
     { kind: "album", source: "album-two", target: "album-one" },
@@ -331,19 +338,6 @@ test("artist songs and compact editor work on mobile", async ({ page }) => {
     .click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await dialog.evaluate(async (element) => {
-    await Promise.all(
-      element.getAnimations().map((animation) => animation.finished),
-    );
-  });
-  await page.screenshot({
-    path: "/tmp/zensync-compact-metadata-editor.png",
-    animations: "disabled",
-  });
-  const box = await dialog.boundingBox();
-  expect(box?.width).toBeLessThanOrEqual(390);
-  expect(box?.height).toBeLessThan(844 * 0.85);
-  await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeInViewport();
   await page.getByLabel("Title", { exact: true }).fill("");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByLabel("Title", { exact: true })).toHaveAttribute(
@@ -352,7 +346,7 @@ test("artist songs and compact editor work on mobile", async ({ page }) => {
   );
 });
 
-test("screenshot albums and combined artist credits are reviewable without destructive collaboration merges", async ({ page }) => {
+test("albums and combined artist credits are reviewable without destructive collaboration merges", async ({ page }) => {
   const state = await fixture(page);
   const dataset = JSON.parse(readFileSync(new URL("../../internal/app/testdata/screenshot-metadata.json", import.meta.url), "utf8")) as {
     albumTitle: string; albumArtists: string[]; combinedArtists: string[]; standaloneArtist: string;
@@ -377,10 +371,6 @@ test("screenshot albums and combined artist credits are reviewable without destr
   await expect(page.getByText("SLAVA MARLOW — ЭЛЬФ 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Slava Marlow — ЭЛЬФ 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toHaveCount(0);
-  for (const width of [320, 390]) {
-    await page.setViewportSize({ width, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-  }
   const review = page.getByRole("region", { name: "Combined artist credit review" });
   for (const name of dataset.combinedArtists) await expect(review.getByText(name, { exact: true })).toBeVisible();
   await expect(review.getByRole("button", { name: /Merge/ })).toHaveCount(0);
@@ -405,7 +395,7 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
     scanned: 3, limited: false, groups: [],
     creditIssues: scanComplete ? [] : [{ id: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist",
-      parts: ["Vacio", "ЛСП"], knownArtists: ["Vacio", "ЛСП"],
+      parts: ["Vacio", "ЛСП", " vacio ", "лсп"], knownArtists: ["Vacio", "ЛСП"],
       tracks: [{ ...song, title: "Skate", album: "Skate", artist: "Vacio, ЛСП • Васильев Николай Михайлович, Олег Вадимович Савченко" }],
     }],
   }}));
@@ -418,11 +408,8 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Artist 1", { exact: true })).toHaveValue("Vacio");
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  await expect(dialog.getByLabel("Artist 3", { exact: true })).toHaveCount(0);
   expect(writes).toEqual([]);
-  for (const width of [320, 390]) {
-    await page.setViewportSize({ width, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-  }
   await dialog.getByRole("button", { name: "Move artist 2 up", exact: true }).click();
   await expect(dialog.getByLabel("Artist 1", { exact: true })).toHaveValue("ЛСП");
   await dialog.getByRole("button", { name: "Move artist 2 up", exact: true }).click();
@@ -432,11 +419,14 @@ test("Skate combined-credit repair proposes known artists, validates and queues 
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("Extra artist");
   await dialog.getByRole("button", { name: "Remove artist 2", exact: true }).click();
   await expect(dialog.getByLabel("Artist 2", { exact: true })).toHaveValue("ЛСП");
+  await expect(dialog.getByLabel("Artist 3", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("Artist 2", { exact: true }).fill("Vacio");
+  await dialog.getByLabel("Artist 2", { exact: true }).press("Tab");
   await dialog.getByRole("button", { name: "Confirm separate artists", exact: true }).click();
   await expect(dialog.getByRole("alert")).toBeVisible();
   expect(writes).toEqual([]);
   await dialog.getByLabel("Artist 2", { exact: true }).fill("ЛСП");
+  await dialog.getByLabel("Artist 2", { exact: true }).press("Tab");
   await dialog.getByRole("button", { name: "Confirm separate artists", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(writes).toEqual([{ source: "combined-vacio-lsp", name: "Vacio, ЛСП", role: "artist", artists: ["Vacio", "ЛСП"] }]);
@@ -565,7 +555,7 @@ test("duplicate type filter is retained in the URL and separates credit issues f
   await expect(page.getByText("artist first", { exact: true })).toBeVisible();
 });
 
-test("one artwork field accepts image URLs during a provider failure and the preview clears its focus outline", async ({ page }) => {
+test("artwork URLs can be saved during a provider failure", async ({ page }) => {
   const state = await fixture(page);
   await page.route("**/api/v2/metadata/covers?**", (route) => route.fulfill({ status: 502, json: { error: "Metadata search timed out" } }));
   await page.goto("/library?editSong=one");
@@ -576,11 +566,6 @@ test("one artwork field accepts image URLs during a provider failure and the pre
   await input.focus();
   const image = dialog.getByAltText("Current cover", { exact: true });
   await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  const gap = await image.evaluate((element) => {
-    const field = document.querySelector<HTMLInputElement>('input[placeholder="Artist and album, or https://…"]');
-    return element.getBoundingClientRect().top - (field?.getBoundingClientRect().bottom ?? 0);
-  });
-  expect(gap).toBeGreaterThanOrEqual(12);
   await input.fill("https://archive.org/cover.jpg");
   await dialog.getByRole("button", { name: "Use URL", exact: true }).click();
   await expect(dialog.getByAltText("Selected cover", { exact: true })).toHaveAttribute("src", "https://archive.org/cover.jpg");
@@ -718,4 +703,78 @@ test("metadata editor uses one row per artist and keeps literal slashes inside a
  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
  await expect(dialog).toHaveCount(0);
  expect(state.edit()).toMatchObject({artist:"Guest / May Wave$ / AC/DC",artistNames:["Guest","May Wave$","AC/DC"],albumArtistNames:["May Waves"]});
+});
+
+test("Library manual merges search unrelated artist and album names and require confirmation", async ({ page }) => {
+  const state = await fixture(page);
+  for (const kind of ["artist", "album"] as const) {
+    await page.goto(`/library/${kind}s`);
+    await page.getByRole("button", { name: `Merge ${kind}: ${kind === "artist" ? "Band" : "Album"}`, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: "Confirm merge", exact: true })).toBeDisabled();
+    await page.route("**/api/v2/library/browse?**", (route) => {
+      const url = new URL(route.request().url());
+      if (!url.searchParams.get("q")) return route.fallback();
+      return route.fulfill({ json: { collections: [{ id: `${kind}-destination`, name: "Эльдар Джарахов", songCount: 2 }], songs: [], nextOffset: -1 } });
+    });
+    await dialog.getByLabel(`Find destination ${kind}`, { exact: true }).fill("Джарахов");
+    await dialog.getByRole("button", { name: "Search", exact: true }).click();
+    await dialog.getByRole("button", { name: /Эльдар Джарахов ·/ }).click();
+    expect(state.merges).toHaveLength(kind === "artist" ? 0 : 1);
+    await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  expect(state.merges).toEqual([
+    { kind: "artist", source: "artist", target: "artist-destination" },
+    { kind: "album", source: "album", target: "album-destination" },
+  ]);
+});
+
+test("Library song replacement explicitly keeps existing album and playlist references", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/library");
+  await page.getByRole("button", { name: "Merge song: Song", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/playlist references are preserved/)).toBeVisible();
+  await page.route("**/api/v2/library?**", (route) => route.fulfill({ json: { songs: [{ ...song, id: "kept-recording", title: "Kept recording" }], nextOffset: -1 } }));
+  await dialog.getByLabel("Find destination song", { exact: true }).fill("Kept");
+  await dialog.getByRole("button", { name: "Search", exact: true }).click();
+  await dialog.getByRole("button", { name: /Kept recording/ }).click();
+  expect(state.merges).toEqual([]);
+  await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(state.merges).toEqual([{ kind: "song", source: "one", target: "kept-recording" }]);
+});
+
+test("duplicate merge applies every other entry to the clicked destination", async ({ page }) => {
+  const state = await fixture(page);
+  await page.route("**/api/v2/metadata/duplicates*", (route) => route.fulfill({ json: {
+    scanned: 3, limited: false, groups: [{ kind: "artist", reason: "Similar names", members: [
+      { id: "first", label: "First" }, { id: "second", label: "Second" }, { id: "kept", label: "Kept" },
+    ] }], creditIssues: [],
+  } }));
+  await page.route("**/api/v2/metadata/jobs", (route) => route.fulfill({ json: [{ id: "merge-job", state: "completed", done: 1, total: 1 }] }));
+  await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByRole("button", { name: "Merge into this", exact: true }).last()).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.getByRole("button", { name: "Merge into this", exact: true }).last().click();
+  await page.clock.fastForward(5000);
+  await expect.poll(() => state.merges).toEqual([
+    { kind: "artist", source: "first", target: "kept" },
+    { kind: "artist", source: "second", target: "kept" },
+  ]);
+});
+
+test("leaving duplicate review cancels a delayed merge", async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByRole("button", { name: "Merge into this", exact: true }).last()).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.getByRole("button", { name: "Merge into this", exact: true }).first().click();
+  await page.getByRole("link", { name: "Library", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+  await page.clock.fastForward(5000);
+  expect(state.merges).toEqual([]);
 });

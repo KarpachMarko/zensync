@@ -135,7 +135,12 @@ def expand_credit(values, ids, old_name, replacements):
             return list(values), list(ids)
         raise ValueError("Combined credit does not match native tags: expected " + repr(old_name) + "; found " + repr(values) + ". Review this song's artist tags")
     if len(ids) > len(values):
-        raise ValueError("Artist names and IDs cannot be aligned safely")
+        if len(values) == 1:
+            # Every ID belongs to the one compound credit being replaced.
+            # Do not guess which ID identifies which selected artist.
+            ids = []
+        else:
+            raise ValueError("Artist names and IDs cannot be aligned safely")
     padded = list(ids) + [""] * (len(values) - len(ids))
     names, mbids = [], []
     for name, mbid in zip(values, padded):

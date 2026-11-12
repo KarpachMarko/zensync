@@ -28,16 +28,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
         classNames: {
           toast:
             "relative flex w-full items-center gap-3 rounded-lg border border-solid border-border bg-card p-4 pr-10 font-sans text-sm text-foreground shadow-lg",
-          title: "font-semibold",
-          description: "mt-1 text-muted-foreground",
+          content: "min-w-0 flex-1",
+          title: "font-semibold [overflow-wrap:anywhere]",
+          description: "mt-1 text-muted-foreground [overflow-wrap:anywhere]",
           success: "text-[#a2d5bd]",
           error: "text-[#ffb5bb]",
           closeButton:
             "absolute top-2 right-2 rounded-md border-0 bg-transparent! p-1 text-muted-foreground cursor-pointer hover:bg-muted! focus-visible:outline-2 focus-visible:outline-primary",
           actionButton:
-            "ml-auto rounded-md border-0 bg-primary px-3 py-1 text-primary-foreground cursor-pointer",
+            "ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border-0 bg-primary px-2 py-1 text-xs text-primary-foreground cursor-pointer",
           cancelButton:
-            "ml-auto rounded-md border border-solid border-border bg-transparent px-3 py-1 text-muted-foreground cursor-pointer",
+            "ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-solid border-border bg-transparent px-2 py-1 text-xs text-muted-foreground cursor-pointer",
         },
       }}
       {...props}

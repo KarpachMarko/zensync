@@ -182,6 +182,11 @@ type navAlbum struct {
 	Songs     []Song `json:"song"`
 }
 type NavResponse struct {
+	MusicFolders struct {
+		Folders []struct {
+			ID json.Number `json:"id"`
+		} `json:"musicFolder"`
+	} `json:"musicFolders"`
 	Artists struct {
 		Index []struct {
 			Artists []struct {
@@ -221,7 +226,8 @@ type NavResponse struct {
 		AdminRole bool   `json:"adminRole"`
 	} `json:"user"`
 	Search struct {
-		Songs []Song `json:"song"`
+		Songs  []Song     `json:"song"`
+		Albums []navAlbum `json:"album"`
 	} `json:"searchResult3"`
 	Song      Song           `json:"song"`
 	Playlist  RemotePlaylist `json:"playlist"`

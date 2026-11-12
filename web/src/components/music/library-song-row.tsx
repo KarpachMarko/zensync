@@ -1,3 +1,4 @@
+import { ManualMerge } from "./manual-merge";
 import { parseAsString, useQueryState } from "nuqs";
 import { Actions, Row } from "@/components/layout/content";
 import { AppLink } from "@/components/navigation";
@@ -39,14 +40,15 @@ export function LibrarySongRow({
   }
   return (
     <article data-slot="library-song">
-      <Row>
+      <Row className="flex-wrap">
         <div className="min-w-0 flex-1">
           <strong>{song.title}</strong>
           <Caption>
             {song.artist} / {song.album} / {time(song.duration)}
           </Caption>
         </div>
-        <Actions className="shrink-0">
+        <Actions className="max-w-full">
+          {canEdit && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
           {canEdit && (
             <Button
               size="sm"

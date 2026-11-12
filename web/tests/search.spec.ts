@@ -343,6 +343,9 @@ test("library pagination appends server pages through Query", async ({
             album: "Album",
             duration: 120,
           },
+          ...(offset === 0 ? Array.from({ length: 30 }, (_, index) => ({
+            id: `filler-${index}`, title: `Library filler ${index}`, artist: "Artist", album: "Album", duration: 120,
+          })) : []),
         ],
         nextOffset: offset === 0 ? 100 : -1,
       },
@@ -350,14 +353,13 @@ test("library pagination appends server pages through Query", async ({
   });
   await page.goto("/library/songs");
   await expect(page.getByText("Library page 0", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await page.getByText("Library filler 29", { exact: true }).scrollIntoViewIfNeeded();
+
   await expect(
     page.getByText("Library page 100", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Library page 0", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Load more", exact: true }),
-  ).not.toBeVisible();
+  await page.getByText("Library filler 29", { exact: true }).scrollIntoViewIfNeeded();
   expect(offsets).toEqual([0, 100]);
 });
 

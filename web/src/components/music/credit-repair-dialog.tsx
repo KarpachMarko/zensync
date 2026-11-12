@@ -5,7 +5,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useAppForm } from "@/hooks/use-app-form";
 import { api } from "@/lib/api";
-import type { CreditIssue, DuplicateReport, MetadataJob } from "@/lib/metadata";
+import { suggestedCreditArtists, type CreditIssue, type DuplicateReport, type MetadataJob } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Text } from "@/components/typography";
@@ -14,7 +14,7 @@ const schema = z.object({
   artists: z.array(z.string().trim().min(1).max(500)).min(2).max(20)
     .refine((names) => new Set(names.map((name) => name.trim().toLocaleLowerCase())).size === names.length, "List each artist once"),
 });
-const nameKey = (name: string) => name.toLocaleLowerCase().replace(/[^\p{L}\p{N}\p{M}]/gu, "");
+
 
 export function CreditRepairDialog({ issue, disabled }: { issue: CreditIssue; disabled: boolean }) {
   const [open, setOpen] = useState(false);
@@ -31,7 +31,7 @@ export function CreditRepairDialog({ issue, disabled }: { issue: CreditIssue; di
     refetchInterval: jobID && !failed ? 5000 : false,
   });
   const client = useQueryClient();
-  const proposed = issue.parts.map((part) => issue.knownArtists.find((name) => nameKey(name) === nameKey(part)) ?? part);
+  const proposed = suggestedCreditArtists(issue);
   const save = useMutation({
     mutationFn: (artists: string[]) => api<{ id: string; songs: number }>("/metadata/credits/separate", "POST", {
       source: issue.id, name: issue.name, role: issue.role, artists: artists.map((name) => name.trim()),

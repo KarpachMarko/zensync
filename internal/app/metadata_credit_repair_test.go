@@ -308,6 +308,7 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 	a.HTTP = &clientCopy
 	// Credit-only writes must verify native tags in the existing Python
 	// process, without launching ffprobe or looking up a merge destination.
+	// One getSong verifies the source; another resolves the scan target folder.
 	a.ffprobePath = filepath.Join(t.TempDir(), "unexpected-ffprobe")
 	if err := os.WriteFile(a.ffprobePath, []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 		t.Fatal(err)
@@ -315,8 +316,8 @@ func TestBulkKnownCreditsPreservesBothRoles(t *testing.T) {
 	started := time.Now()
 	a.runMetadata(context.Background())
 	t.Logf("Credit write: %s, getSong=%d, downloads=%d, ffprobe=0", time.Since(started), getSongs.Load(), downloads.Load())
-	if getSongs.Load() != 1 || downloads.Load() != 1 {
-		t.Fatalf("Repeated verification: getSong=%d download=%d", getSongs.Load(), downloads.Load())
+	if getSongs.Load() != 2 || downloads.Load() != 1 {
+		t.Fatalf("Unexpected verification/scan traffic: getSong=%d download=%d", getSongs.Load(), downloads.Load())
 	}
 
 	var state, message string
@@ -448,5 +449,64 @@ func TestBulkCreditRepairIncludesUnknownOnlyWhenSelected(t *testing.T) {
 	got := readNativeCredits(t, path)
 	if !reflect.DeepEqual(got.Artists, []string{"Vacio", "New Artist", "Guest"}) || !reflect.DeepEqual(got.ArtistIDs, []string{"", "", "guest"}) {
 		t.Fatalf("Incorrect new credits: %+v", got)
+	}
+}
+
+func TestSeparateCollapsedAlbumCreditWithMultipleMBIDs(t *testing.T) {
+	a, admin, songs := metadataLibraryFixtureFormat(t, ".flac", "flac", "")
+	known := songs["one"]
+	known.Artists = []ArtistCredit{{ID: "solo", Name: "163ONMYNECK"}}
+	songs["one"] = known
+	song := songs["two"]
+	song.AlbumArtist = "163ONMYNECK & Polyana"
+	song.AlbumArtists = []ArtistCredit{{ID: "combined", Name: song.AlbumArtist}}
+	songs["two"] = song
+	path := filepath.Join(a.musicDir, song.Path)
+	before := nativeCredits{[]string{song.Artist}, []string{song.AlbumArtist}, []string{"track-id"}, []string{"first-id", "second-id"}}
+	writeNativeCredits(t, path, before)
+	audio, err := metadataAudioHash(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate", mustJSON(map[string]any{"source": "combined", "name": song.AlbumArtist, "role": "album artist", "artists": []string{"163ONMYNECK", "Polyana"}}), ""), 202)
+	a.runMetadata(context.Background())
+	var state, message string
+	a.DB.QueryRow("SELECT state,message FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state, &message)
+	if state != "completed" {
+		t.Fatalf("%s: %s", state, message)
+	}
+	want := nativeCredits{before.Artists, []string{"163ONMYNECK", "Polyana"}, before.ArtistIDs, nil}
+	got := readNativeCredits(t, path)
+	if !reflect.DeepEqual(got.Artists, want.Artists) || !reflect.DeepEqual(got.AlbumArtists, want.AlbumArtists) || !reflect.DeepEqual(got.ArtistIDs, want.ArtistIDs) || len(got.AlbumArtistIDs) != 0 {
+		t.Fatalf("Unexpected credits: %+v", got)
+	}
+	after, err := metadataAudioHash(context.Background(), path)
+	if err != nil || audio != after {
+		t.Fatalf("Audio changed: %v", err)
+	}
+}
+
+func TestSeparateMixedCreditsRejectsAmbiguousMBIDs(t *testing.T) {
+	a, admin, songs := metadataLibraryFixtureFormat(t, ".flac", "flac", "")
+	known := songs["one"]
+	known.Artists = []ArtistCredit{{ID: "solo", Name: "163ONMYNECK"}}
+	songs["one"] = known
+	song := songs["two"]
+	song.AlbumArtist = "163ONMYNECK & Polyana / Guest"
+	song.AlbumArtists = []ArtistCredit{{ID: "combined", Name: "163ONMYNECK & Polyana"}, {ID: "guest", Name: "Guest"}}
+	songs["two"] = song
+	path := filepath.Join(a.musicDir, song.Path)
+	writeNativeCredits(t, path, nativeCredits{[]string{song.Artist}, []string{"163ONMYNECK & Polyana", "Guest"}, []string{"track-id"}, []string{"first-id", "second-id", "guest-id"}})
+	before, err := hashFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/credits/separate", mustJSON(map[string]any{"source": "combined", "name": "163ONMYNECK & Polyana", "role": "album artist", "artists": []string{"163ONMYNECK", "Polyana"}}), ""), 202)
+	a.runMetadata(context.Background())
+	var state string
+	a.DB.QueryRow("SELECT state FROM metadata_jobs ORDER BY rowid DESC LIMIT 1").Scan(&state)
+	after, err := hashFile(path)
+	if state != "failed" || err != nil || before != after {
+		t.Fatalf("Ambiguous IDs must leave original intact: state=%s err=%v", state, err)
 	}
 }

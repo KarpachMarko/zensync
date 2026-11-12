@@ -73,3 +73,17 @@ export type LibraryBrowse = {
   name: string;
   nextOffset: number;
 };
+
+/** Resolve proposed names to existing artists, keeping the first occurrence. */
+export function suggestedCreditArtists(issue: CreditIssue): string[] {
+  const nameKey = (name: string) => name.toLocaleLowerCase().replace(/[^\p{L}\p{N}\p{M}]/gu, "");
+  const seen = new Set<string>();
+  return issue.parts
+    .map((part) => issue.knownArtists.find((name) => nameKey(name) === nameKey(part)) ?? part.trim())
+    .filter((name) => {
+      const key = name.trim().toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}

@@ -78,6 +78,10 @@ func metadataLibraryFixtureFormat(t *testing.T, ext, codec, rate string) (*App, 
 				list = append(list, songs[sid])
 			}
 			out["searchResult3"] = map[string]any{"song": list}
+		case "getScanStatus":
+			out["scanStatus"] = map[string]any{"scanning": false}
+		case "getMusicFolders":
+			out["musicFolders"] = map[string]any{"musicFolder": []map[string]any{{"id": "1"}}}
 		case "startScan":
 		case "getAlbum":
 			out["album"] = map[string]any{"id": "album-one", "name": "Album", "song": []Song{songs["one"]}}

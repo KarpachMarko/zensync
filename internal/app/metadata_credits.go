@@ -8,7 +8,7 @@ import (
 
 // These are review hints only. Delimiters do not establish artist identity:
 // legal names, bands containing punctuation and collaborations need review.
-var creditSeparator = regexp.MustCompile(`(?i),\s+|\s+[x×]\s+|\s+/\s+|\s+(?:feat\.?|ft\.?)\s+|;\s*`)
+var creditSeparator = regexp.MustCompile(`(?i),\s+|\s+[x×&]\s+|\s+/\s+|\s+(?:feat\.?|ft\.?)\s+|;\s*`)
 
 type creditIssue struct {
 	ID           string   `json:"id"`

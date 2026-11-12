@@ -1,3 +1,5 @@
+import { AutoLoadMore } from "@/components/auto-load-more";
+import { ManualMerge } from "@/components/music/manual-merge";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
 import { AppLink } from "@/components/navigation";
@@ -83,7 +85,7 @@ export function Library({
         value={view}
         onValueChange={(value) => navigate(`/library/${value}`)}
       >
-        <TabsList>
+        <TabsList className="max-w-full flex-wrap h-auto!">
           <TabsTrigger value="songs">Songs</TabsTrigger>
           <TabsTrigger value="playlists">Playlists</TabsTrigger>
           <TabsTrigger value="artists">Artists</TabsTrigger>
@@ -131,7 +133,7 @@ export function Library({
           compact
           value={state.q}
           label="Filter library"
-          placeholder={`Filter ${state.collection && view !== "artists" ? "songs" : view}…`}
+          placeholder={`Filter ${state.collection ? view === "artists" && state.contents !== "songs" ? "albums" : "songs" : view}…`}
           onSearch={async (q) => {
             await setState({ q });
           }}
@@ -148,10 +150,10 @@ export function Library({
       {collections.map((item) => (
         <div
           key={item.id}
-          className="flex items-center justify-between gap-2 border-b border-border py-2"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2"
         >
           <AppLink
-            className="min-w-0 flex-1 no-underline"
+            className="min-w-0 flex-1 break-words no-underline"
             aria-label={
               item.artist ? `${item.name} — ${item.artist}` : item.name
             }
@@ -173,6 +175,7 @@ export function Library({
               </span>
             )}
           </AppLink>
+          {canEdit && view !== "playlists" && <ManualMerge kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
           <span className="text-xs text-muted-foreground">
             {item.songCount}{" "}
             {view === "artists" && !state.collection ? "albums" : "songs"}
@@ -199,15 +202,8 @@ export function Library({
             found.
           </Text>
         )}
-      {result.hasNextPage && (
-        <Button
-          variant="outline"
-          disabled={result.isFetching}
-          onClick={() => void result.fetchNextPage()}
-        >
-          Load more
-        </Button>
-      )}
+      <AutoLoadMore key={`${view}:${state.collection}:${state.q}:${state.contents}`} hasMore={!!result.hasNextPage} loading={result.isFetching}
+        error={result.isFetchNextPageError} loadMore={result.fetchNextPage} />
     </>
   );
 }

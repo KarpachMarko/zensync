@@ -1,3 +1,4 @@
+import { Undo2Icon } from "lucide-react";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { CreditIssues } from "@/components/music/credit-issues";
@@ -12,25 +13,17 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
-import { useAppForm } from "@/hooks/use-app-form";
 import { api } from "@/lib/api";
-import type { DuplicateGroup, DuplicateReport } from "@/lib/metadata";
+import type { DuplicateGroup, DuplicateReport, MetadataJob } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
-import { useId, useState } from "react";
-import { z } from "zod";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export function Utilities({ admin }: { admin: boolean }) {
@@ -130,7 +123,6 @@ export function Utilities({ admin }: { admin: boolean }) {
     </>
   );
 }
-const mergeSchema = z.object({ target: z.string().min(1) });
 function DuplicateCandidates({
   group,
   limited,
@@ -139,31 +131,73 @@ function DuplicateCandidates({
   limited: boolean;
 }) {
   const client = useQueryClient();
-  const id = useId();
-  const [source, setSource] = useState<
-    DuplicateGroup["members"][number] | null
-  >(null);
+  const [scheduled, setScheduled] = useState<string | null>(null);
+  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; toast: string | number } | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    if (pending.current) {
+      clearTimeout(pending.current.timer);
+      toast.dismiss(pending.current.toast);
+    }
+    controller.current?.abort();
+  }, []);
   const merge = useMutation({
-    mutationFn: (target: string) =>
-      api<{ id: string; songs: number }>("/metadata/merge", "POST", {
-        kind: group.kind,
-        source: source?.id,
-        target,
-      }),
-    onSuccess: async (data) => {
-      toast.success(`Merge queued for ${data.songs} songs`);
-      setSource(null);
-      await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] });
+    mutationFn: async (target: string) => {
+      const abort = new AbortController();
+      controller.current = abort;
+      const sources = group.members.filter((member) => member.id !== target);
+      let songs = 0;
+      for (const [index, source] of sources.entries()) {
+        abort.signal.throwIfAborted();
+        const result = await api<{ id: string; songs: number }>("/metadata/merge", "POST", {
+          kind: group.kind, source: source.id, target,
+        }, undefined, abort.signal);
+        songs += result.songs;
+        // Larger groups can touch the same files. Finish each source before
+        // preparing the next merge snapshot.
+        if (index < sources.length - 1) {
+          while (true) {
+            abort.signal.throwIfAborted();
+            const jobs = await client.fetchQuery({
+              queryKey: ["api", "/metadata/jobs"], staleTime: 0,
+              queryFn: () => api<MetadataJob[]>("/metadata/jobs", "GET", undefined, undefined, abort.signal),
+            });
+            const job = jobs.find((item) => item.id === result.id);
+            if (!job || job.state === "failed") throw new Error(job?.message ?? "Merge job disappeared; refresh Activity before retrying");
+            if (job.state === "completed") break;
+            await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      }
+      return { songs };
     },
+    onSuccess: (data) => { if (!controller.current?.signal.aborted) toast.success(`Merge queued for ${data.songs} songs`); },
+    onError: (error) => { if (!controller.current?.signal.aborted) toast.error(error.message); },
+    onSettled: async () => { await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); },
   });
-  const form = useAppForm({
-    defaultValues: { target: group.members[0].id },
-    validators: { onSubmit: mergeSchema },
-    onSubmit: async ({ value }) => {
-      if (source && source.id !== value.target)
-        await merge.mutateAsync(value.target).catch(() => undefined);
-    },
-  });
+  function scheduleMerge(member: DuplicateGroup["members"][number]) {
+    if (pending.current || merge.isPending || merge.isSuccess) return;
+    merge.reset();
+    setScheduled(member.id);
+    const notification = toast("Merge starts in 5 seconds", {
+      description: `Keep “${member.label}” and merge the other ${group.kind} entries.`,
+      duration: 5000,
+      action: { label: <><Undo2Icon className="size-3.5 shrink-0" aria-hidden="true" />Undo</>, onClick: () => {
+        if (!pending.current) return;
+        clearTimeout(pending.current.timer);
+        toast.dismiss(pending.current.toast);
+        pending.current = null;
+        setScheduled(null);
+      } },
+    });
+    const timer = setTimeout(() => {
+      pending.current = null;
+      setScheduled(null);
+      toast.dismiss(notification);
+      merge.mutate(member.id);
+    }, 5000);
+    pending.current = { timer, toast: notification };
+  }
   return (
     <section className="rounded border border-border px-3 py-2">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -177,32 +211,7 @@ function DuplicateCandidates({
           </span>
         </div>
         <DismissSuggestion rule={{ kind: group.kind, ids: group.members.map((member) => member.id) }} />
-        {group.kind !== "song" && (
-          <form.Field name="target">
-            {(field) => (
-              <div className="flex items-center gap-2">
-                <Label htmlFor={id} className="text-xs">
-                  Keep {group.kind}
-                </Label>
-                <Select
-                  value={field.state.value}
-                  onValueChange={field.handleChange}
-                >
-                  <SelectTrigger id={id} className="h-8 max-w-60 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {group.members.map((member) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.label} ({member.id.slice(0, 6)})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </form.Field>
-        )}
+
       </div>
       {group.kind === "song" ? (
         group.members.map((member) => (
@@ -222,12 +231,10 @@ function DuplicateCandidates({
           />
         ))
       ) : (
-        <form.Subscribe selector={(state) => state.values.target}>
-          {(target) =>
-            group.members.map((member) => (
+        group.members.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center justify-between gap-2 border-t border-border py-1.5"
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-1.5"
               >
                 <div className="min-w-0">
                   <strong className="text-sm">{member.label}</strong>
@@ -253,70 +260,17 @@ function DuplicateCandidates({
                     </details>
                   )}
                 </div>
-                {member.id === target ? (
-                  <Badge variant="outline">Keep</Badge>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={limited || merge.isPending}
-                    onClick={() => setSource(member)}
-                  >
-                    Merge into selected {group.kind}
-                  </Button>
-                )}
+                <Button size="sm" variant="outline"
+                  disabled={limited || scheduled !== null || merge.isPending || merge.isSuccess}
+                  onClick={() => scheduleMerge(member)}>
+                  Merge into this
+                </Button>
               </div>
             ))
-          }
-        </form.Subscribe>
       )}
-      <Dialog
-        open={!!source}
-        onOpenChange={(open) => {
-          if (!open && !merge.isPending) setSource(null);
-        }}
-      >
-        <DialogContent className="gap-2 rounded-md p-3 sm:max-w-md">
-          <DialogTitle className="m-0 pr-8 text-base">
-            Merge {group.kind}
-          </DialogTitle>
-          <DialogDescription className="m-0 text-sm">
-            Move {source?.count ?? "all"} songs from “{source?.label}” to the
-            selected {group.kind}. This updates file tags and rescans Navidrome.
-            Audio is verified before replacing the original file.
-          </DialogDescription>
-          <form.Subscribe selector={(state) => state.values.target}>
-            {(target) => (
-              <Text className="my-1 text-sm">
-                Destination:{" "}
-                {group.members.find((member) => member.id === target)?.label}
-              </Text>
-            )}
-          </form.Subscribe>
-          {merge.error && (
-            <Text role="alert" className="my-1 text-xs">
-              {merge.error.message}
-            </Text>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={merge.isPending}
-              onClick={() => setSource(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={merge.isPending}
-              onClick={() => void form.handleSubmit()}
-            >
-              Confirm merge
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {scheduled && <Text role="status" className="my-1 text-xs">Merge scheduled. Use Undo in the notification to cancel.</Text>}
+      {merge.error && !controller.current?.signal.aborted && <Text role="alert">{merge.error.message}</Text>}
+
     </section>
   );
 }

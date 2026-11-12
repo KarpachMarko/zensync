@@ -30,6 +30,7 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 		}
 		c = personal
 	}
+	search := strings.TrimSpace(q.Get("q"))
 	view := q.Get("view")
 	sid := q.Get("id")
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -59,6 +60,10 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 		if sid == "" {
 			endpoint = "getAlbumList2"
 			params = url.Values{"type": {"alphabeticalByName"}, "size": {"100"}, "offset": {strconv.Itoa(offset)}}
+			if search != "" {
+				endpoint = "search3"
+				params = url.Values{"query": {search}, "albumCount": {"100"}, "albumOffset": {strconv.Itoa(offset)}, "songCount": {"0"}, "artistCount": {"0"}}
+			}
 		} else {
 			endpoint = "getAlbum"
 			params.Set("id", sid)
@@ -111,6 +116,13 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 	case "getAlbum":
 		songs = out.Album.Songs
 		name = out.Album.Name
+	case "search3":
+		for _, album := range out.Search.Albums {
+			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount})
+		}
+		if len(collections) == 100 {
+			next = offset + 100
+		}
 	case "getAlbumList2":
 		for _, album := range out.AlbumList.Albums {
 			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount})
@@ -124,8 +136,8 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 			return strings.ToLower(collections[i].Name) < strings.ToLower(collections[j].Name)
 		})
 	}
-	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	if search != "" {
+	search = strings.ToLower(search)
+	if search != "" && endpoint != "search3" {
 		filtered := []libraryCollection{}
 		for _, item := range collections {
 			if strings.Contains(strings.ToLower(item.Name+" "+item.Artist), search) {
