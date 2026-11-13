@@ -169,6 +169,17 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 404, "Source or destination no longer exists; refresh candidates")
 		return
 	}
+	if in.Kind == "song" {
+		compatibility, err := a.songMergeCompatibility(r.Context(), c, source[0], target)
+		if err != nil {
+			fail(w, 409, "Cannot verify recording replacement: "+err.Error())
+			return
+		}
+		if !compatibility.Compatible {
+			fail(w, 409, compatibility.Warning)
+			return
+		}
+	}
 	changes := []metadataChange{}
 	for _, s := range source {
 		edit, e := a.existingMetadataEdit(s)

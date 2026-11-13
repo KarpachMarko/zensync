@@ -1,4 +1,5 @@
 import { DuplicateSongAudio } from "./duplicate-song-audio";
+import { LibraryRecordingDetails, type LibraryPlaybackControls } from "./library-recording-details";
 import { ManualMerge } from "./manual-merge";
 import { parseAsString, useQueryState } from "nuqs";
 import { Actions, Row } from "@/components/layout/content";
@@ -15,12 +16,14 @@ export function LibrarySongRow({
   canDelete,
   canEdit = false,
   audioPreview,
+  playback,
   duplicateAction,
 }: {
   song: LibrarySong;
   canDelete: boolean;
   canEdit?: boolean;
   duplicateAction?: ReactNode;
+  playback?: LibraryPlaybackControls;
   audioPreview?: Parameters<typeof DuplicateSongAudio>[0]["preview"];
 }) {
   const [, setEditSong] = useQueryState("editSong", parseAsString);
@@ -46,15 +49,15 @@ export function LibrarySongRow({
   return (
     <article data-slot="library-song" className={audioPreview ? "border-b border-solid border-border py-2 last:border-b-0" : undefined}>
       <Row className={audioPreview ? "flex-wrap border-b-0" : "flex-wrap"}>
-        <div className="min-w-0 flex-1">
+        {playback ? <LibraryRecordingDetails song={song} playback={playback} /> : <div className="min-w-0 flex-1">
           <strong>{song.title}</strong>
           <Caption>
             {song.artist} / {song.album} / {time(song.duration)}
           </Caption>
-        </div>
+        </div>}
         <Actions className="max-w-full">
           {duplicateAction}
-          {canEdit && !audioPreview && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
+          {canEdit && !audioPreview && <ManualMerge kind="song" source={{ id: song.id, name: song.title, song }} onOpen={playback?.stop} />}
           {canEdit && (
             <Button
               size="sm"

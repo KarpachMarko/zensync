@@ -5,10 +5,10 @@ import { Disc3Icon, LoaderCircleIcon, PauseIcon, PlayIcon, Volume2Icon, VolumeXI
 import type { useAudioPreview } from "@/hooks/use-audio-preview";
 import { useState } from "react";
 
-function Cover({ url }: { url?: string }) {
+export function RecordingCover({ url, className = "size-11" }: { url?: string; className?: string }) {
   const [failed, setFailed] = useState(false);
-  const safe = url && /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am|statcore\.hitmcdn\.com)\//.test(url);
-  return <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+  const safe = url && (/^\/api\/v2\/library\/cover\?id=[^\s]+$/.test(url) || /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am|statcore\.hitmcdn\.com)\//.test(url));
+  return <div className={`flex ${className} shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground`}>
     {safe && !failed ? <img src={url} alt="" className="size-full object-cover" onError={() => setFailed(true)} /> : <Disc3Icon className="size-6" aria-hidden="true" />}
   </div>;
 }
@@ -25,7 +25,7 @@ export function AudioPlayer<T extends { duration: number }>({ preview, caption, 
       onError={preview.failed} onTimeUpdate={preview.syncTime} onLoadedMetadata={preview.syncTime}
       onWaiting={() => preview.setLoading(true)} onCanPlay={() => preview.setLoading(false)} />
     {track && <section aria-label="Preview player" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2.5">
-      <div className="sm:row-span-2"><Cover key={recordingKey(track)} url={cover?.(track)} /></div>
+      <div className="sm:row-span-2"><RecordingCover key={recordingKey(track)} url={cover?.(track)} /></div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 truncate text-xs"><strong>{title(track)}</strong><span className="ml-2 text-muted-foreground">{artist(track)}</span></div>

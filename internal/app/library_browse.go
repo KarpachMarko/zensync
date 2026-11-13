@@ -9,10 +9,13 @@ import (
 )
 
 type libraryCollection struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Artist string `json:"artist,omitempty"`
-	Count  int    `json:"songCount"`
+	CoverArt string  `json:"coverArt,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
+	Year     int     `json:"year,omitempty"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Artist   string  `json:"artist,omitempty"`
+	Count    int     `json:"songCount"`
 }
 
 func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
@@ -88,7 +91,7 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 	case "getArtists":
 		for _, index := range out.Artists.Index {
 			for _, artist := range index.Artists {
-				collections = append(collections, libraryCollection{ID: artist.ID, Name: artist.Name, Count: artist.AlbumCount})
+				collections = append(collections, libraryCollection{ID: artist.ID, Name: artist.Name, Count: artist.AlbumCount, CoverArt: artist.CoverArt})
 			}
 		}
 	case "getArtist":
@@ -111,21 +114,21 @@ func (a *App) browseLibrary(w http.ResponseWriter, r *http.Request, u User) {
 		}
 		name = out.Artist.Name
 		for _, album := range out.Artist.Albums {
-			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount})
+			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount, CoverArt: album.CoverArt, Year: album.Year, Duration: album.Duration})
 		}
 	case "getAlbum":
 		songs = out.Album.Songs
 		name = out.Album.Name
 	case "search3":
 		for _, album := range out.Search.Albums {
-			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount})
+			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount, CoverArt: album.CoverArt, Year: album.Year, Duration: album.Duration})
 		}
 		if len(collections) == 100 {
 			next = offset + 100
 		}
 	case "getAlbumList2":
 		for _, album := range out.AlbumList.Albums {
-			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount})
+			collections = append(collections, libraryCollection{ID: album.ID, Name: album.Name, Artist: album.Artist, Count: album.SongCount, CoverArt: album.CoverArt, Year: album.Year, Duration: album.Duration})
 		}
 		if len(collections) == 100 {
 			next = offset + 100

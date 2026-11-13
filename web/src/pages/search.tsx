@@ -20,6 +20,7 @@ import { rankSearchResults } from "@/lib/search-ranking";
 import { useApiMutation } from "@/hooks/use-api";
 import type { Album, LibrarySong, Track } from "@/lib/api";
 import { albumTarget, albumURL, api, label, providerLabel, requestKey, time, trackTarget } from "@/lib/api";
+import { recordingKey, type Recording } from "@/lib/playback";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
@@ -32,7 +33,7 @@ export function Search({
   canDelete: boolean;
   canEdit?: boolean;
 }) {
-  const preview = useRecordingPreview();
+  const preview = useRecordingPreview<Recording>();
   const [urlQuery, setUrlQuery] = useQueryState(
     "q",
     parseAsString.withDefault("").withOptions({ history: "push" }),
@@ -208,6 +209,7 @@ export function Search({
                 <LibrarySongRow
                   key={song.id}
                   song={song}
+                  playback={preview}
                   canDelete={canDelete}
                   canEdit={canEdit}
                 />
@@ -346,7 +348,7 @@ export function Search({
                         playing={
                           preview.playing &&
                           !!preview.active &&
-                          trackTarget(preview.active) === trackTarget(t)
+                          recordingKey(preview.active) === trackTarget(t)
                         }
                         onPreview={preview.toggle}
                       />

@@ -178,12 +178,14 @@ type RemotePlaylist struct {
 	SongCount int    `json:"songCount"`
 }
 type navAlbum struct {
-	CoverArt  string `json:"coverArt"`
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Artist    string `json:"artist"`
-	SongCount int    `json:"songCount"`
-	Songs     []Song `json:"song"`
+	Duration  float64 `json:"duration"`
+	Year      int     `json:"year"`
+	CoverArt  string  `json:"coverArt"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Artist    string  `json:"artist"`
+	SongCount int     `json:"songCount"`
+	Songs     []Song  `json:"song"`
 }
 type NavResponse struct {
 	MusicFolders struct {
@@ -197,6 +199,7 @@ type NavResponse struct {
 				ID         string `json:"id"`
 				Name       string `json:"name"`
 				AlbumCount int    `json:"albumCount"`
+				CoverArt   string `json:"coverArt"`
 			} `json:"artist"`
 		} `json:"index"`
 	} `json:"artists"`
@@ -208,13 +211,14 @@ type NavResponse struct {
 
 	AlbumList struct {
 		Albums []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Artist    string `json:"artist"`
-			SongCount int    `json:"songCount"`
-			Year      int    `json:"year"`
-			CoverArt  string `json:"coverArt"`
-			Created   string `json:"created"`
+			Duration  float64 `json:"duration"`
+			ID        string  `json:"id"`
+			Name      string  `json:"name"`
+			Artist    string  `json:"artist"`
+			SongCount int     `json:"songCount"`
+			Year      int     `json:"year"`
+			CoverArt  string  `json:"coverArt"`
+			Created   string  `json:"created"`
 		} `json:"album"`
 	} `json:"albumList2"`
 	Type          string `json:"type"`
@@ -245,6 +249,9 @@ type NavResponse struct {
 }
 
 func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params url.Values) (*http.Response, error) {
+	return a.navRawHeaders(ctx, c, endpoint, params, nil)
+}
+func (a *App) navRawHeaders(ctx context.Context, c Credentials, endpoint string, params url.Values, headers http.Header) (*http.Response, error) {
 	if params == nil {
 		params = url.Values{}
 	}
@@ -261,10 +268,15 @@ func (a *App) navRaw(ctx context.Context, c Credentials, endpoint string, params
 		return nil, errors.New("invalid Navidrome URL")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if value := headers.Get("Range"); value != "" {
+		req.Header.Set("Range", value)
+	}
 	client := a.HTTP
-	if endpoint == "download" {
+	if endpoint == "download" || endpoint == "stream" {
 		copy := *a.HTTP
 		copy.Timeout = 3 * time.Minute
+		copy.Jar = nil
+		copy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 		client = &copy
 	}
 	started := time.Now()

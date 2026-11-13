@@ -62,6 +62,9 @@ export type DuplicateReport = {
   groups: DuplicateGroup[];
 };
 export type LibraryCollection = {
+  coverArt?: string;
+  duration?: number;
+  year?: number;
   id: string;
   name: string;
   artist?: string;
@@ -90,3 +93,5 @@ export function suggestedCreditArtists(issue: CreditIssue): string[] {
 
 export type EnrichmentLibrary = { songs: (LibrarySong & { albumId: string; albumArtist: string; coverArt?: string })[]; limited: boolean };
 export type EnrichmentMode = "missing-covers" | "force-covers" | "missing-lyrics" | "album-order";
+
+export type MergeCompatibility = { compatible: boolean; sourceFormat: string; targetFormat: string; warning?: string };

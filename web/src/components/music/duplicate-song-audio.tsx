@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
 import type { LibrarySong } from "@/lib/api";
 import { Text } from "@/components/typography";
 import { Button } from "@/components/ui/button";
 import { PlayIcon, PauseIcon } from "lucide-react";
 import { useAudioPreview } from "@/hooks/use-audio-preview";
-import { AudioPlayer } from "@/components/music/audio-player";
+import { DockedAudioPlayer } from "@/components/music/docked-audio-player";
+import { recordingCover } from "@/lib/playback";
 
 type LibraryPreview = ReturnType<typeof useAudioPreview<LibrarySong>>;
 export function DuplicateSongAudio({ song, preview }: { song: LibrarySong; preview: LibraryPreview }) {
@@ -23,29 +23,5 @@ export function DuplicateSongAudio({ song, preview }: { song: LibrarySong; previ
 }
 
 export function DuplicateAudioPlayer({ preview }: { preview: LibraryPreview }) {
-  const anchor=useRef<HTMLDivElement>(null);
-  const dock=useRef<HTMLDivElement>(null);
-  const [bounds,setBounds]=useState({left:0,width:0,height:0});
-  useLayoutEffect(() => {
-    const measure=() => {
-      if (!anchor.current || !dock.current) return;
-      const rect=anchor.current.getBoundingClientRect();
-      const height=dock.current.getBoundingClientRect().height;
-      setBounds(previous => previous.left===rect.left && previous.width===rect.width && previous.height===height ? previous : {left:rect.left,width:rect.width,height});
-    };
-    const observer=new ResizeObserver(measure);
-    if (anchor.current) observer.observe(anchor.current);
-    if (dock.current) observer.observe(dock.current);
-    window.addEventListener("resize",measure);
-    measure();
-    return () => {observer.disconnect();window.removeEventListener("resize",measure);};
-  },[]);
-  return <div ref={anchor} style={{height:preview.active ? bounds.height+24 : 0}}>
-    <div ref={dock} role={preview.active ? "region" : undefined} aria-label={preview.active ? "Duplicate comparison player" : undefined}
-      className={preview.active ? "fixed bottom-4 z-30 rounded-lg border border-solid border-border bg-background p-3 shadow-lg" : undefined}
-      style={preview.active ? {left:bounds.left,width:bounds.width} : undefined}>
-      <AudioPlayer preview={preview} caption="Original file" title={song => song.title} artist={song => song.artist} recordingKey={song => song.id} />
-      {preview.error && <Text role="alert" className="mb-0 text-xs">{preview.error} Use Listen to retry.</Text>}
-    </div>
-  </div>;
+  return <DockedAudioPlayer preview={preview} caption="Original file" regionLabel="Duplicate comparison player" title={song => song.title} artist={song => song.artist} cover={recordingCover} recordingKey={song => song.id} />;
 }

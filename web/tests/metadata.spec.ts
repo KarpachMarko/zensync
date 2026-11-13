@@ -98,6 +98,7 @@ async function fixture(page: Page, admin = true) {
       deletes.push(route.request().postDataJSON());
       return route.fulfill({ status: 201, json: { id: "deletion" } });
     }
+    if (p === "/api/v2/metadata/merge-compatibility") return route.fulfill({ json: { compatible: true, sourceFormat: "flac", targetFormat: "flac" } });
     if (p === "/api/v2/metadata/merge") {
       merges.push(route.request().postDataJSON());
       return route.fulfill({
@@ -712,7 +713,7 @@ test("Library manual merges search unrelated artist and album names and require 
     });
     await dialog.getByLabel(`Find destination ${kind}`, { exact: true }).fill("Джарахов");
     await dialog.getByRole("button", { name: "Search", exact: true }).click();
-    await dialog.getByRole("button", { name: /Эльдар Джарахов ·/ }).click();
+    await dialog.getByRole("button", { name: `Select ${kind}: Эльдар Джарахов`, exact: true }).click();
     expect(state.merges).toHaveLength(kind === "artist" ? 0 : 1);
     await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
     await expect(dialog).toHaveCount(0);
@@ -732,7 +733,7 @@ test("Library song replacement explicitly keeps existing album and playlist refe
   await page.route("**/api/v2/library?**", (route) => route.fulfill({ json: { songs: [{ ...song, id: "kept-recording", title: "Kept recording" }], nextOffset: -1 } }));
   await dialog.getByLabel("Find destination song", { exact: true }).fill("Kept");
   await dialog.getByRole("button", { name: "Search", exact: true }).click();
-  await dialog.getByRole("button", { name: /Kept recording/ }).click();
+  await dialog.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
   expect(state.merges).toEqual([]);
   await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
   await expect(dialog).toHaveCount(0);

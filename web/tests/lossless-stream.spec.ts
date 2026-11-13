@@ -138,3 +138,25 @@ test(`${provider}: Search streams without creating an acquisition`, async ({ pag
 });
 
 }
+
+
+test("import review switches between provider and existing library audio in the same player", async ({ page }) => {
+  await fixture(page, "lossless");
+  const local = { id: "42", title: "Existing recording", artist: "Artist", album: "Album", duration: 90 };
+  await page.route("**/candidates", route => route.fulfill({ json: { library: [local], deezer: [], recordings: [lossless], providers: [{ id: "lossless", name: "Lossless.am", tracks: [lossless] }] } }));
+  await page.route("**/api/v2/library/stream?**", route => route.fulfill({ contentType: "audio/wav", body: audioFixture() }));
+  await page.goto("/imports/migration?recording=source");
+  const dialog = page.getByRole("dialog", { name: "Best match", exact: true });
+  await dialog.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
+  const audio = dialog.locator("audio");
+  await expect(audio).toHaveCount(1);
+  await expect.poll(() => audio.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
+  await dialog.getByRole("button", { name: "Play library recording: Existing recording", exact: true }).click();
+  await expect(audio).toHaveAttribute("src", /library\/stream\?id=42/);
+  await expect(audio).toHaveCount(1);
+  await expect.poll(() => audio.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
+  await expect(dialog.getByRole("button", { name: "Play stream of Best match", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
+  await expect(audio).toHaveAttribute("src", /providers\/lossless\/stream/);
+  await expect(audio).toHaveCount(1);
+});

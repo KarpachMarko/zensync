@@ -227,6 +227,10 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.separateArtistCredits(w, r, u)
 		return
 	}
+	if path == "/merge-compatibility" && r.Method == "GET" {
+		a.mergeCompatibility(w, r)
+		return
+	}
 	if path == "/merge" && r.Method == "POST" {
 		a.mergeMetadata(w, r, u)
 		return
