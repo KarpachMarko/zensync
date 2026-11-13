@@ -371,6 +371,9 @@ func (a *App) albumTracks(ctx context.Context, id string) ([]Track, error) {
 }
 
 type AlbumSummary struct {
+	Provider   string `json:"provider,omitempty"`
+	Source     string `json:"source,omitempty"`
+	SourceID   string `json:"sourceId,omitempty"`
 	ID         int64  `json:"id"`
 	Title      string `json:"title"`
 	Artist     Artist `json:"artist"`

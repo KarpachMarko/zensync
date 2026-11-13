@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,54 +23,26 @@ func (p losslessProvider) Ready() error { return nil }
 var losslessSource = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,40}$`)
 
 func (p losslessProvider) Search(ctx context.Context, q string) ([]Track, error) {
-	tracks := []Track{}
-	if strings.TrimSpace(q) == "" {
-		return tracks, nil
-	}
-	body, _ := json.Marshal(map[string]string{"query": q})
-	resp, err := p.request(ctx, "POST", "/api/search", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return p.decodeTracks(resp)
+	result, err := p.searchCatalog(ctx, q)
+	return result.Tracks, err
 }
 func (p losslessProvider) decodeTracks(resp *http.Response) ([]Track, error) {
-	tracks := []Track{}
 	var result struct {
-		Tracks []struct {
-			ID        int64    `json:"id"`
-			Title     string   `json:"title"`
-			Duration  float64  `json:"duration"`
-			Source    string   `json:"source"`
-			ISRC      string   `json:"isrc"`
-			Explicit  bool     `json:"explicit"`
-			Available *bool    `json:"streaming_available"`
-			Artists   []Artist `json:"artists"`
-			Album     struct {
-				Title   string `json:"title"`
-				Picture struct {
-					Medium string `json:"medium"`
-				} `json:"picture"`
-			} `json:"album"`
-		} `json:"tracks"`
+		Tracks []losslessTrackRecord `json:"tracks"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&result) != nil {
-		return nil, errors.New("Invalid Lossless.am search response")
+		return nil, errors.New("Invalid Lossless.am track response")
 	}
-	for _, r := range result.Tracks {
-		if r.ID <= 0 || r.Title == "" || len(r.Artists) == 0 || !validDuration(r.Duration) || !losslessSource.MatchString(r.Source) {
+	tracks := []Track{}
+	for _, raw := range result.Tracks {
+		track, err := normalizeLosslessTrack(raw)
+		if err != nil {
 			continue
 		}
-		t := Track{Provider: "lossless", Source: r.Source, ID: r.ID, Title: r.Title, Duration: r.Duration, ISRC: r.ISRC, Contributors: r.Artists, ExplicitLyrics: &r.Explicit, Readable: r.Available}
-		t.Artist.Name = r.Artists[0].Name
-		t.Album.Title = r.Album.Title
-		t.Album.Cover = r.Album.Picture.Medium
-		// Unverified third-party preview URLs from the service are intentionally omitted.
-		if _, err := p.app.DB.Exec("INSERT INTO provider_tracks(target,metadata) VALUES(?,?) ON CONFLICT(target) DO UPDATE SET metadata=excluded.metadata", trackTarget(t), mustJSON(t)); err != nil {
-			return nil, err
-		}
-		tracks = append(tracks, t)
+		tracks = append(tracks, track)
+	}
+	if err := p.rememberTracks(tracks); err != nil {
+		return nil, err
 	}
 	return tracks, nil
 }

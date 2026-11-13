@@ -15,20 +15,16 @@ import {
   Text,
 } from "@/components/typography";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { rankSearchResults } from "@/lib/search-ranking";
 import { useApiMutation } from "@/hooks/use-api";
-import type { LibrarySong, Track } from "@/lib/api";
-import { api, label, providerLabel, requestKey, time, trackTarget } from "@/lib/api";
+import type { Album, LibrarySong, Track } from "@/lib/api";
+import { albumTarget, albumURL, api, label, providerLabel, requestKey, time, trackTarget } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-type FoundAlbum = {
-  id: number;
-  title: string;
-  artist: { name: string };
-  trackCount?: number;
-};
 export function Search({
   canDelete,
   canEdit = false,
@@ -52,9 +48,9 @@ export function Search({
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
   const searched = !!urlQuery.trim();
-  const [albumRequested, setAlbumRequested] = useState<Set<number>>(new Set());
+  const [albumRequested, setAlbumRequested] = useState<Set<string>>(new Set());
   const [requested, setRequested] = useState<Set<string>>(new Set());
-  const albumKeys = useRef<Record<number, string>>({});
+  const albumKeys = useRef<Record<string, string>>({});
   const keys = useRef<Record<string, string>>({});
   const [actionError, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,7 +66,7 @@ export function Search({
       last.length === 100 ? pages.length * 100 : undefined,
     enabled: searched,
   });
-  type SearchResponse = Track[] | { tracks: Track[]; album?: FoundAlbum; albums?: FoundAlbum[]; warnings?: string[] };
+  type SearchResponse = Track[] | { tracks: Track[]; album?: Album; albums?: Album[]; warnings?: string[] };
   const providers = ["deezer", "lossless", "hitmo"] as const;
   const directProvider = /^(https:\/\/eu\.hitmoz\.com\/|hitmo:)/.test(urlQuery) ? "hitmo"
     : /^(https:\/\/lossless\.am\/|lossless:)/.test(urlQuery) ? "lossless"
@@ -84,12 +80,12 @@ export function Search({
   const responses = candidateQueries.map(query => query.data);
   const found = responses.flatMap(response => !response || Array.isArray(response) || !response.album ? [] : [response.album])[0];
   const album = found?.trackCount === 1 ? undefined : found;
-  const albums = [...new Map(responses.flatMap(response => !response || Array.isArray(response) ? [] : response.albums ?? []).filter(album => album.trackCount !== 1).map(album => [album.id, album])).values()];
+  const albums = rankSearchResults([...new Map(responses.flatMap(response => !response || Array.isArray(response) ? [] : response.albums ?? []).filter(album => album.trackCount !== 1).map(album => [albumTarget(album), album])).values()], urlQuery);
   const warnings = [...new Set(responses.flatMap(response => !response || Array.isArray(response) ? [] : response.warnings ?? []))];
   candidateQueries.forEach((query, index) => {
     if (query.error) warnings.push(providerLabel(selectedProviders[index] as Track["provider"]) + ": " + query.error.message);
   });
-  const results = [...new Map(responses.flatMap(response => Array.isArray(response) ? response : response?.tracks ?? []).map(track => [trackTarget(track), track])).values()];
+  const results = rankSearchResults([...new Map(responses.flatMap(response => Array.isArray(response) ? response : response?.tracks ?? []).map(track => [trackTarget(track), track])).values()], urlQuery);
   const library = libraryQuery.data?.pages.flat() ?? [];
   const libraryError = libraryQuery.error?.message;
   const error = actionError;
@@ -121,17 +117,17 @@ export function Search({
       setBusy(false);
     }
   }
-  async function requestAlbum(chosen: FoundAlbum) {
+  async function requestAlbum(chosen: Album) {
     setBusy(true);
     setError("");
     try {
       await mutate(
         "/requests",
         "POST",
-        { target: "deezer:album:" + chosen.id },
-        (albumKeys.current[chosen.id] ||= requestKey()),
+        { target: albumTarget(chosen) },
+        (albumKeys.current[albumTarget(chosen)] ||= requestKey()),
       );
-      setAlbumRequested(new Set([...albumRequested, chosen.id]));
+      setAlbumRequested(new Set([...albumRequested, albumTarget(chosen)]));
       toast.success("Album request saved.");
     } catch (e) {
       setError((e as Error).message);
@@ -144,28 +140,27 @@ export function Search({
       <PageHeading tabIndex={-1}>Search</PageHeading>
       {canEdit && <MetadataJobs />}
       <Text>
-        Find music in your library, on Deezer, lossless.am or Hitmo. Deezer also
-        supports song and album links.
+        Find music in your library, on Deezer, lossless.am or Hitmo. Deezer and Lossless.am also
+        support song and album links.
       </Text>
-      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Media provider">
-        {(["all", "deezer", "lossless", "hitmo"] as const).map((name) => (
-          <Button
-            key={name}
-            variant="outline"
-            aria-pressed={provider === name}
-            onClick={() => void setProvider(name)}
-          >
-            {name === "all" ? "All providers" : name === "lossless" ? "lossless.am" : providerLabel(name)}
-          </Button>
-        ))}
-      </div>
+      <Tabs value={provider} onValueChange={value => {
+        if (value === "all" || value === "deezer" || value === "lossless" || value === "hitmo") void setProvider(value);
+      }} className="min-w-0">
+        <TabsList aria-label="Media provider" className="mb-4 h-auto! max-w-full flex-wrap justify-start">
+          {(["all", "deezer", "lossless", "hitmo"] as const).map(name => (
+            <TabsTrigger key={name} value={name} className="min-h-9 px-3 max-[400px]:px-2 max-[400px]:text-xs">
+              {name === "all" ? "All providers" : name === "lossless" ? "lossless.am" : providerLabel(name)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      <TabsContent value={provider} forceMount>
       <SearchBox
         label={
           (provider === "deezer" || provider === "all")
             ? "Song, artist, album or Deezer URL"
-            : provider === "hitmo" ? "Song, artist or Hitmo URL" : "Song or artist on lossless.am"
+            : provider === "hitmo" ? "Song, artist or Hitmo URL" : "Song, artist, album or Lossless.am URL"
         }
-        placeholder="Song, artist, album name or Deezer link"
+        placeholder="Song, artist, album name or provider link"
         value={urlQuery}
         disabled={busy}
         onSearch={search}
@@ -227,7 +222,7 @@ export function Search({
               (showSongs ? results.length : 0) +
               (showAlbums
                 ? albums.length +
-                  (album && !albums.some((a) => a.id === album.id) ? 1 : 0)
+                  (album && !albums.some((a) => albumTarget(a) === albumTarget(album)) ? 1 : 0)
                 : 0)
             }
           >
@@ -241,7 +236,7 @@ export function Search({
                 <div>
                   <SectionHeading>{album.title}</SectionHeading>
                   <Text>
-                    {album.artist.name} / {album.trackCount}{" "}
+                    {album.artist.name} / {providerLabel(album.provider)} / {album.trackCount}{" "}
                     {album.trackCount === 1 ? "track" : "tracks"}
                   </Text>
                   <Text className="text-[13px]">
@@ -250,16 +245,16 @@ export function Search({
                   </Text>
                 </div>
                 <Button
-                  disabled={busy || albumRequested.has(album.id)}
+                  disabled={busy || albumRequested.has(albumTarget(album))}
                   onClick={() => void requestAlbum(album)}
                 >
-                  {albumRequested.has(album.id)
+                  {albumRequested.has(albumTarget(album))
                     ? "Album requested"
                     : "Request album"}
                 </Button>
               </section>
             )}
-            {showAlbums && album && albumRequested.has(album.id) && (
+            {showAlbums && album && albumRequested.has(albumTarget(album)) && (
               <Text role="status">
                 Album request saved.{" "}
                 <AppLink to="/requests">View the single album request</AppLink>.
@@ -279,12 +274,12 @@ export function Search({
               <section aria-label="Album results">
                 <SectionHeading>Albums</SectionHeading>
                 {albums.map((found) => (
-                  <Row asChild key={found.id}>
+                  <Row asChild key={albumTarget(found)}>
                     <article className="max-[700px]:items-start">
                       <div>
                         <strong>{found.title}</strong>
                         <Caption>
-                          {found.artist.name}
+                          {found.artist.name} / {providerLabel(found.provider)}
                           {found.trackCount
                             ? " / " +
                               found.trackCount +
@@ -295,16 +290,16 @@ export function Search({
                       <Actions>
                         <AppLink
                           to={searchHref(
-                            "https://www.deezer.com/album/" + found.id,
+                            albumURL(found),
                           )}
                         >
                           View tracks
                         </AppLink>
                         <Button
-                          disabled={busy || albumRequested.has(found.id)}
+                          disabled={busy || albumRequested.has(albumTarget(found))}
                           onClick={() => void requestAlbum(found)}
                         >
-                          {albumRequested.has(found.id)
+                          {albumRequested.has(albumTarget(found))
                             ? "Album requested"
                             : "Request album"}
                         </Button>
@@ -314,7 +309,7 @@ export function Search({
                 ))}
               </section>
             )}
-            {showAlbums && albums.some((a) => albumRequested.has(a.id)) && (
+            {showAlbums && albums.some((a) => albumRequested.has(albumTarget(a))) && (
               <Text role="status">
                 Album request saved.{" "}
                 <AppLink to="/requests">View requests</AppLink>.
@@ -360,11 +355,11 @@ export function Search({
                       disabled={
                         busy ||
                         requested.has(trackTarget(t)) ||
-                        !!(album && albumRequested.has(album.id))
+                        !!(album && albumRequested.has(albumTarget(album)))
                       }
                       onClick={() => void request(t)}
                     >
-                      {album && albumRequested.has(album.id)
+                      {album && albumRequested.has(albumTarget(album))
                         ? "Included in album"
                         : requested.has(trackTarget(t))
                           ? "Requested"
@@ -377,6 +372,8 @@ export function Search({
           </SearchSection>
         </>
       )}
+      </TabsContent>
+      </Tabs>
       <PreviewPlayer preview={preview} />
       {showSongs && requested.size > 0 && (
         <Text role="status">

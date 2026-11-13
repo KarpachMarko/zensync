@@ -61,7 +61,7 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 				a.internal(w, err)
 				return
 			}
-		} else if strings.HasPrefix(out[index].Target, "deezer:album:") {
+		} else if isAlbumTarget(out[index].Target) {
 			out[index].Kind = "album"
 			out[index].Items, e = a.albumItems(out[index].ID)
 			if e != nil {
@@ -123,7 +123,7 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 		fail(w, 400, "Reserved request key prefix")
 		return
 	}
-	if strings.HasPrefix(in.Target, "deezer:album:") {
+	if isAlbumTarget(in.Target) {
 		if in.Upgrade || in.SourceID != "" {
 			fail(w, 400, "Album upgrades and migration-entry album substitutions are not supported")
 			return

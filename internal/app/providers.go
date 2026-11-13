@@ -89,21 +89,26 @@ func (a *App) searchProvider(w http.ResponseWriter, r *http.Request, name string
 		fail(w, 400, "Search is too long")
 		return
 	}
+	if name == "lossless" {
+		result, err := (losslessProvider{a}).searchCatalog(r.Context(), q)
+		if err != nil {
+			fail(w, 502, err.Error())
+			return
+		}
+		if r.URL.Query().Get("details") == "1" {
+			send(w, 200, result)
+		} else {
+			send(w, 200, result.Tracks)
+		}
+		return
+	}
 	tracks, err := p.Search(r.Context(), q)
 	if err != nil {
 		fail(w, 502, err.Error())
 		return
 	}
 	if r.URL.Query().Get("details") == "1" {
-		providerName := "Lossless.am"
-		if name == "hitmo" {
-			providerName = "Hitmo"
-		}
-		warning := providerName + " supports individual songs and full-song listening. Album requests are unavailable."
-		if name == "hitmo" {
-			warning = "Hitmo supports individual MP3 songs and full-song listening. Album requests are unavailable."
-		}
-		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{warning}})
+		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{}})
 		return
 	}
 	send(w, 200, tracks)

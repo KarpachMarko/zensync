@@ -114,6 +114,24 @@ test(`${provider}: Search streams without creating an acquisition`, async ({ pag
   expect(position.bottom).toBe(position.viewport);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect(player).toBeInViewport();
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 720 });
+    const alignment = await player.evaluate(element => {
+      const button = element.querySelector('[aria-label="Close player"]');
+      const icon = button?.querySelector("svg");
+      const artwork = element.firstElementChild;
+      if (!button || !icon || !artwork) throw new Error("Missing player controls");
+      const b = button.getBoundingClientRect(), i = icon.getBoundingClientRect(), a = artwork.getBoundingClientRect();
+      return { artworkOffset: Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)),
+        iconX: Math.abs((i.left + i.width / 2) - (b.left + b.width / 2)),
+        iconY: Math.abs((i.top + i.height / 2) - (b.top + b.height / 2)),
+        overflow: element.scrollWidth - element.clientWidth };
+    });
+    expect(alignment.artworkOffset).toBeLessThanOrEqual(1);
+    expect(alignment.iconX).toBeLessThanOrEqual(1);
+    expect(alignment.iconY).toBeLessThanOrEqual(1);
+    expect(alignment.overflow).toBeLessThanOrEqual(1);
+  }
   await page.getByRole("button", { name: "Close player", exact: true }).click();
   await expect(player).toHaveCount(0);
   await expect(audio).not.toHaveAttribute("src");

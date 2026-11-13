@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { rankSearchResults } from "../src/lib/search-ranking";
 
 async function musicFixture(
   page: Page,
@@ -499,7 +500,8 @@ test("settings tabs support keyboard navigation, URL state, and action toasts", 
   ).toBeVisible();
   failSave = true;
   const before = qualities.length;
-  await page.getByRole("switch", { name: "Enable FLAC", exact: true }).check();
+  // This save is deliberately rejected and rolls the switch back immediately.
+  await page.getByRole("switch", { name: "Enable FLAC", exact: true }).click();
   await expect(
     toasts.filter({ hasText: "Cannot save quality right now" }),
   ).toBeVisible();
@@ -628,8 +630,8 @@ test("provider selection persists and requests namespaced lossless recordings", 
     candidates.getByRole("button", { name: "Requested", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("group", { name: "Media provider" })
-    .getByRole("button", { name: "lossless.am", exact: true })
+    .getByRole("tablist", { name: "Media provider" })
+    .getByRole("tab", { name: "lossless.am", exact: true })
     .click();
   await expect(page).toHaveURL(/provider=lossless/);
   await candidates
@@ -638,8 +640,8 @@ test("provider selection persists and requests namespaced lossless recordings", 
   expect(targets).toEqual(["deezer:track:99", "lossless:track:main:99"]);
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "lossless.am", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    page.getByRole("tab", { name: "lossless.am", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test("Hitmo search persists its provider and requests a namespaced song", async ({ page }) => {
@@ -655,14 +657,14 @@ test("Hitmo search persists its provider and requests a namespaced song", async 
     return route.fulfill({ status: 201, json: { id: "hitmo-request" } });
   });
   await page.goto("/search?provider=hitmo&q=Artist");
-  await expect(page.getByRole("button", { name: "Hitmo", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Hitmo", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Hitmo recording", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Open Hitmo recording in Hitmo/ })).toHaveAttribute("href", "https://eu.hitmoz.com/song/42");
   await expect(page.getByRole("button", { name: /Play stream of Hitmo recording/ })).toBeEnabled();
   await page.getByRole("button", { name: "Request", exact: true }).click();
   await expect.poll(() => targets).toEqual(["hitmo:track:42"]);
   await page.reload();
-  await expect(page.getByRole("button", { name: "Hitmo", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Hitmo", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 
 test("searches every provider concurrently by default and preserves partial results", async ({ page }) => {
@@ -678,15 +680,75 @@ test("searches every provider concurrently by default and preserves partial resu
     return route.fulfill({ json: { tracks: [{ provider, id: 42, title: `${provider} recording`, title_version: "", duration: 90, artist: { name: "Artist" }, album: { title: "Album" } }], albums: [] } });
   });
   await page.goto("/search?q=Artist");
-  await expect(page.getByRole("button", { name: "All providers", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "All providers", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => new Set(called).size).toBe(3);
   await expect(page.getByText("deezer recording", { exact: true })).toBeVisible();
   releaseHitmo();
   await expect(page.getByText("hitmo recording", { exact: true })).toBeVisible();
   await expect(page.getByText("Lossless.am: Provider offline", { exact: true })).toBeVisible({ timeout: 15000 });
-  await page.getByRole("button", { name: "Hitmo", exact: true }).click();
+  await page.getByRole("tab", { name: "Hitmo", exact: true }).click();
   await expect(page).toHaveURL(/provider=hitmo/);
   await expect(page.getByText("deezer recording", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "All providers", exact: true }).click();
+  await page.getByRole("tab", { name: "All providers", exact: true }).click();
   await expect(page.getByText("deezer recording", { exact: true })).toBeVisible();
+});
+
+test("provider tabs show selection and support keyboard navigation without overflow", async ({ page }) => {
+  await musicFixture(page, false);
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto("/search");
+  const tabs = page.getByRole("tablist", { name: "Media provider" });
+  const all = tabs.getByRole("tab", { name: "All providers" });
+  await expect(all).toHaveAttribute("aria-selected", "true");
+  await all.focus();
+  await all.press("ArrowRight");
+  const deezer = tabs.getByRole("tab", { name: "Deezer" });
+  await expect(deezer).toBeFocused();
+  await expect(deezer).toHaveAttribute("aria-selected", "true");
+  await expect(all).toHaveAttribute("aria-selected", "false");
+  await expect(page).toHaveURL(/provider=deezer/);
+  await expect(page.getByRole("tabpanel")).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.reload();
+  await expect(deezer).toHaveAttribute("aria-selected", "true");
+});
+
+test("combined results rank matches across providers as later responses arrive", async ({ page }) => {
+  await musicFixture(page, false);
+  let releaseLossless: () => void = () => {};
+  const gate = new Promise<void>(resolve => { releaseLossless = resolve; });
+  await page.route("**/api/v2/search?**", async route => {
+    const provider = new URL(route.request().url()).searchParams.get("provider");
+    if (provider === "lossless") await gate;
+    const title = provider === "lossless" ? "Without Me" : provider === "hitmo" ? "Without Me (Live)" : "Without You";
+    return route.fulfill({ json: {
+      tracks: [{ id: 42, provider, source: "main", title, title_version: "", duration: 120, artist: { name: "Eminem" }, album: { title: "Album" } }],
+      albums: [], warnings: [],
+    } });
+  });
+  await page.goto("/search?q=Eminem%20Without%20Me");
+  const rows = page.getByRole("region", { name: "Candidates for import", exact: true }).locator("article");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator("strong")).toHaveText("Without Me (Live)");
+  releaseLossless();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.locator("strong")).toHaveText(["Without Me", "Without Me (Live)", "Without You"]);
+  await expect(rows.first()).toContainText("Lossless.am");
+  await page.getByRole("tab", { name: "Hitmo", exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first().locator("strong")).toHaveText("Without Me (Live)");
+});
+
+
+test("relevance normalizes accents and punctuation, supports prefixes and respects requested versions", () => {
+  const recordings = [
+    { title: "Deja Vu (Live)", artist: { name: "Singer" } },
+    { title: "Unrelated", artist: { name: "Singer" }, album: { title: "Deja Vu" } },
+    { title: "Déjà-vu", artist: { name: "Singer" } },
+  ];
+  expect(rankSearchResults(recordings, "SINGER deja vu").map(item => item.title)).toEqual(["Déjà-vu", "Deja Vu (Live)", "Unrelated"]);
+  expect(rankSearchResults(recordings, "deja vu live")[0]?.title).toBe("Deja Vu (Live)");
+  expect(rankSearchResults(recordings, "sin dej")[0]?.title).toBe("Déjà-vu");
+  expect(rankSearchResults(recordings, "")).toEqual(recordings);
+  expect(recordings[0]?.title).toBe("Deja Vu (Live)");
 });
