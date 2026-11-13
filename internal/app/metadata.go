@@ -197,6 +197,15 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.metadataEnrichment(w, r, u)
 		return
 	}
+	collectionParts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(collectionParts) == 2 && (collectionParts[0] == "albums" || collectionParts[0] == "artists") {
+		kind := "album"
+		if collectionParts[0] == "artists" {
+			kind = "artist"
+		}
+		a.metadataCollection(w, r, u, kind, collectionParts[1])
+		return
+	}
 	parts := strings.Split(strings.TrimPrefix(path, "/songs/"), "/")
 	if strings.HasPrefix(path, "/songs/") && len(parts) == 2 && parts[0] != "" && parts[1] == "audio" {
 		a.metadataAudio(w, r, parts[0])

@@ -21,19 +21,21 @@ import (
 )
 
 type metadataChange struct {
-	OrderVersion  int                  `json:"orderVersion,omitempty"`
-	OrderAlbumID  int64                `json:"orderAlbumId,omitempty"`
-	Enrichment    string               `json:"enrichment,omitempty"`
-	Resolved      bool                 `json:"resolved,omitempty"`
-	Skip          bool                 `json:"skip,omitempty"`
-	CreditRepairs []creditRepairPlan   `json:"creditRepairs,omitempty"`
-	UploadedCover string               `json:"uploadedCover,omitempty"`
-	CreditRepair  *creditRepairPlan    `json:"creditRepair,omitempty"`
-	ArtistMerge   *artistMergeIdentity `json:"artistMerge,omitempty"`
-	Song          Song                 `json:"song"`
-	Edit          MetadataEdit         `json:"edit"`
-	MergeKind     string               `json:"mergeKind,omitempty"`
-	Target        *Song                `json:"target,omitempty"`
+	CollectionKind string               `json:"collectionKind,omitempty"`
+	CollectionName string               `json:"collectionName,omitempty"`
+	OrderVersion   int                  `json:"orderVersion,omitempty"`
+	OrderAlbumID   int64                `json:"orderAlbumId,omitempty"`
+	Enrichment     string               `json:"enrichment,omitempty"`
+	Resolved       bool                 `json:"resolved,omitempty"`
+	Skip           bool                 `json:"skip,omitempty"`
+	CreditRepairs  []creditRepairPlan   `json:"creditRepairs,omitempty"`
+	UploadedCover  string               `json:"uploadedCover,omitempty"`
+	CreditRepair   *creditRepairPlan    `json:"creditRepair,omitempty"`
+	ArtistMerge    *artistMergeIdentity `json:"artistMerge,omitempty"`
+	Song           Song                 `json:"song"`
+	Edit           MetadataEdit         `json:"edit"`
+	MergeKind      string               `json:"mergeKind,omitempty"`
+	Target         *Song                `json:"target,omitempty"`
 }
 
 func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {

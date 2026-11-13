@@ -917,3 +917,50 @@ test("Keep song handles larger groups and retries partially queued deletions wit
   expect(calls[0]?.key).toBe(calls[2]?.key);
   expect(calls[1]?.key).toBe(calls[3]?.key);
 });
+
+test("Library album editor reuses artwork controls and saves album fields", async ({ page }) => {
+  await fixture(page);
+  let albumBody: unknown;
+  await page.route("**/api/v2/metadata/albums/album", route => {
+    if (route.request().method()==="PUT") {albumBody=route.request().postDataJSON();return route.fulfill({status:202,json:{id:"album-job",songs:2}});}
+    return route.fulfill({json:{songId:"one",songs:2,duration:0,searchArtist:"Band",edit:{title:"Song",artist:"Band",album:"Album",albumArtist:"Band",albumArtistNames:["Band"],coverUrl:"",lyrics:"",syncedLyrics:"",lyricsSource:""}}});
+  });
+  await page.goto("/library/albums");
+  await page.getByRole("button",{name:"Edit album metadata: Album",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.getByText("Edit album metadata",{exact:true})).toBeVisible();
+  await expect(dialog.getByRole("tab",{name:"Lyrics",exact:true})).toHaveCount(0);
+  await expect(dialog.getByRole("textbox",{name:"Title",exact:true})).toHaveCount(0);
+  await dialog.getByRole("combobox",{name:"Album",exact:true}).fill("New album");
+  await dialog.getByRole("combobox",{name:"Album",exact:true}).press("Tab");
+  await dialog.getByRole("tab",{name:"Artwork",exact:true}).click();
+  await expect(dialog.locator('button[data-slot="file-upload-trigger"]')).toBeVisible();
+  await dialog.getByRole("button",{name:"Remove cover",exact:true}).click();
+  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+  await expect.poll(()=>albumBody).toMatchObject({album:"New album",albumArtistNames:["Band"],removeCover:true});
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Library artist rename queues the entered name without a destination picker", async ({ page }) => {
+  await fixture(page);
+  let body:unknown;
+  await page.route("**/api/v2/metadata/artists/artist",route=>{
+    if(route.request().method()==="PUT") {body=route.request().postDataJSON();return route.fulfill({status:202,json:{id:"rename-job",songs:3}});}
+    return route.fulfill({json:{name:"Band",songs:3}});
+  });
+  await page.goto("/library/artists");
+  await page.getByRole("button",{name:"Rename artist: Band",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await dialog.getByRole("textbox",{name:"Artist name",exact:true}).fill("New band");
+  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+  await expect.poll(()=>body).toEqual({name:"New band"});
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Members have no album metadata or artist rename actions", async ({ page }) => {
+  await fixture(page,false);
+  await page.goto("/library/albums");
+  await expect(page.getByRole("button",{name:/Edit album metadata:/})).toHaveCount(0);
+  await page.getByRole("tab",{name:"Artists",exact:true}).click();
+  await expect(page.getByRole("button",{name:/Rename artist:/})).toHaveCount(0);
+});

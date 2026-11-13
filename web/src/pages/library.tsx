@@ -1,3 +1,4 @@
+import { CollectionEditButton, ArtistRenameHost } from "@/components/music/collection-edit";
 import { AutoLoadMore } from "@/components/auto-load-more";
 import { ManualMerge } from "@/components/music/manual-merge";
 import { LibrarySongRow } from "@/components/music/library-song-row";
@@ -81,6 +82,7 @@ export function Library({
   return (
     <>
       <PageHeading tabIndex={-1}>Library</PageHeading>
+      {canEdit && <ArtistRenameHost />}
       <Tabs
         value={view}
         onValueChange={(value) => navigate(`/library/${value}`)}
@@ -111,6 +113,7 @@ export function Library({
           )}
           <span>/</span>
           <strong>{name || "Loading…"}</strong>
+          {canEdit && name && view !== "playlists" && <CollectionEditButton kind={view === "artists" ? "artist" : "album"} source={{id:state.collection,name}} />}
         </div>
       )}
       {view === "artists" && state.collection && (
@@ -175,6 +178,7 @@ export function Library({
               </span>
             )}
           </AppLink>
+          {canEdit && view !== "playlists" && <CollectionEditButton kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
           {canEdit && view !== "playlists" && <ManualMerge kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
           <span className="text-xs text-muted-foreground">
             {item.songCount}{" "}
