@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case path == "/api/v2/providers/hitmo/stream":
+		a.streamHitmo(w, r)
 	case path == "/api/v2/providers/lossless/stream":
 		a.streamLossless(w, r)
 	case (strings.HasPrefix(path, "/api/v2/tasks/") || strings.HasPrefix(path, "/api/v2/requests/")) && strings.HasSuffix(path, "/recording-review") && r.Method == "POST":
@@ -634,6 +636,16 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 			}
 			providers = append(providers, item)
 		}
+		if strings.HasPrefix(q, "https://eu.hitmoz.com/") || strings.HasPrefix(q, "hitmo:") {
+			item := providerCandidates{ID: "hitmo", Name: "Hitmo", Tracks: []Track{}, Matches: map[string]RecordingMatch{}}
+			t, err := a.track(r.Context(), q)
+			if err != nil {
+				item.Error = err.Error()
+			} else {
+				item.Tracks = append(item.Tracks, t)
+			}
+			providers = append(providers, item)
+		}
 		for i := range providers {
 			matches := 0
 			for _, t := range providers[i].Tracks {
@@ -776,7 +788,7 @@ func (a *App) sourceAction(w http.ResponseWriter, r *http.Request, u User, m Mig
 		var revision string
 		_ = a.DB.QueryRow("SELECT revision FROM source_resolutions WHERE source_id=?", sid).Scan(&revision)
 		identity := fmt.Sprint(t.ID)
-		if t.Provider == "lossless" {
+		if t.Provider == "lossless" || t.Provider == "hitmo" {
 			identity = trackTarget(t)
 		}
 		r.Header.Set("Idempotency-Key", digest(sid+identity+prior+revision))

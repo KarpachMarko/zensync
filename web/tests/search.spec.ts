@@ -641,3 +641,26 @@ test("provider selection persists and requests namespaced lossless recordings", 
     page.getByRole("button", { name: "lossless.am", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 });
+
+test("Hitmo search persists its provider and requests a namespaced song", async ({ page }) => {
+  await musicFixture(page, false);
+  const targets: string[] = [];
+  await page.route("**/api/v2/search?**", async route => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get("provider")).toBe("hitmo");
+    return route.fulfill({ json: { tracks: [{ provider: "hitmo", id: 42, title: "Hitmo recording", title_version: "", duration: 120, artist: { name: "Artist" }, album: { title: "" } }], albums: [], warnings: [] } });
+  });
+  await page.route("**/api/v2/requests", async route => {
+    targets.push((route.request().postDataJSON() as { target: string }).target);
+    return route.fulfill({ status: 201, json: { id: "hitmo-request" } });
+  });
+  await page.goto("/search?provider=hitmo&q=Artist");
+  await expect(page.getByRole("button", { name: "Hitmo", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Hitmo recording", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Open Hitmo recording in Hitmo/ })).toHaveAttribute("href", "https://eu.hitmoz.com/song/42");
+  await expect(page.getByRole("button", { name: /Play stream of Hitmo recording/ })).toBeEnabled();
+  await page.getByRole("button", { name: "Request", exact: true }).click();
+  await expect.poll(() => targets).toEqual(["hitmo:track:42"]);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Hitmo", exact: true })).toHaveAttribute("aria-pressed", "true");
+});

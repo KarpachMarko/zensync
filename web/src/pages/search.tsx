@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api, label, requestKey, time, trackTarget } from "@/lib/api";
+import { api, label, providerLabel, requestKey, time, trackTarget } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
@@ -47,7 +47,7 @@ export function Search({
   );
   const [provider, setProvider] = useQueryState(
     "provider",
-    parseAsStringLiteral(["deezer", "lossless"]).withDefault("deezer"),
+    parseAsStringLiteral(["deezer", "lossless", "hitmo"]).withDefault("deezer"),
   );
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
@@ -151,18 +151,18 @@ export function Search({
       <PageHeading tabIndex={-1}>Search</PageHeading>
       {canEdit && <MetadataJobs />}
       <Text>
-        Find music in your library, on Deezer or on lossless.am. Deezer also
+        Find music in your library, on Deezer, lossless.am or Hitmo. Deezer also
         supports song and album links.
       </Text>
       <div className="mb-4 flex gap-2" role="group" aria-label="Media provider">
-        {(["deezer", "lossless"] as const).map((name) => (
+        {(["deezer", "lossless", "hitmo"] as const).map((name) => (
           <Button
             key={name}
             variant="outline"
             aria-pressed={provider === name}
             onClick={() => void setProvider(name)}
           >
-            {name === "deezer" ? "Deezer" : "lossless.am"}
+            {name === "lossless" ? "lossless.am" : providerLabel(name)}
           </Button>
         ))}
       </div>
@@ -170,7 +170,7 @@ export function Search({
         label={
           provider === "deezer"
             ? "Song, artist, album or Deezer URL"
-            : "Song or artist on lossless.am"
+            : provider === "hitmo" ? "Song, artist or Hitmo URL" : "Song or artist on lossless.am"
         }
         placeholder="Song, artist, album name or Deezer link"
         value={urlQuery}
@@ -240,7 +240,7 @@ export function Search({
           >
             {importLoading && (
               <Text role="status">
-                Searching {provider === "deezer" ? "Deezer" : "lossless.am"}…
+                Searching {providerLabel(provider)}…
               </Text>
             )}
             {showAlbums && album && (
@@ -351,7 +351,7 @@ export function Search({
                       <strong>{label(t)}</strong>
                       <Caption>
                         {t.artist.name} / {t.album.title} / {time(t.duration)} /{" "}
-                        {t.provider === "lossless" ? "lossless.am" : "Deezer"}
+                        {providerLabel(t.provider)}
                       </Caption>
                       <RecordingTools
                         track={t}

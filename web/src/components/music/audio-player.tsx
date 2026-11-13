@@ -7,7 +7,7 @@ import { useState } from "react";
 
 function Cover({ url }: { url?: string }) {
   const [failed, setFailed] = useState(false);
-  const safe = url && /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am)\//.test(url);
+  const safe = url && /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am|statcore\.hitmcdn\.com)\//.test(url);
   return <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
     {safe && !failed ? <img src={url} alt="" className="size-full object-cover" onError={() => setFailed(true)} /> : <Disc3Icon className="size-6" aria-hidden="true" />}
   </div>;

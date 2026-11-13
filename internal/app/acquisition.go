@@ -75,7 +75,7 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 		}
 		if quality == "lossless" {
 			valid = s.Codec == "flac"
-		} else if codec, rate, ok := nativeQuality(quality); ok && t.Provider == "lossless" {
+		} else if codec, rate, ok := nativeQuality(quality); ok && (t.Provider == "lossless" || t.Provider == "hitmo") {
 			measured, _ := strconv.Atoi(s.BitRate)
 			if measured == 0 {
 				measured, _ = strconv.Atoi(p.Format.BitRate)
@@ -95,13 +95,13 @@ func (a *App) validateAudio(path string, t Track, quality string) error {
 	for k, v := range p.Format.Tags {
 		tags[strings.ToLower(k)] = v
 	}
-	if t.Provider != "lossless" && tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
+	if t.Provider != "lossless" && t.Provider != "hitmo" && tags["sourceid"] != strconv.FormatInt(t.ID, 10) {
 		return errors.New("Downloaded source ID does not match the selected provider track")
 	}
 	if t.ISRC != "" && !strings.EqualFold(tags["isrc"], t.ISRC) && !strings.EqualFold(tags["tsrc"], t.ISRC) {
 		return errors.New("Downloaded ISRC differs from the selected recording")
 	}
-	if normalized(tags["title"]) != normalized(trackLabel(t)) || !artistMatches(t, tags["artist"]) || normalized(tags["album"]) != normalized(t.Album.Title) {
+	if normalized(tags["title"]) != normalized(trackLabel(t)) || !artistMatches(t, tags["artist"]) || (t.Provider != "hitmo" && normalized(tags["album"]) != normalized(t.Album.Title)) {
 		return errors.New("Downloaded tags differ from the selected track; review is required")
 	}
 	tolerance := verifiedDurationTolerance(t.Duration, t.ISRC != "")
@@ -154,6 +154,11 @@ func sameApprovedRecording(approved, current Track) bool {
 	tolerance := verifiedDurationTolerance(approved.Duration, approved.ISRC != "")
 	if !validDuration(approved.Duration) || !validDuration(current.Duration) || math.Abs(approved.Duration-current.Duration) > tolerance {
 		return false
+	}
+	// Hitmo exposes no album. Revalidate its approved endpoint metadata directly;
+	// import matching still requires an album for automatic cross-catalog selection.
+	if approved.Provider == "hitmo" {
+		return normalized(trackLabel(approved)) == normalized(trackLabel(current)) && normalized(approved.Artist.Name) == normalized(current.Artist.Name) && approved.Album.Title == current.Album.Title
 	}
 	// Compare identity/versions with the same normalization used for review;
 	// duration was checked explicitly above against the approved snapshot.

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { useImportAction } from "@/hooks/use-import-action";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api as readAPI, label, time, trackTarget } from "@/lib/api";
+import { api as readAPI, label, providerLabel, time, trackTarget } from "@/lib/api";
 import { songGuidance, status, type Migration, type Source, type RecordingMatch } from "@/lib/migration";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -166,7 +166,7 @@ export function Review({
             <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-solid border-border px-3 py-2">
               <div className="min-w-0">
                 <h2 className="m-0 mb-1 text-xs font-semibold text-muted-foreground">{requestReplacement && !updatedSource ? "Failed recording" : "Selected recording"}</h2>
-                <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{label(s.candidate)}</strong><Badge variant="outline">{s.candidate.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
+                <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{label(s.candidate)}</strong><Badge variant="outline">{providerLabel(s.candidate.provider)}</Badge></div>
                 <Caption>
                   {s.candidate.artist.name} / {s.candidate.album.title} / {time(s.candidate.duration)}
                 </Caption>
@@ -245,7 +245,7 @@ export function Review({
                 {recordings.map((t) => (
                   <Row key={trackTarget(t)} className="gap-3 py-2">
                     <div className="min-w-0 break-words">
-                      <div className="flex flex-wrap items-center gap-2"><strong>{label(t)}</strong><Badge variant="outline">{t.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
+                      <div className="flex flex-wrap items-center gap-2"><strong>{label(t)}</strong><Badge variant="outline">{providerLabel(t.provider)}</Badge></div>
                       <Caption>{t.artist.name} / {t.album.title} / {time(t.duration)}</Caption>
                       <MatchDetails match={matchFor(t)} />
                       <RecordingTools track={t} playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(t)} onPreview={preview.toggle} />

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import type { Track } from "@/lib/api";
-import { label } from "@/lib/api";
-import { previewURL } from "@/hooks/use-recording-preview";
+import { label, providerLabel } from "@/lib/api";
+import { isFullTrackStream, previewURL } from "@/hooks/use-recording-preview";
 import { ExternalLinkIcon, PauseIcon, PlayIcon } from "lucide-react";
 
 export function RecordingTools({
@@ -13,9 +13,9 @@ export function RecordingTools({
   playing: boolean;
   onPreview: (track: Track) => void;
 }) {
-  const provider = track.provider === "lossless" ? "Lossless.am" : "Deezer";
-  const link = track.provider === "lossless" ? `https://lossless.am/app/track/${track.source}/${track.id}` : `https://www.deezer.com/track/${track.id}`;
-  const stream = track.provider === "lossless";
+  const provider = providerLabel(track.provider);
+  const link = track.provider === "hitmo" ? `https://eu.hitmoz.com/song/${track.id}` : track.provider === "lossless" ? `https://lossless.am/app/track/${track.source}/${track.id}` : `https://www.deezer.com/track/${track.id}`;
+  const stream = isFullTrackStream(track);
   const available = !!previewURL(track);
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">

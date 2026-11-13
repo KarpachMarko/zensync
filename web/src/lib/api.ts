@@ -97,7 +97,7 @@ export async function uploadCoverFile(songID: string, file: File): Promise<{ id:
 }
 
 export type Track = {
-  provider?: "deezer" | "lossless";
+  provider?: "deezer" | "lossless" | "hitmo";
   source?: string;
   id: number;
   title: string;
@@ -109,7 +109,10 @@ export type Track = {
   preview?: string;
 };
 export function trackTarget(t: Track) {
- return t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+ return t.provider === "hitmo" ? `hitmo:track:${t.id}` : t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+}
+export function providerLabel(provider: Track["provider"]) {
+  return provider === "hitmo" ? "Hitmo" : provider === "lossless" ? "Lossless.am" : "Deezer";
 }
 export type LibrarySong = {
   contentType?: string;

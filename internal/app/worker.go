@@ -511,6 +511,9 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 			provider, source, number = "lossless", parts[2], parts[3]
 		}
 	}
+	if strings.HasPrefix(target, "hitmo:track:") {
+		provider, number = "hitmo", strings.TrimPrefix(target, "hitmo:track:")
+	}
 	providerID, _ := strconv.ParseInt(number, 10, 64)
 	if providerID > 0 {
 		if _, e = tx.Exec(`UPDATE source_songs SET server_id=? WHERE candidate<>'' AND json_extract(candidate,'$.id')=? AND COALESCE(NULLIF(json_extract(candidate,'$.provider'),''),'deezer')=? AND COALESCE(json_extract(candidate,'$.source'),'')=? AND match_state IN ('confident','manual') AND server_id=''`, songID, providerID, provider, source); e != nil {

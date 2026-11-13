@@ -41,12 +41,17 @@ func (a *App) mediaProvider(name string) (mediaProvider, error) {
 	switch name {
 	case "", "deezer":
 		return deezerProvider{a}, nil
+	case "hitmo":
+		return hitmoProvider{a}, nil
 	case "lossless":
 		return losslessProvider{a}, nil
 	}
 	return nil, errors.New("Unknown media provider")
 }
 func trackTarget(t Track) string {
+	if t.Provider == "hitmo" {
+		return "hitmo:track:" + strconv.FormatInt(t.ID, 10)
+	}
 	if t.Provider == "lossless" {
 		return "lossless:track:" + t.Source + ":" + strconv.FormatInt(t.ID, 10)
 	}
@@ -56,6 +61,9 @@ func (a *App) track(ctx context.Context, target string) (Track, error) {
 	name := "deezer"
 	if strings.HasPrefix(target, "lossless:") || strings.HasPrefix(target, "https://lossless.am/") {
 		name = "lossless"
+	}
+	if strings.HasPrefix(target, "hitmo:") || strings.HasPrefix(target, "https://eu.hitmoz.com/") {
+		name = "hitmo"
 	}
 	p, err := a.mediaProvider(name)
 	if err != nil {
@@ -87,7 +95,15 @@ func (a *App) searchProvider(w http.ResponseWriter, r *http.Request, name string
 		return
 	}
 	if r.URL.Query().Get("details") == "1" {
-		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{"Lossless.am supports individual song requests. Album requests and previews are unavailable."}})
+		providerName := "Lossless.am"
+		if name == "hitmo" {
+			providerName = "Hitmo"
+		}
+		warning := providerName + " supports individual song requests. Album requests and previews are unavailable."
+		if name == "hitmo" {
+			warning = "Hitmo supports individual MP3 songs and full-song listening. Album requests are unavailable."
+		}
+		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{warning}})
 		return
 	}
 	send(w, 200, tracks)

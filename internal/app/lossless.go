@@ -111,6 +111,16 @@ func (p losslessProvider) Track(ctx context.Context, input string) (Track, error
 	return Track{}, errors.New("Lossless.am did not return the requested recording")
 }
 func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Track, profile string) (string, string, error) {
+	if !losslessSource.MatchString(t.Source) {
+		return "", "", errors.New("Invalid provider recording identity")
+	}
+	return p.app.acquireNative(ctx, job, target, t, profile, "lossless", "Lossless.am", func() (*http.Response, error) {
+		return p.request(ctx, "GET", "/api/download/track?"+url.Values{"id": {fmt.Sprint(t.ID)}, "source": {t.Source}}.Encode(), nil)
+	})
+}
+
+// Native providers share staging, measured quality, validation and publication.
+func (a *App) acquireNative(ctx context.Context, job, target string, t Track, profile, stageName, providerName string, download func() (*http.Response, error)) (string, string, error) {
 	var qualities []string
 	if json.Unmarshal([]byte(profile), &qualities) != nil {
 		return "", "", errors.New("Invalid quality snapshot")
@@ -123,68 +133,68 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 			return "", "", errors.New("Unsupported quality in request")
 		}
 	}
-	if !losslessSource.MatchString(t.Source) || trackTarget(t) != target {
+	if trackTarget(t) != target {
 		return "", "", errors.New("Invalid provider recording identity")
 	}
-	root, err := os.Lstat(p.app.musicDir)
+	root, err := os.Lstat(a.musicDir)
 	if err != nil || !root.IsDir() {
 		return "", "", errors.New("Music mount is missing")
 	}
-	stage := filepath.Join(p.app.dataDir, "staging", job, "lossless")
+	stage := filepath.Join(a.dataDir, "staging", job, stageName)
 	if err = os.MkdirAll(stage, 0700); err != nil {
 		return "", "", err
 	}
 	if err = diskHeadroom(stage, 64<<20); err != nil {
 		return "", "", err
 	}
-	if err = diskHeadroom(p.app.musicDir, 64<<20); err != nil {
+	if err = diskHeadroom(a.musicDir, 64<<20); err != nil {
 		return "", "", err
 	}
-	defer p.app.clearTransfer(job)
+	defer a.clearTransfer(job)
 	existing, err := stagedAudio(stage)
 	if err != nil {
 		return "", "", err
 	}
 	for _, path := range existing {
-		actual, _, probeErr := p.app.nativeAudioQuality(path)
-		if probeErr == nil && nativeQualityAllowed(qualities, actual) && p.app.validateAudio(path, t, actual) == nil {
-			rel, e := p.app.placeAudio(job, target, path, t, actual)
+		actual, _, probeErr := a.nativeAudioQuality(path)
+		if probeErr == nil && nativeQualityAllowed(qualities, actual) && a.validateAudio(path, t, actual) == nil {
+			rel, e := a.placeAudio(job, target, path, t, actual)
 			return rel, actual, e
 		}
 	}
-	p.app.jobState(job, "downloading", "Acquiring best available audio from Lossless.am")
-	resp, err := p.request(ctx, "GET", "/api/download/track?"+url.Values{"id": {fmt.Sprint(t.ID)}, "source": {t.Source}}.Encode(), nil)
+	a.jobState(job, "downloading", "Acquiring best available audio from "+providerName)
+	resp, err := download()
 	if err != nil {
 		return "", "", err
 	}
 	defer resp.Body.Close()
 	contentType := strings.ToLower(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
 	if !strings.HasPrefix(contentType, "audio/") && contentType != "application/octet-stream" && contentType != "video/mp4" {
-		return "", "", errors.New("Lossless.am did not return audio")
+		return "", "", errors.New(providerName + " did not return audio")
 	}
 	if resp.ContentLength > 1<<30 {
-		return "", "", errors.New("Lossless.am audio exceeds 1 GiB")
+		return "", "", errors.New(providerName + " audio exceeds 1 GiB")
 	}
 	f, err := os.CreateTemp(stage, "download-*.partial")
 	if err != nil {
 		return "", "", err
 	}
 	defer os.Remove(f.Name())
-	writer := &losslessDownloadWriter{file: f, app: p.app, job: job, total: resp.ContentLength}
+	writer := &losslessDownloadWriter{file: f, app: a, job: job, total: resp.ContentLength}
 	n, err := io.Copy(writer, io.LimitReader(resp.Body, (1<<30)+1))
 	closeErr := f.Close()
 	if err != nil || closeErr != nil {
-		return "", "", errors.New("Lossless.am audio transfer failed")
+		return "", "", errors.New(providerName + " audio transfer failed")
 	}
 	if n < 1024 || n > 1<<30 || (resp.ContentLength >= 0 && n != resp.ContentLength) {
-		return "", "", errors.New("Lossless.am audio is incomplete or exceeds 1 GiB")
+		return "", "", errors.New(providerName + " audio is incomplete or exceeds 1 GiB")
 	}
-	actual, extension, err := p.app.nativeAudioQuality(f.Name())
+	actual, extension, err := a.nativeAudioQuality(f.Name())
 	if err != nil {
 		return "", "", err
 	}
 	if !nativeQualityAllowed(qualities, actual) {
-		return "", "", fmt.Errorf("Lossless.am returned %s, which is outside the allowed quality profile", actual)
+		return "", "", fmt.Errorf(providerName+" returned %s, which is outside the allowed quality profile", actual)
 	}
 	path := filepath.Join(stage, "audio"+extension)
 	for _, old := range existing {
@@ -197,11 +207,11 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 	if err = os.Rename(f.Name(), path); err != nil {
 		return "", "", err
 	}
-	p.app.jobState(job, "validating", "Verifying audio, tags, duration and actual quality")
-	if err = p.app.validateAudio(path, t, actual); err != nil {
+	a.jobState(job, "validating", "Verifying audio, tags, duration and actual quality")
+	if err = a.validateAudio(path, t, actual); err != nil {
 		return "", "", err
 	}
-	rel, err := p.app.placeAudio(job, target, path, t, actual)
+	rel, err := a.placeAudio(job, target, path, t, actual)
 	return rel, actual, err
 }
 
