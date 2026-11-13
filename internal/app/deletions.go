@@ -75,9 +75,14 @@ func (a *App) deletePermission(w http.ResponseWriter, r *http.Request, actor Use
 // Only server-verified IDs enter this API; callers never supply filesystem paths.
 func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
-		SongID string `json:"songId"`
+		SongID     string `json:"songId"`
+		KeepSongID string `json:"keepSongId,omitempty"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if in.KeepSongID != "" && u.Role != "admin" {
+		fail(w, 403, "Keeping a duplicate and replacing playlist references requires an administrator")
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
@@ -90,7 +95,12 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 	var existing, target string
 	e := a.DB.QueryRow("SELECT id,target FROM requests WHERE owner=? AND idem=?", u.ID, key).Scan(&existing, &target)
 	if e == nil {
-		if target != "navidrome:song:"+in.SongID {
+		var previousKeep string
+		if err := a.DB.QueryRow("SELECT keep_song_id FROM deletion_replacements WHERE request_id=?", existing).Scan(&previousKeep); err != nil && err != sql.ErrNoRows {
+			a.internal(w, err)
+			return
+		}
+		if target != "navidrome:song:"+in.SongID || previousKeep != in.KeepSongID {
 			fail(w, 409, "Idempotency key already used for another request")
 			return
 		}
@@ -115,6 +125,41 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 	if e != nil {
 		fail(w, 409, e.Error())
 		return
+	}
+	var retained int
+	if err := a.DB.QueryRow(`SELECT count(*) FROM deletion_replacements k JOIN requests r ON r.id=k.request_id JOIN jobs j ON j.request_id=r.id WHERE k.keep_song_id=? AND r.decision='approved' AND j.state NOT IN ('completed','cancelled')`, in.SongID).Scan(&retained); err != nil {
+		a.internal(w, err)
+		return
+	}
+	if retained > 0 {
+		fail(w, 409, "This song is being kept by a pending duplicate deletion")
+		return
+	}
+	if in.KeepSongID != "" {
+		if in.KeepSongID == in.SongID || len(in.KeepSongID) > 256 {
+			fail(w, 400, "Choose a different song to keep")
+			return
+		}
+		kept, err := a.nav(r.Context(), c, "getSong", url.Values{"id": {in.KeepSongID}, "realPath": {"true"}})
+		if err != nil || kept.Song.ID != in.KeepSongID {
+			fail(w, 409, "The kept song is unavailable")
+			return
+		}
+		keptPath, _, err := a.deletionPath(r.Context(), c, kept.Song)
+		if err != nil || keptPath == rel {
+			fail(w, 409, "The kept song must be a separate available file")
+			return
+		}
+		var conflicts int
+		err = a.DB.QueryRow(`SELECT count(*) FROM song_deletions d JOIN requests r ON r.id=d.request_id JOIN jobs j ON j.request_id=r.id LEFT JOIN deletion_replacements k ON k.request_id=d.request_id WHERE r.decision='approved' AND j.state NOT IN ('completed','cancelled') AND (d.song_id=? OR k.keep_song_id=?)`, in.KeepSongID, in.SongID).Scan(&conflicts)
+		if err != nil {
+			a.internal(w, err)
+			return
+		}
+		if conflicts > 0 {
+			fail(w, 409, "A pending deletion conflicts with the selected kept song")
+			return
+		}
 	}
 	tx, e := a.DB.Begin()
 	if e != nil {
@@ -141,8 +186,11 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 	if e == nil {
 		_, e = tx.Exec("INSERT INTO song_deletions(request_id,song_id,file_path,checksum) VALUES(?,?,?,?)", rid, in.SongID, rel, checksum)
 	}
+	if e == nil && in.KeepSongID != "" {
+		_, e = tx.Exec("INSERT INTO deletion_replacements(request_id,keep_song_id,server_url) VALUES(?,?,?)", rid, in.KeepSongID, c.URL)
+	}
 	if e == nil && decision == "approved" {
-		_, e = tx.Exec("INSERT INTO jobs(id,request_id,stage) VALUES(?,?,'Queued for library removal')", id(), rid)
+		_, e = tx.Exec("INSERT INTO jobs(id,request_id,state,stage) VALUES(?,?,'queued','Queued for library removal')", id(), rid)
 	}
 	if e == nil {
 		e = audit(tx, u.ID, u.ID, "deletion.requested", rid)
@@ -293,6 +341,13 @@ func (a *App) runDeletion(ctx context.Context) {
 			return
 		}
 	}
+	if phase != "removed" {
+		a.jobState(jid, "queued", "Preserving editable playlist references before removal")
+		if e = a.replaceDeletionPlaylists(ctx, rid, song, rel); e != nil {
+			a.jobState(jid, "failed", e.Error())
+			return
+		}
+	}
 	a.jobState(jid, "queued", "Removing song from the shared library")
 	if e = a.removeLibrarySong(ctx, rid, owner, actor, rel, checksum, song, phase); e != nil {
 		a.jobState(jid, "failed", e.Error())
@@ -340,6 +395,9 @@ func (a *App) removeLibrarySong(ctx context.Context, rid, owner, actor, rel, che
 				return errors.New("Song file changed since the deletion request; submit a new request after review")
 			}
 			if phase == "pending" {
+				if e = a.reserveDeletionTrash(rid, info.Size()); e != nil {
+					return e
+				}
 				if e = os.MkdirAll(backupDir, 0700); e != nil {
 					return errors.New("Cannot create recovery directory")
 				}
@@ -353,7 +411,7 @@ func (a *App) removeLibrarySong(ctx context.Context, rid, owner, actor, rel, che
 					src.Close()
 					return e
 				}
-				_, e = io.Copy(dst, src)
+				_, e = io.Copy(dst, io.LimitReader(src, info.Size()))
 				src.Close()
 				if e == nil {
 					e = dst.Sync()

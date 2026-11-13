@@ -25,19 +25,21 @@ import { toast } from "sonner";
 
 export function MetadataEditorHost() {
   const [id, setID] = useQueryState("editSong", parseAsString.withDefault(""));
+  const [albumId,setAlbumId]=useQueryState("editAlbum",parseAsString.withDefault(""));
+  if (albumId) return <MetadataEditor key={`album-${albumId}`} id={albumId} albumMode close={() => void setAlbumId(null)} />;
   return id ? (
     <MetadataEditor key={id} id={id} close={() => void setID(null)} />
   ) : null;
 }
-function MetadataEditor({ id, close }: { id: string; close: () => void }) {
+function MetadataEditor({ id, close, albumMode = false }: { id: string; close: () => void; albumMode?: boolean }) {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
   const [dropped, setDropped] = useState<{ file: File } | null>(null);
   const result = useQuery({
-    queryKey: ["api", "/metadata/songs", id],
+    queryKey: ["api", albumMode ? "/metadata/albums" : "/metadata/songs", id],
     queryFn: ({ signal }) =>
-      api<{ edit: MetadataEdit; duration: number; searchArtist?: string }>(
-        `/metadata/songs/${encodeURIComponent(id)}`,
+      api<{ edit: MetadataEdit; duration: number; searchArtist?: string; songId?: string; songs?: number }>(
+        `/metadata/${albumMode ? "albums" : "songs"}/${encodeURIComponent(id)}`,
         "GET",
         undefined,
         undefined,
@@ -58,11 +60,10 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
         onDrop={(event) => { event.preventDefault(); depth.current = 0; setDragging(false); const files = event.dataTransfer.files; if (files.length) setDropped({ file: files[0] }); }}>
         {dragging && <div role="status" className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/95 p-6 text-center">Drop a JPEG or PNG to use as the cover</div>}
         <DialogTitle className="m-0 pr-8 text-base">
-          Edit song metadata
+          {albumMode ? "Edit album metadata" : "Edit song metadata"}
         </DialogTitle>
         <DialogDescription className="m-0 text-xs">
-          Save changes to file tags and rescan Navidrome. Changes are verified
-          before replacing the original file.
+          {albumMode ? `Apply album title, album artists and artwork to all ${result.data?.songs ?? ""} songs. Track titles, track artists and lyrics are preserved.` : "Save changes to file tags and rescan Navidrome. Changes are verified before replacing the original file."}
         </DialogDescription>
         {result.error && (
           <Text role="alert" className="my-1">
@@ -72,7 +73,9 @@ function MetadataEditor({ id, close }: { id: string; close: () => void }) {
         {result.isPending && <Text className="my-1">Loading…</Text>}
         {result.data && (
           <MetadataForm
-            id={id}
+            id={result.data.songId ?? id}
+            albumMode={albumMode}
+            endpoint={`/metadata/${albumMode ? "albums" : "songs"}/${encodeURIComponent(id)}`}
             initial={result.data.edit}
             duration={result.data.duration}
             searchArtist={result.data.searchArtist ?? result.data.edit.artist}
@@ -91,7 +94,11 @@ function MetadataForm({
   searchArtist,
   dropped,
   close,
+  albumMode = false,
+  endpoint,
 }: {
+  albumMode?: boolean;
+  endpoint?: string;
   id: string;
   initial: MetadataEdit;
   duration: number;
@@ -108,7 +115,7 @@ function MetadataForm({
   const [coversQ, setCoversQ] = useState(`${searchArtist} ${initial.album}`.trim());
   const save = useMutation({
     mutationFn: (edit: MetadataEdit) =>
-      api(`/metadata/songs/${encodeURIComponent(id)}`, "PUT", edit),
+      api(endpoint ?? `/metadata/songs/${encodeURIComponent(id)}`, "PUT", edit),
     onSuccess: async () => {
       toast.success("Tag update queued");
       await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] });
@@ -174,7 +181,7 @@ function MetadataForm({
         <TabsList className="h-8">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="artwork">Artwork</TabsTrigger>
-          <TabsTrigger value="lyrics">Lyrics</TabsTrigger>
+          {!albumMode && <TabsTrigger value="lyrics">Lyrics</TabsTrigger>}
         </TabsList>
         <TabsContent
           value="details"
@@ -189,14 +196,14 @@ function MetadataForm({
               void form.handleSubmit();
             }}
           >
-            <div className="col-span-2">
+            {!albumMode && <div className="col-span-2">
               <form.AppField name="title">
                 {(field) => (
                   <field.AutocompleteField label="Title" fieldName="title" />
                 )}
               </form.AppField>
-            </div>
-            {(["artistNames", "albumArtistNames"] as const).map((name) => {
+            </div>}
+            {(["artistNames", "albumArtistNames"] as const).filter(name => !albumMode || name === "albumArtistNames").map((name) => {
               const album = name === "albumArtistNames";
               return <div key={name} className="col-span-2 space-y-2">
                 <form.Field name={name} mode="array">{(array) => {

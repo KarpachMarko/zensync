@@ -1,4 +1,5 @@
 import { UpdateNotice } from "@/components/update-notice";
+import { MetadataEnrichment } from "@/pages/metadata-enrichment";
 import { Utilities } from "@/pages/utilities";
 import { MetadataEditorHost } from "@/components/music/metadata-editor";
 import { AppShell } from "@/components/layout/app-shell";
@@ -40,6 +41,7 @@ export function App() {
       <UpdateNotice />
       {error && <Text role="alert">{error}</Text>}
       <Routes>
+        <Route path="/utilities/metadata" element={<MetadataEnrichment admin={user.role === "admin"} />} />
         <Route
           path="/utilities"
           element={<Utilities admin={user.role === "admin"} />}

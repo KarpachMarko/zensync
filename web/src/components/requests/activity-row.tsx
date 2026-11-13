@@ -1,12 +1,13 @@
 import { RowActions, type RowAction } from "@/components/row-actions";
 import { ActiveProgress, StatusBadge } from "@/components/status";
+import { Button } from "@/components/ui/button";
 import { Text } from "@/components/typography";
 import type { ActivityItem } from "@/lib/types";
 import { useRef, useState } from "react";
 import { AcquisitionReviewDialog } from "./acquisition-review";
 
-export function ActivityRow({ item, busy, onRetry, onDismiss, onCancel }: {
-  item: ActivityItem; busy: boolean; onRetry: () => void; onDismiss: () => void; onCancel: () => void;
+export function ActivityRow({ item, busy, onRetry, onDismiss, onCancel, onRestore }: {
+  item: ActivityItem; busy: boolean; onRetry: () => void; onDismiss: () => void; onCancel: () => void; onRestore?: () => void;
 }) {
   const [details, setDetails] = useState(false);
   const [review, setReview] = useState<"recording" | "downloaded" | null>(null);
@@ -26,6 +27,7 @@ export function ActivityRow({ item, busy, onRetry, onDismiss, onCancel }: {
         <strong className="truncate text-sm" title={item.title}>{item.title}</strong>
         <span className="truncate text-xs text-muted-foreground" title={item.stage}>{item.stage}</span>
       </div>
+      {item.canRestore && onRestore && <Button size="sm" variant="outline" disabled={busy} onClick={onRestore}>Restore file</Button>}
       <StatusBadge state={item.state} className="shrink-0" />
       <RowActions title={item.title} actions={actions} triggerRef={trigger} />
     </div>

@@ -148,12 +148,14 @@ func removeMetadataArtwork(ctx context.Context, path string) error {
 
 func preserveEditedMetadata(ctx context.Context, change *metadataChange, original, output string) error {
 	changed := map[string]bool{
+		"track":       change.Edit.TrackNumber > 0,
+		"disc":        change.Edit.DiscNumber > 0,
 		"title":       change.Edit.Title != change.Song.Title,
 		"album":       change.Edit.Album != change.Song.Album,
 		"artist":      metadataTrackArtistsChanged(*change),
 		"albumartist": metadataAlbumArtistsChanged(*change),
 		"lyrics":      change.Edit.Lyrics != "" || change.Edit.SyncedLyrics != "",
-		"grouping":    change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(*change),
+		"grouping":    metadataReleaseIdentityChanged(*change),
 	}
 	artists, albumArtists := change.Edit.ArtistNames, change.Edit.AlbumArtistNames
 	if artists != nil && !metadataTrackArtistsChanged(*change) {
@@ -162,7 +164,7 @@ func preserveEditedMetadata(ctx context.Context, change *metadataChange, origina
 	if albumArtists != nil && !metadataAlbumArtistsChanged(*change) {
 		albumArtists = nil
 	}
-	plan := map[string]any{"kind": "edit-metadata", "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist, "artistNames": artists, "albumArtistNames": albumArtists, "fallbackArtists": creditNames(songCredits(change.Song, false)), "fallbackAlbumArtists": creditNames(songCredits(change.Song, true))}
+	plan := map[string]any{"kind": "edit-metadata", "trackNumber": change.Edit.TrackNumber, "discNumber": change.Edit.DiscNumber, "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist, "artistNames": artists, "albumArtistNames": albumArtists, "fallbackArtists": creditNames(songCredits(change.Song, false)), "fallbackAlbumArtists": creditNames(songCredits(change.Song, true))}
 	cmd := exec.CommandContext(ctx, metadataPythonPath(), "-c", metadataCreditWriter)
 	cmd.Stdin = strings.NewReader(mustJSON(plan))
 	protectChild(cmd)
@@ -190,6 +192,14 @@ func metadataTrackArtistsChanged(change metadataChange) bool {
 		return !slices.Equal(change.Edit.ArtistNames, creditNames(songCredits(change.Song, false)))
 	}
 	return change.Edit.Artist != change.Song.Artist
+}
+
+func metadataReleaseIdentityChanged(change metadataChange) bool {
+	// A collection edit renames the existing album rather than moving a song
+	// into another release. Keep its native release identifiers on every file,
+	// even when members have different original titles (or already use the new
+	// title). Clearing IDs only on renamed members splits the album on rescan.
+	return change.CollectionKind != "album" && (change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(change))
 }
 
 func metadataAlbumArtistsChanged(change metadataChange) bool {

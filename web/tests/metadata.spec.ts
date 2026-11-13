@@ -269,18 +269,11 @@ test("utilities merge into a chosen duplicate after an undo window", async ({
   const state = await fixture(page);
   await page.goto("/utilities");
   await page
-    .getByRole("button", { name: "Review duplicates", exact: true })
+    .getByRole("link", { name: "Review duplicates", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Delete song: Song", exact: true })
-    .first()
-    .click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete song", exact: true })
-    .click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  expect(state.deletes).toEqual([{ songId: "one" }]);
+  await expect(page.getByRole("button", { name: "Delete song: Song", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Merge song: Song", exact: true })).toHaveCount(0);
+  expect(state.deletes).toEqual([]);
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
   await page.clock.install();
@@ -777,4 +770,197 @@ test("leaving duplicate review cancels a delayed merge", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
   await page.clock.fastForward(5000);
   expect(state.merges).toEqual([]);
+});
+
+test("metadata utilities apply missing and selected updates without approval", async ({ page }) => {
+  await fixture(page);
+  const requests: { mode: string; songIds: string[]; albumIds: string[] }[] = [];
+  await page.route("**/api/v2/metadata/enrichment", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { songs: [{ ...song, albumId: "album-one", albumArtist: "Band" }], limited: false } });
+    requests.push(route.request().postDataJSON() as typeof requests[number]);
+    return route.fulfill({ status: 202, json: { id: "job", songs: 1 } });
+  });
+  await page.goto("/utilities");
+  await page.getByRole("link", { name: "Library metadata", exact: true }).click();
+  await page.getByRole("button", { name: "Fetch all missing covers", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  await page.getByRole("button", { name: "Fetch all missing lyrics", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole("button", { name: "Replace selected covers", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Replace selected covers", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2]).toEqual({ mode: "force-covers", songIds: [], albumIds: ["album-one"] });
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await page.getByRole("tab", { name: "Songs", exact: true }).click();
+  await page.getByRole("checkbox").check();
+  await expect(page.getByRole("button", { name: "Correct selected album order", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Albums", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Correct selected album order", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Correct selected album order", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(4);
+  expect(requests[3]).toEqual({ mode: "album-order", songIds: [], albumIds: ["album-one"] });
+  await expect(page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", {name:"Utilities",exact:true})).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "breadcrumb" })).toContainText("Library metadata");
+  expect(requests.slice(0,2).map(request => request.mode)).toEqual(["missing-covers", "missing-lyrics"]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("metadata utilities are restricted to administrators", async ({ page }) => {
+  await fixture(page, false);
+  await page.goto("/utilities/metadata");
+  await expect(page.getByRole("alert")).toContainText("require an administrator");
+  await expect(page.getByRole("button", { name: "Fetch all missing covers", exact: true })).toHaveCount(0);
+});
+
+test("metadata utility filters without submitting and opens missing-cover editing", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/v2/metadata/enrichment", route => route.fulfill({ json: { songs: [
+    { ...song, albumId: "missing", albumArtist: "Band" },
+    { ...song, id: "covered", title: "Covered song", album: "Other album", albumId: "covered-album", albumArtist: "Other artist", coverArt: "cover" },
+  ], limited: false } }));
+  await page.goto("/utilities/metadata?view=songs");
+  await expect(page.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  await page.getByRole("switch", { name: "Missing covers only" }).check();
+  await expect(page.getByRole("button", { name: "Edit cover: Covered song", exact: true })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Filter library" }).fill("unmatched");
+  await expect(page.getByText("No matching items.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Filter library" }).fill("Band");
+  await page.getByRole("button", { name: "Edit cover: Song", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("duplicate songs expose original playback, quality and size", async ({ page }) => {
+  await fixture(page);
+  const wav=Buffer.alloc(44+160000);
+  wav.write("RIFF",0);wav.writeUInt32LE(wav.length-8,4);wav.write("WAVEfmt ",8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write("data",36);wav.writeUInt32LE(160000,40);
+  await page.route("**/api/v2/metadata/songs/*/audio", route => route.fulfill({contentType:"audio/wav",body:wav}));
+  await page.route("**/api/v2/metadata/duplicates*", route => route.fulfill({ json: { scanned: 2, limited: false, groups: [{ kind: "song", reason: "Matching recordings", members: [
+    { id: "one", label: "Song", song: { ...song, suffix: "flac", bitRate: 900, bitDepth: 24, samplingRate: 96000, size: 10485760 } },
+    { id: "two", label: "Song", song: { ...song, id: "two", suffix: "mp3", bitRate: 320, size: 5242880 } },
+    ...Array.from({length:20},(_,i)=>({id:`extra-${i}`,label:`Extra ${i}`,song:{...song,id:`extra-${i}`,title:`Extra ${i}`}})),
+  ] }] } }));
+  await page.goto("/utilities?tool=duplicates");
+  await expect(page.getByText("FLAC · 900 kbps · 24-bit · 96 kHz · 10.00 MiB", { exact: true })).toBeVisible();
+  await expect(page.getByText("MP3 · 320 kbps · 5.00 MiB", { exact: true })).toBeVisible();
+  const audio=page.locator('audio[aria-label="Original file player"]');
+  await expect(audio).not.toHaveAttribute("controls");
+  await page.getByRole("button", {name:"Play Song (one)",exact:true}).click();
+  await expect(audio).toHaveAttribute("src", /\/metadata\/songs\/one\/audio$/);
+  await expect(page.getByRole("button", {name:"Pause Song (one)",exact:true})).toBeVisible();
+  await page.getByRole("button", {name:"Play Song (two)",exact:true}).click();
+  await expect(audio).toHaveAttribute("src", /\/metadata\/songs\/two\/audio$/);
+  await expect(page.getByRole("button", {name:"Play Song (one)",exact:true})).toBeVisible();
+  await expect(page.getByRole("slider", {name:"Preview position",exact:true})).toBeVisible();
+  await audio.evaluate(element => element.dispatchEvent(new Event("error")));
+  await expect(page.getByRole("alert")).toContainText("Audio could not play");
+  await page.getByRole("button", {name:"Play Song (two)",exact:true}).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const dock=page.getByRole("region",{name:"Duplicate comparison player",exact:true});
+  for (const width of [375,1280]) {
+    await page.setViewportSize({width,height:700});
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+    const last=page.locator('[data-slot="library-song"]').last();
+    await expect.poll(async()=>{const row=await last.boundingBox(),player=await dock.boundingBox();return !!row && !!player && row.y+row.height<=player.y;}).toBe(true);
+  }
+});
+
+test("Keep song deletes only the prepared alternatives after undo expires", async ({ page }) => {
+  const state=await fixture(page);
+  await page.goto("/utilities?tool=duplicates");
+  const keep=page.getByRole("button",{name:"Keep song: two",exact:true});
+  await expect(keep).toBeVisible();
+  await expect(page.getByRole("button",{name:"Delete song: Song",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Merge song: Song",exact:true})).toHaveCount(0);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now()+1000));
+  await keep.click();
+  await page.clock.runFor(300);
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await page.clock.fastForward(5000);
+  expect(state.deletes).toEqual([]);
+  await keep.click();
+  await page.clock.fastForward(4999);
+  expect(state.deletes).toEqual([]);
+  await page.clock.fastForward(1);
+  await expect.poll(()=>state.deletes.length).toBe(1);
+  expect(state.deletes).toEqual([{songId:"one",keepSongId:"two"}]);
+  expect(state.merges).toEqual([]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(keep).toBeDisabled();
+});
+
+test("Keep song handles larger groups and retries partially queued deletions without new keys", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/v2/metadata/duplicates*",route=>route.fulfill({json:{scanned:3,limited:false,groups:[{kind:"song",reason:"Duplicates",members:["one","two","three"].map(id=>({id,label:"Song",song:{...song,id}}))}]}}));
+  const calls:{songId:string;keepSongId:string;key:string}[]=[];
+  let fail=true;
+  await page.route("**/api/v2/deletion-requests",route=>{
+    const body=route.request().postDataJSON() as {songId:string;keepSongId:string};
+    calls.push({...body,key:route.request().headers()["idempotency-key"]});
+    return route.fulfill(body.songId==="three" && fail ? {status:409,json:{error:"Temporary failure"}} : {status:201,json:{id:body.songId}});
+  });
+  await page.goto("/utilities?tool=duplicates");
+  const keep=page.getByRole("button",{name:"Keep song: two",exact:true});
+  await expect(keep).toBeVisible();
+  await page.clock.install();
+  await keep.click();await page.clock.fastForward(5000);
+  await expect.poll(()=>calls.length).toBe(2);
+  await expect(page.getByRole("alert")).toContainText("1 of 2 deletions queued");
+  fail=false;
+  await keep.click();await page.clock.fastForward(5000);
+  await expect.poll(()=>calls.length).toBe(4);
+  expect(calls.map(call=>call.songId)).toEqual(["one","three","one","three"]);
+  expect(calls.every(call=>call.keepSongId==="two")).toBe(true);
+  expect(calls[0]?.key).toBeTruthy();
+  expect(calls[0]?.key).toBe(calls[2]?.key);
+  expect(calls[1]?.key).toBe(calls[3]?.key);
+});
+
+test("Library album editor reuses artwork controls and saves album fields", async ({ page }) => {
+  await fixture(page);
+  let albumBody: unknown;
+  await page.route("**/api/v2/metadata/albums/album", route => {
+    if (route.request().method()==="PUT") {albumBody=route.request().postDataJSON();return route.fulfill({status:202,json:{id:"album-job",songs:2}});}
+    return route.fulfill({json:{songId:"one",songs:2,duration:0,searchArtist:"Band",edit:{title:"Song",artist:"Band",album:"Album",albumArtist:"Band",albumArtistNames:["Band"],coverUrl:"",lyrics:"",syncedLyrics:"",lyricsSource:""}}});
+  });
+  await page.goto("/library/albums");
+  await page.getByRole("button",{name:"Edit album metadata: Album",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.getByText("Edit album metadata",{exact:true})).toBeVisible();
+  await expect(dialog.getByRole("tab",{name:"Lyrics",exact:true})).toHaveCount(0);
+  await expect(dialog.getByRole("textbox",{name:"Title",exact:true})).toHaveCount(0);
+  await dialog.getByRole("combobox",{name:"Album",exact:true}).fill("New album");
+  await dialog.getByRole("combobox",{name:"Album",exact:true}).press("Tab");
+  await dialog.getByRole("tab",{name:"Artwork",exact:true}).click();
+  await expect(dialog.locator('button[data-slot="file-upload-trigger"]')).toBeVisible();
+  await dialog.getByRole("button",{name:"Remove cover",exact:true}).click();
+  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+  await expect.poll(()=>albumBody).toMatchObject({album:"New album",albumArtistNames:["Band"],removeCover:true});
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Library artist rename queues the entered name without a destination picker", async ({ page }) => {
+  await fixture(page);
+  let body:unknown;
+  await page.route("**/api/v2/metadata/artists/artist",route=>{
+    if(route.request().method()==="PUT") {body=route.request().postDataJSON();return route.fulfill({status:202,json:{id:"rename-job",songs:3}});}
+    return route.fulfill({json:{name:"Band",songs:3}});
+  });
+  await page.goto("/library/artists");
+  await page.getByRole("button",{name:"Rename artist: Band",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await dialog.getByRole("textbox",{name:"Artist name",exact:true}).fill("New band");
+  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+  await expect.poll(()=>body).toEqual({name:"New band"});
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Members have no album metadata or artist rename actions", async ({ page }) => {
+  await fixture(page,false);
+  await page.goto("/library/albums");
+  await expect(page.getByRole("button",{name:/Edit album metadata:/})).toHaveCount(0);
+  await page.getByRole("tab",{name:"Artists",exact:true}).click();
+  await expect(page.getByRole("button",{name:/Rename artist:/})).toHaveCount(0);
 });

@@ -19,6 +19,8 @@ import (
 
 // Metadata edits are a review layer, independent of acquisition and file identity.
 type MetadataEdit struct {
+	TrackNumber      int      `json:"trackNumber,omitempty"`
+	DiscNumber       int      `json:"discNumber,omitempty"`
 	ArtistNames      []string `json:"artistNames,omitempty"`
 	AlbumArtistNames []string `json:"albumArtistNames"`
 	RemoveCover      bool     `json:"removeCover,omitempty"`
@@ -91,7 +93,11 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 			add("album", metadataKey(albumArtist)+":"+metadataKey(s.Album), s.AlbumID, albumArtist+" — "+s.Album)
 		}
 		if metadataKey(s.Artist) != "" && metadataKey(s.Title) != "" {
-			k := metadataKey(s.Artist) + ":" + metadataKey(s.Title)
+			primaryArtist := s.Artist
+			if len(s.Artists) > 0 && s.Artists[0].Name != "" {
+				primaryArtist = s.Artists[0].Name
+			}
+			k := metadataKey(primaryArtist) + ":" + metadataKey(s.Title)
 			tracks[k] = append(tracks[k], s)
 		}
 	}
@@ -131,7 +137,7 @@ func metadataDuplicates(songs []Song) []duplicateGroup {
 			reason = "Matching normalized album artist and album title with distinct library IDs"
 		}
 		if kind == "song" {
-			reason = "Matching artist and title, duration within two seconds; editions may differ"
+			reason = "Matching primary artist and title, duration within two seconds; credits and editions may differ"
 		}
 		for i := range members {
 			members[i].Count = counts[kind+":"+members[i].ID]
@@ -187,6 +193,24 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v2/metadata")
+	if path == "/enrichment" {
+		a.metadataEnrichment(w, r, u)
+		return
+	}
+	collectionParts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(collectionParts) == 2 && (collectionParts[0] == "albums" || collectionParts[0] == "artists") {
+		kind := "album"
+		if collectionParts[0] == "artists" {
+			kind = "artist"
+		}
+		a.metadataCollection(w, r, u, kind, collectionParts[1])
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/songs/"), "/")
+	if strings.HasPrefix(path, "/songs/") && len(parts) == 2 && parts[0] != "" && parts[1] == "audio" {
+		a.metadataAudio(w, r, parts[0])
+		return
+	}
 	if strings.HasPrefix(path, "/songs/") && strings.Contains(path, "/cover-upload") {
 		a.metadataCoverUpload(w, r, u)
 		return

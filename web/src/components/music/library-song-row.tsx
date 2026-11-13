@@ -1,3 +1,4 @@
+import { DuplicateSongAudio } from "./duplicate-song-audio";
 import { ManualMerge } from "./manual-merge";
 import { parseAsString, useQueryState } from "nuqs";
 import { Actions, Row } from "@/components/layout/content";
@@ -7,16 +8,20 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong } from "@/lib/api";
 import { requestKey, time } from "@/lib/api";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { DeletionDialog } from "./deletion-dialog";
 export function LibrarySongRow({
   song,
   canDelete,
   canEdit = false,
+  audioPreview,
+  duplicateAction,
 }: {
   song: LibrarySong;
   canDelete: boolean;
   canEdit?: boolean;
+  duplicateAction?: ReactNode;
+  audioPreview?: Parameters<typeof DuplicateSongAudio>[0]["preview"];
 }) {
   const [, setEditSong] = useQueryState("editSong", parseAsString);
   const { api } = useApiMutation();
@@ -39,8 +44,8 @@ export function LibrarySongRow({
     }
   }
   return (
-    <article data-slot="library-song">
-      <Row className="flex-wrap">
+    <article data-slot="library-song" className={audioPreview ? "border-b border-solid border-border py-2 last:border-b-0" : undefined}>
+      <Row className={audioPreview ? "flex-wrap border-b-0" : "flex-wrap"}>
         <div className="min-w-0 flex-1">
           <strong>{song.title}</strong>
           <Caption>
@@ -48,7 +53,8 @@ export function LibrarySongRow({
           </Caption>
         </div>
         <Actions className="max-w-full">
-          {canEdit && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
+          {duplicateAction}
+          {canEdit && !audioPreview && <ManualMerge kind="song" source={{ id: song.id, name: song.title }} />}
           {canEdit && (
             <Button
               size="sm"
@@ -59,7 +65,7 @@ export function LibrarySongRow({
               Edit metadata
             </Button>
           )}
-          <Button
+          {!audioPreview && <Button
             size="sm"
             variant="outline"
             type="button"
@@ -76,9 +82,10 @@ export function LibrarySongRow({
                 : canDelete
                   ? "Delete song"
                   : "Request deletion"}
-          </Button>
+          </Button>}
         </Actions>
       </Row>
+      {audioPreview && <DuplicateSongAudio song={song} preview={audioPreview} />}
       {submitted && (
         <Text role="status">
           {canDelete

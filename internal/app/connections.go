@@ -119,6 +119,9 @@ type ArtistCredit struct {
 	Name string `json:"name"`
 }
 type Song struct {
+	Suffix       string         `json:"suffix,omitempty"`
+	SamplingRate int            `json:"samplingRate,omitempty"`
+	BitDepth     int            `json:"bitDepth,omitempty"`
 	CoverArt     string         `json:"coverArt,omitempty"`
 	Artists      []ArtistCredit `json:"artists,omitempty"`
 	AlbumArtists []ArtistCredit `json:"albumArtists,omitempty"`
@@ -165,6 +168,7 @@ func (s *Song) UnmarshalJSON(data []byte) error {
 }
 
 type RemotePlaylist struct {
+	Readonly  bool   `json:"readonly,omitempty"`
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Owner     string `json:"owner"`

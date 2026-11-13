@@ -35,6 +35,7 @@ type Track struct {
 		Name string `json:"name"`
 	} `json:"artist"`
 	Album struct {
+		ID    int64  `json:"id"`
 		Title string `json:"title"`
 		Cover string `json:"cover_medium"`
 	} `json:"album"`

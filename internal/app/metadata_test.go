@@ -369,3 +369,24 @@ func TestCreditReviewAmpersandSeparator(t *testing.T) {
 		})
 	}
 }
+
+func TestMetadataDuplicateSongsWithAdditionalCredits(t *testing.T) {
+	songs := []Song{
+		{ID: "original", Title: "MONEY MO", Artist: "SQWOZ BAB", Album: "WOMANIZER", Duration: 134, Artists: []ArtistCredit{{Name: "SQWOZ BAB"}}},
+		{ID: "extra-credit", Title: "MONEY MO", Artist: "SQWOZ BAB / Мингазов Марат Фирдусович", Album: "WOMANIZER (Deluxe Edition)", Duration: 134, Artists: []ArtistCredit{{Name: "SQWOZ BAB"}, {Name: "Мингазов Марат Фирдусович"}}},
+		{ID: "other", Title: "MONEY MO", Artist: "Other", Duration: 134, Artists: []ArtistCredit{{Name: "Other"}, {Name: "SQWOZ BAB"}}},
+	}
+	groups := metadataDuplicates(songs)
+	count := 0
+	for _, group := range groups {
+		if group.Kind == "song" {
+			count++
+			if len(group.Members) != 2 {
+				t.Fatalf("unrelated primary artist included: %+v", group)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("additional credits hid duplicates: %+v", groups)
+	}
+}

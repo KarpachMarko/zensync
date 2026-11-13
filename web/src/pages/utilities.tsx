@@ -1,4 +1,9 @@
-import { Undo2Icon } from "lucide-react";
+import { UtilitiesBreadcrumbs } from "@/components/utilities-breadcrumbs";
+import { useAudioPreview } from "@/hooks/use-audio-preview";
+import type { LibrarySong } from "@/lib/api";
+import { DuplicateAudioPlayer } from "@/components/music/duplicate-song-audio";
+import { Undo2Icon, CopyIcon, TagsIcon, ChevronRightIcon } from "lucide-react";
+import { AppLink } from "@/components/navigation";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { CreditIssues } from "@/components/music/credit-issues";
@@ -14,12 +19,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import { api } from "@/lib/api";
+import { api, requestKey } from "@/lib/api";
 import type { DuplicateGroup, DuplicateReport, MetadataJob } from "@/lib/metadata";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
@@ -27,12 +27,17 @@ import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export function Utilities({ admin }: { admin: boolean }) {
-  const [tool, setTool] = useQueryState(
+  const [tool] = useQueryState(
     "tool",
     parseAsStringLiteral(["duplicates"] as const),
   );
   const kinds = ["all", "song", "album", "artist", "credits"] as const;
   const [kind, setKind] = useQueryState("kind", parseAsStringLiteral(kinds).withDefault("all"));
+  const audioPreview = useAudioPreview<LibrarySong>({
+    resolveURL: song => `/api/v2/metadata/songs/${encodeURIComponent(song.id)}/audio`,
+    keyFor: song => song.id,
+    errorMessage: "Audio could not play. The file may be unavailable or its format unsupported by your browser.",
+  });
   const filterID = useId();
   const report = useQuery({
     queryKey: ["api", "/metadata/duplicates"],
@@ -54,15 +59,18 @@ export function Utilities({ admin }: { admin: boolean }) {
     return <Text role="alert">Utilities require an administrator.</Text>;
   return (
     <>
-      <PageHeading tabIndex={-1}>Utilities</PageHeading>
-      <Collapsible
-        open={tool === "duplicates"}
-        onOpenChange={(open) => void setTool(open ? "duplicates" : null)}
-      >
-        <CollapsibleTrigger asChild>
-          <Button variant="outline">Review duplicates</Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-3 space-y-2">
+      {tool !== "duplicates" ? <>
+        <PageHeading tabIndex={-1}>Utilities</PageHeading>
+        <section aria-label="Organize your library" className="mx-auto mt-6 max-w-3xl rounded-xl border border-solid border-border p-4 sm:p-6">
+          <h2 className="m-0 mb-3 text-sm font-medium text-muted-foreground">Organize your library</h2>
+          {[{to:"/utilities?tool=duplicates",label:"Review duplicates",icon:CopyIcon},{to:"/utilities/metadata",label:"Library metadata",icon:TagsIcon}].map(item => <AppLink key={item.to} to={item.to} className="flex items-center gap-4 rounded-md px-2 py-4 hover:bg-accent focus-visible:bg-accent">
+            <item.icon aria-hidden="true" className="size-5 text-primary" /><span className="flex-1 font-medium">{item.label}</span><ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+          </AppLink>)}
+        </section>
+      </> : <>
+        <UtilitiesBreadcrumbs current="Review duplicates" />
+        <PageHeading tabIndex={-1}>Review duplicates</PageHeading>
+        <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <Text className="m-0 text-xs">
               Review candidates, delete extra songs or merge artist and album
@@ -111,6 +119,7 @@ export function Utilities({ admin }: { admin: boolean }) {
             <DuplicateCandidates
               key={`${group.kind}:${group.members.map((m) => m.id).join(":")}`}
               group={group}
+              audioPreview={audioPreview}
               limited={report.data?.limited ?? false}
             />
           ))}
@@ -118,20 +127,24 @@ export function Utilities({ admin }: { admin: boolean }) {
             <Text>No {kind === "all" ? "duplicate" : kind} candidates found.</Text>
           )}
           <CreditIssues issues={visibleCredits} limited={report.data?.limited} />
-        </CollapsibleContent>
-      </Collapsible>
+          <DuplicateAudioPlayer preview={audioPreview} />
+        </div>
+      </>}
     </>
   );
 }
 function DuplicateCandidates({
   group,
   limited,
+  audioPreview,
 }: {
+  audioPreview: Parameters<typeof DuplicateAudioPlayer>[0]["preview"];
   group: DuplicateGroup;
   limited: boolean;
 }) {
   const client = useQueryClient();
   const [scheduled, setScheduled] = useState<string | null>(null);
+  const deletionKeys = useRef(new Map<string,string>());
   const pending = useRef<{ timer: ReturnType<typeof setTimeout>; toast: string | number } | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => {
@@ -149,6 +162,17 @@ function DuplicateCandidates({
       let songs = 0;
       for (const [index, source] of sources.entries()) {
         abort.signal.throwIfAborted();
+        if (group.kind === "song") {
+          let key=deletionKeys.current.get(source.id);
+          if (!key) {key=requestKey();deletionKeys.current.set(source.id,key);}
+          try {
+            await api("/deletion-requests","POST",{songId:source.id,keepSongId:target},key,abort.signal);
+          } catch (error) {
+            throw new Error(`${songs} of ${sources.length} deletions queued. ${error instanceof Error ? error.message : "Deletion request failed"}. Retry Keep song to queue the remaining items.`);
+          }
+          songs++;
+          continue;
+        }
         const result = await api<{ id: string; songs: number }>("/metadata/merge", "POST", {
           kind: group.kind, source: source.id, target,
         }, undefined, abort.signal);
@@ -171,16 +195,18 @@ function DuplicateCandidates({
       }
       return { songs };
     },
-    onSuccess: (data) => { if (!controller.current?.signal.aborted) toast.success(`Merge queued for ${data.songs} songs`); },
+    onSuccess: (data) => { if (!controller.current?.signal.aborted) toast.success(group.kind === "song" ? `Deletion queued for ${data.songs} duplicates` : `Merge queued for ${data.songs} songs`); },
     onError: (error) => { if (!controller.current?.signal.aborted) toast.error(error.message); },
-    onSettled: async () => { await client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); },
+    onSettled: async () => {
+      await client.invalidateQueries({ predicate: query => query.queryKey[0]==="api" && (group.kind === "song" ? ["/activity","/requests"].some(path => typeof query.queryKey[1]==="string" && query.queryKey[1].startsWith(path)) : query.queryKey[1]==="/metadata/jobs") });
+    },
   });
   function scheduleMerge(member: DuplicateGroup["members"][number]) {
     if (pending.current || merge.isPending || merge.isSuccess) return;
     merge.reset();
     setScheduled(member.id);
-    const notification = toast("Merge starts in 5 seconds", {
-      description: `Keep “${member.label}” and merge the other ${group.kind} entries.`,
+    const notification = toast(group.kind === "song" ? "Duplicate deletion starts in 5 seconds" : "Merge starts in 5 seconds", {
+      description: group.kind === "song" ? `Keep “${member.label}” and delete the other recordings. Editable playlists are updated first. Album placement and inaccessible playlists are not preserved.` : `Keep “${member.label}” and merge the other ${group.kind} entries.`,
       duration: 5000,
       action: { label: <><Undo2Icon className="size-3.5 shrink-0" aria-hidden="true" />Undo</>, onClick: () => {
         if (!pending.current) return;
@@ -228,6 +254,10 @@ function DuplicateCandidates({
             }
             canDelete
             canEdit
+            audioPreview={audioPreview}
+            duplicateAction={<Button size="sm" variant="outline" aria-label={`Keep song: ${member.id}`}
+              disabled={limited || scheduled !== null || merge.isPending || merge.isSuccess}
+              onClick={() => scheduleMerge(member)}>Keep song</Button>}
           />
         ))
       ) : (
@@ -268,7 +298,9 @@ function DuplicateCandidates({
               </div>
             ))
       )}
-      {scheduled && <Text role="status" className="my-1 text-xs">Merge scheduled. Use Undo in the notification to cancel.</Text>}
+      {group.kind === "song" && <Text className="my-1 text-xs">Keep one recording and delete the others. Editable playlists are updated before deletion. Album placement and inaccessible playlists are not preserved.</Text>}
+      {scheduled && <Text role="status" className="my-1 text-xs">{group.kind === "song" ? "Deletion" : "Merge"} scheduled. Use Undo in the notification to cancel.</Text>}
+      {group.kind === "song" && merge.isSuccess && <Text role="status" className="my-1 text-xs">Duplicate deletions queued. Follow progress in Activity; refresh candidates after the library scan.</Text>}
       {merge.error && !controller.current?.signal.aborted && <Text role="alert">{merge.error.message}</Text>}
 
     </section>
