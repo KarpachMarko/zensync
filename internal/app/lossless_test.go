@@ -74,6 +74,9 @@ func TestLosslessSearchRequestIdentityAndSecrets(t *testing.T) {
 	if !strings.Contains(search.Body.String(), `"provider":"lossless"`) || strings.Contains(search.Body.String(), "untrusted.test") {
 		t.Fatal(search.Body.String())
 	}
+	if strings.Contains(search.Body.String(), "supports individual") || !strings.Contains(search.Body.String(), `"warnings":[]`) {
+		t.Fatal("routine provider capability notice returned", search.Body.String())
+	}
 	request := admin.call("POST", "/api/v2/requests", `{"target":"lossless:track:main:42"}`, "lossless-request-1")
 	expect(t, request, 201)
 	expect(t, admin.call("POST", "/api/v2/requests", `{"target":"lossless:track:main:42"}`, "lossless-request-1"), 200)

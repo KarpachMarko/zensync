@@ -70,7 +70,7 @@ func (a *App) claimAcquisition() *acquisitionClaim {
 		a.activeTargets = map[string]bool{}
 		a.activeOwners = map[string]int{}
 	}
-	rows, e := a.DB.Query(`SELECT j.id,r.id,r.owner,r.target,r.quality,r.reason,r.upgrade,COALESCE(r.actor,''),j.state FROM jobs j JOIN requests r ON r.id=j.request_id LEFT JOIN scan_schedule sc ON sc.job_id=j.id LEFT JOIN acquisition_checks ck ON ck.job_id=j.id WHERE NOT EXISTS(SELECT 1 FROM song_deletions d WHERE d.request_id=r.id) AND r.decision='approved' AND r.target NOT LIKE 'deezer:album:%' AND NOT EXISTS(SELECT 1 FROM request_children cc JOIN requests pp ON pp.id=cc.parent_id WHERE cc.child_id=r.id AND pp.decision<>'approved') AND j.state IN ('queued','blocked','awaiting_scan','deferred') AND (j.state<>'awaiting_scan' OR COALESCE(sc.checked_at,0)<unixepoch()-30) AND (j.state NOT IN ('blocked','deferred') OR COALESCE(ck.checked_at,0)<unixepoch()-15) ORDER BY j.rowid`)
+	rows, e := a.DB.Query(`SELECT j.id,r.id,r.owner,r.target,r.quality,r.reason,r.upgrade,COALESCE(r.actor,''),j.state FROM jobs j JOIN requests r ON r.id=j.request_id LEFT JOIN scan_schedule sc ON sc.job_id=j.id LEFT JOIN acquisition_checks ck ON ck.job_id=j.id WHERE NOT EXISTS(SELECT 1 FROM song_deletions d WHERE d.request_id=r.id) AND r.decision='approved' AND NOT EXISTS(SELECT 1 FROM album_requests album WHERE album.request_id=r.id) AND NOT EXISTS(SELECT 1 FROM request_children cc JOIN requests pp ON pp.id=cc.parent_id WHERE cc.child_id=r.id AND pp.decision<>'approved') AND j.state IN ('queued','blocked','awaiting_scan','deferred') AND (j.state<>'awaiting_scan' OR COALESCE(sc.checked_at,0)<unixepoch()-30) AND (j.state NOT IN ('blocked','deferred') OR COALESCE(ck.checked_at,0)<unixepoch()-15) ORDER BY j.rowid`)
 	if e != nil {
 		return nil
 	}

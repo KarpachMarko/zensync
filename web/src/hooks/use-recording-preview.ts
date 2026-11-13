@@ -1,30 +1,24 @@
 import { requestKey, trackTarget, type Track } from "@/lib/api";
+import { isLibraryRecording, recordingKey, type Recording } from "@/lib/playback";
 import { useAudioPreview } from "./use-audio-preview";
 
-export function previewURL(track: Track) {
-  if (track.provider === "lossless") {
-    if (!track.source || !/^[a-zA-Z0-9_-]{1,40}$/.test(track.source) || !Number.isSafeInteger(track.id) || track.id <= 0) return null;
-    return "/api/v2/providers/lossless/stream?target=" + encodeURIComponent(trackTarget(track));
-  }
-  if (!track.preview) return null;
-  try {
-    const url = new URL(track.preview);
-    const deezerHost = url.hostname.endsWith(".dzcdn.net") || url.hostname.endsWith(".deezer.com");
-    return url.protocol === "https:" && deezerHost && !url.username && !url.password ? url.href : null;
-  } catch {
-    return null;
-  }
+export function previewURL(track: Recording) {
+  if (isLibraryRecording(track) && track.id.startsWith("upload:")) return `/api/v2/metadata/replacement-inputs/${encodeURIComponent(track.id.slice(7))}/audio`;
+  if (isLibraryRecording(track)) return track.id ? "/api/v2/library/stream?id=" + encodeURIComponent(track.id) : null;
+  if (!Number.isSafeInteger(track.id) || track.id <= 0) return null;
+  if (track.provider === "lossless" && (!track.source || !/^[a-zA-Z0-9_-]{1,40}$/.test(track.source))) return null;
+  return `/api/v2/providers/${track.provider ?? "deezer"}/stream?target=` + encodeURIComponent(trackTarget(track));
 }
 
-export function useRecordingPreview({ resolveURL = previewURL, maxDuration, errorMessage }: { resolveURL?: (track: Track) => string | null; maxDuration?: number; errorMessage?: string } = {}) {
-  return useAudioPreview({
-    resolveURL: (track: Track) => {
+export function useRecordingPreview<T extends Recording = Track>({ resolveURL = previewURL, maxDuration, errorMessage }: { resolveURL?: (track: T) => string | null; maxDuration?: number; errorMessage?: string } = {}) {
+  return useAudioPreview<T>({
+    resolveURL: (track: T) => {
       const url = resolveURL(track);
-      return url && track.provider === "lossless" && url.startsWith("/api/v2/providers/lossless/stream?") ? url + "&sid=" + requestKey() : url;
+      return url && !isLibraryRecording(track) && url.startsWith(`/api/v2/providers/${track.provider ?? "deezer"}/stream?`) ? url + "&sid=" + requestKey() : url;
     },
-    keyFor: trackTarget,
-    limitFor: track => maxDuration ?? (track?.provider === "lossless" ? Infinity : 30),
-    failureMessage: track => errorMessage || (track?.provider === "lossless" ? "Stream unavailable. Check the provider connection in Settings or open the song at its source." : "Preview unavailable. Open the song in Deezer to listen."),
-    errorMessage: errorMessage || "Audio could not be played. Try again or open the song at its source.",
+    keyFor: recordingKey,
+    limitFor: () => maxDuration ?? Infinity,
+    failureMessage: () => errorMessage || "Stream unavailable. Check the provider connection in Settings or open the song at its source.",
+    errorMessage: errorMessage || "Audio could not be played. Check the provider connection in Settings or open the song at its source.",
   });
 }

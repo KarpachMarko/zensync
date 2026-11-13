@@ -227,6 +227,25 @@ func (a *App) metadataRoutes(w http.ResponseWriter, r *http.Request, u User) {
 		a.separateArtistCredits(w, r, u)
 		return
 	}
+	if path == "/replacement-upload" && r.Method == "POST" {
+		a.replacementUpload(w, r, u)
+		return
+	}
+	if strings.HasPrefix(path, "/replacement-inputs/") && r.Method == "GET" {
+		bits := strings.Split(strings.TrimPrefix(path, "/replacement-inputs/"), "/")
+		if len(bits) == 1 {
+			a.replacementInput(w, r, u, bits[0], "")
+			return
+		}
+		if len(bits) == 2 && (bits[1] == "audio" || bits[1] == "cover") {
+			a.replacementInput(w, r, u, bits[0], bits[1])
+			return
+		}
+	}
+	if path == "/merge-compatibility" && r.Method == "GET" {
+		a.mergeCompatibility(w, r)
+		return
+	}
 	if path == "/merge" && r.Method == "POST" {
 		a.mergeMetadata(w, r, u)
 		return

@@ -8,7 +8,7 @@ The first migration workflow is implemented: first-access administrator setup, A
 
 Docker bundles the application, UI, downloader and audio validation tooling. Mount the same music directory Navidrome scans, start the container, create the admin in the browser, then configure connections and open Imports. No administrator password/hash environment variable is needed.
 
-Search also includes an experimental lossless.am provider for individual FLAC song requests. See [media provider support and limitations](docs/media-providers.md).
+Search also includes experimental lossless.am support for songs and full-album requests, plus Hitmo for individual songs. Hitmo requires no account and supplies MP3; enable a lossy quality tier to use it. See [media provider support and limitations](docs/media-providers.md).
 
 See [deployment and first-migration instructions](docs/deployment.md) and the [song deletion API](docs/deletion-api.md). Wavio compatibility, shared-file upgrades and the remaining multi-user lifecycle features are still pending; the bullets below describe the full planned phase 1, not a claim that every feature is complete.
 

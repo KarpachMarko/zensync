@@ -3,6 +3,7 @@ package app
 // Keep the metadata history and the small active-job preview consistently named.
 // Legacy jobs predate structured artist identities, hence the fallbacks.
 const metadataActivityTitleSQL = `CASE WHEN json_valid(changes) THEN CASE
+ WHEN json_type(changes,'$[0].consolidation') IS NOT NULL THEN 'Merge songs / '||json_extract(changes,'$[0].consolidation.source.title')||' → '||json_extract(changes,'$[0].song.title')
  WHEN json_extract(changes,'$[0].collectionKind')='album' THEN 'Edit album / '||json_extract(changes,'$[0].collectionName')
  WHEN json_extract(changes,'$[0].collectionKind')='artist' THEN 'Rename artist / '||json_extract(changes,'$[0].collectionName')
  ELSE CASE json_extract(changes,'$[0].mergeKind')

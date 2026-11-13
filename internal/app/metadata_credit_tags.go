@@ -164,7 +164,7 @@ func preserveEditedMetadata(ctx context.Context, change *metadataChange, origina
 	if albumArtists != nil && !metadataAlbumArtistsChanged(*change) {
 		albumArtists = nil
 	}
-	plan := map[string]any{"kind": "edit-metadata", "trackNumber": change.Edit.TrackNumber, "discNumber": change.Edit.DiscNumber, "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist, "artistNames": artists, "albumArtistNames": albumArtists, "fallbackArtists": creditNames(songCredits(change.Song, false)), "fallbackAlbumArtists": creditNames(songCredits(change.Song, true))}
+	plan := map[string]any{"kind": "edit-metadata", "preserveArtwork": change.MergeKind == "song", "trackNumber": change.Edit.TrackNumber, "discNumber": change.Edit.DiscNumber, "original": original, "output": output, "changed": changed, "artist": change.Edit.Artist, "albumartist": change.Edit.AlbumArtist, "artistNames": artists, "albumArtistNames": albumArtists, "fallbackArtists": creditNames(songCredits(change.Song, false)), "fallbackAlbumArtists": creditNames(songCredits(change.Song, true))}
 	cmd := exec.CommandContext(ctx, metadataPythonPath(), "-c", metadataCreditWriter)
 	cmd.Stdin = strings.NewReader(mustJSON(plan))
 	protectChild(cmd)

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var targetPattern = regexp.MustCompile(`^(deezer:track:[1-9][0-9]{0,19}|lossless:track:[a-zA-Z0-9_-]{1,40}:[1-9][0-9]{0,18})$`)
+var targetPattern = regexp.MustCompile(`^(hitmo:track:[1-9][0-9]{0,18}|deezer:track:[1-9][0-9]{0,19}|lossless:track:[a-zA-Z0-9_-]{1,40}:[1-9][0-9]{0,18})$`)
 
 func (a *App) listRequests(w http.ResponseWriter, u User) {
 	query := `WITH request_rows AS (
@@ -61,7 +61,7 @@ func (a *App) listRequests(w http.ResponseWriter, u User) {
 				a.internal(w, err)
 				return
 			}
-		} else if strings.HasPrefix(out[index].Target, "deezer:album:") {
+		} else if isAlbumTarget(out[index].Target) {
 			out[index].Kind = "album"
 			out[index].Items, e = a.albumItems(out[index].ID)
 			if e != nil {
@@ -123,7 +123,7 @@ func (a *App) createVerifiedRequest(w http.ResponseWriter, r *http.Request, u Us
 		fail(w, 400, "Reserved request key prefix")
 		return
 	}
-	if strings.HasPrefix(in.Target, "deezer:album:") {
+	if isAlbumTarget(in.Target) {
 		if in.Upgrade || in.SourceID != "" {
 			fail(w, 400, "Album upgrades and migration-entry album substitutions are not supported")
 			return
@@ -332,7 +332,7 @@ func (a *App) activity(w http.ResponseWriter, u User) {
  SELECT j.id,r.title,CASE WHEN j.state IN ('failed','blocked') AND EXISTS (
  SELECT 1 FROM requests newer JOIN jobs success ON success.request_id=newer.id
  WHERE newer.owner=r.owner AND newer.target=r.target AND newer.upgrade=r.upgrade AND newer.quality=r.quality AND newer.rowid>r.rowid AND success.state='available'
- ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN (r.target LIKE 'deezer:track:%' OR r.target LIKE 'lossless:track:%') THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
+ ) THEN 'superseded' ELSE j.state END AS state,j.stage,j.created,r.owner,CASE WHEN (r.target LIKE 'deezer:track:%' OR r.target LIKE 'lossless:track:%' OR r.target LIKE 'hitmo:track:%') THEN 'acquisition' ELSE 'other' END AS kind FROM jobs j JOIN requests r ON r.id=j.request_id
  UNION ALL SELECT t.id,m.name||' / '||t.action,t.state,t.message,t.created,t.owner,'migration' FROM migration_tasks t JOIN migrations m ON m.id=t.migration_id
  UNION ALL SELECT id,'Organize legacy download / '||old_path,state,message,created,owner,'relocation' FROM asset_relocations
  `

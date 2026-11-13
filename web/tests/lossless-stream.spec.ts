@@ -3,7 +3,7 @@ import type { Detail } from "../src/lib/migration";
 import type { Track } from "../src/lib/api";
 
 const lossless: Track = { id: 42, provider: "lossless", source: "main", title: "Best match", title_version: "", duration: 90, artist: { name: "Artist" }, album: { title: "Album" }, link: "" };
-const deezer: Track = { id: 42, title: "Different recording", title_version: "", duration: 90, artist: { name: "Other artist" }, album: { title: "Other album" }, link: "" };
+const deezer: Track = { id: 43, title: "Different recording", title_version: "", duration: 90, artist: { name: "Other artist" }, album: { title: "Other album" }, link: "" };
 const detail: Detail = {
   migration: { id: "migration", name: "Import", state: "open", favorites: false, targetUser: "", error: "", report: { songs: 1, playlists: 0, unplaylisted: 1, missing: 0, excluded: 0, warnings: [] } },
   songs: [{ id: "source", metadata: { title: "Best match", artist: "Artist", album: "Album", duration: 90, favorite: false, missing: false }, serverId: "", candidate: null, matchState: "unresolved", deferred: false, favoriteState: "", requestId: "", decision: "", jobState: "" }], playlists: [],
@@ -17,7 +17,9 @@ function audioFixture() {
   wav.write("data", 36); wav.writeUInt32LE(length, 40);
   return wav;
 }
-async function fixture(page: Page) {
+async function fixture(page: Page, provider: "deezer" | "lossless" | "hitmo") {
+  const streamingTrack: Track = { ...lossless, provider };
+  const providerName = provider === "hitmo" ? "Hitmo" : provider === "deezer" ? "Deezer" : "Lossless.am";
   const streams: URL[] = [];
   const searches: string[] = [];
   await page.route("**/api/v2/**", async (route) => {
@@ -27,15 +29,15 @@ async function fixture(page: Page) {
     if (path === "/api/v2/imports/migration") return route.fulfill({ json: detail });
     if (path.endsWith("/candidates")) {
       searches.push(path);
-      return route.fulfill({ json: { library: [], deezer: [deezer], providers: [
-        { id: "deezer", name: "Deezer", tracks: [deezer] }, { id: "lossless", name: "Lossless.am", tracks: [lossless] },
-      ], recordings: [lossless, deezer] } });
+      return route.fulfill({ json: { library: [], deezer: [deezer], providers: provider === "deezer" ? [{ id: "deezer", name: "Deezer", tracks: [streamingTrack, deezer] }] : [
+        { id: "deezer", name: "Deezer", tracks: [deezer] }, { id: provider, name: providerName, tracks: [streamingTrack] },
+      ], recordings: [streamingTrack, deezer] } });
     }
-    if (path === "/api/v2/search") return route.fulfill({ json: { tracks: [lossless], albums: [] } });
+    if (path === "/api/v2/search") return route.fulfill({ json: { tracks: [streamingTrack], albums: [] } });
     if (path === "/api/v2/library") return route.fulfill({ json: [] });
-    if (path === "/api/v2/providers/lossless/stream") {
+    if (path === `/api/v2/providers/${provider}/stream`) {
       streams.push(url);
-      expect(url.searchParams.get("target")).toBe("lossless:track:main:42");
+      expect(url.searchParams.get("target")).toBe(provider === "hitmo" ? "hitmo:track:42" : provider === "deezer" ? "deezer:track:42" : "lossless:track:main:42");
       expect(url.searchParams.has("_token")).toBe(false);
       expect(url.searchParams.get("sid")).toMatch(/^[a-zA-Z0-9_-]{8,64}$/);
       const body = audioFixture();
@@ -51,31 +53,37 @@ async function fixture(page: Page) {
   return { streams, searches };
 }
 
-test("review mixes providers by match order, filters locally and streams beyond 30 seconds", async ({ page }) => {
-  const { streams, searches } = await fixture(page);
+for (const provider of ["lossless", "hitmo", "deezer"] as const) {
+const providerName = provider === "hitmo" ? "Hitmo" : provider === "deezer" ? "Deezer" : "Lossless.am";
+test(`${provider}: review mixes providers, filters locally and streams beyond 30 seconds`, async ({ page }) => {
+  const { streams, searches } = await fixture(page, provider);
   await page.goto("/imports/migration?recording=source");
   const dialog = page.getByRole("dialog", { name: "Best match", exact: true });
   const results = dialog.getByRole("region", { name: /^Provider recordings/ });
   const rows = results.locator('[data-slot="list-row"]');
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Best match");
-  await expect(rows.first().locator('[data-slot="badge"]')).toHaveText("Lossless.am");
+  await expect(rows.first().locator('[data-slot="badge"]')).toHaveText(providerName);
   expect(streams).toHaveLength(0);
+  if (provider !== "deezer") {
   const filters = results.getByRole("group", { name: "Filter recording sources" });
   await filters.getByRole("button", { name: "Deezer", exact: true }).click();
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("Different recording");
+  await expect(rows).toHaveCount(provider === "deezer" ? 2 : 1);
+  if (provider !== "deezer") await expect(rows.first()).toContainText("Different recording");
   await filters.getByRole("button", { name: "All sources", exact: true }).click();
   await expect(rows.first()).toContainText("Best match");
-  await filters.getByRole("button", { name: "Lossless.am", exact: true }).click();
+  await filters.getByRole("button", { name: providerName, exact: true }).click();
   expect(searches).toHaveLength(1);
-  await expect(page).toHaveURL(/recordingProvider=lossless/);
+  await expect(page).toHaveURL(new RegExp(`recordingProvider=${provider}`));
   await page.reload();
-  await expect(filters.getByRole("button", { name: "Lossless.am", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(filters.getByRole("button", { name: providerName, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
   await results.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
   const audio = dialog.getByLabel("Full track stream player", { exact: true });
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.duration)).toBe(90);
+  const dock = dialog.getByRole("region", { name: "Preview player", exact: true });
+  expect(await dock.evaluate(element => Math.abs((element.closest("div.fixed")?.getBoundingClientRect().bottom ?? 0) - innerHeight))).toBeLessThanOrEqual(1);
   await audio.evaluate((element: HTMLAudioElement) => { element.currentTime = 45; element.dispatchEvent(new Event("timeupdate")); });
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThan(44);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
@@ -88,12 +96,67 @@ test("review mixes providers by match order, filters locally and streams beyond 
   expect(await handle?.evaluate((element: HTMLAudioElement) => element.paused && element.getAttribute("src") === null)).toBe(true);
 });
 
-test("Search offers lossless streaming without creating an acquisition", async ({ page }) => {
-  const { streams } = await fixture(page);
-  await page.goto("/search?q=Song&provider=lossless");
+test(`${provider}: Search streams without creating an acquisition`, async ({ page }) => {
+  const { streams } = await fixture(page, provider);
+  await page.goto(`/search?q=Song&provider=${provider}`);
   await page.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
   const audio = page.getByLabel("Full track stream player", { exact: true });
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
   await expect.poll(() => streams.length).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: "Request", exact: true })).toBeEnabled();
+  const player = page.getByRole("region", { name: "Preview player", exact: true });
+  const position = await player.evaluate(element => {
+    const dock = element.closest("div.fixed");
+    if (!(dock instanceof HTMLElement)) throw new Error("Player is not docked");
+    return { position: getComputedStyle(dock).position, bottom: dock.getBoundingClientRect().bottom, viewport: innerHeight };
+  });
+  expect(position.position).toBe("fixed");
+  expect(position.bottom).toBe(position.viewport);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(player).toBeInViewport();
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 720 });
+    const alignment = await player.evaluate(element => {
+      const button = element.querySelector('[aria-label="Close player"]');
+      const icon = button?.querySelector("svg");
+      const artwork = element.firstElementChild;
+      if (!button || !icon || !artwork) throw new Error("Missing player controls");
+      const b = button.getBoundingClientRect(), i = icon.getBoundingClientRect(), a = artwork.getBoundingClientRect();
+      return { artworkOffset: Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)),
+        iconX: Math.abs((i.left + i.width / 2) - (b.left + b.width / 2)),
+        iconY: Math.abs((i.top + i.height / 2) - (b.top + b.height / 2)),
+        overflow: element.scrollWidth - element.clientWidth };
+    });
+    expect(alignment.artworkOffset).toBeLessThanOrEqual(1);
+    expect(alignment.iconX).toBeLessThanOrEqual(1);
+    expect(alignment.iconY).toBeLessThanOrEqual(1);
+    expect(alignment.overflow).toBeLessThanOrEqual(1);
+  }
+  await page.getByRole("button", { name: "Close player", exact: true }).click();
+  await expect(player).toHaveCount(0);
+  await expect(audio).not.toHaveAttribute("src");
+});
+
+}
+
+
+test("import review switches between provider and existing library audio in the same player", async ({ page }) => {
+  await fixture(page, "lossless");
+  const local = { id: "42", title: "Existing recording", artist: "Artist", album: "Album", duration: 90 };
+  await page.route("**/candidates", route => route.fulfill({ json: { library: [local], deezer: [], recordings: [lossless], providers: [{ id: "lossless", name: "Lossless.am", tracks: [lossless] }] } }));
+  await page.route("**/api/v2/library/stream?**", route => route.fulfill({ contentType: "audio/wav", body: audioFixture() }));
+  await page.goto("/imports/migration?recording=source");
+  const dialog = page.getByRole("dialog", { name: "Best match", exact: true });
+  await dialog.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
+  const audio = dialog.locator("audio");
+  await expect(audio).toHaveCount(1);
+  await expect.poll(() => audio.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
+  await dialog.getByRole("button", { name: "Play library recording: Existing recording", exact: true }).click();
+  await expect(audio).toHaveAttribute("src", /library\/stream\?id=42/);
+  await expect(audio).toHaveCount(1);
+  await expect.poll(() => audio.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
+  await expect(dialog.getByRole("button", { name: "Play stream of Best match", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Play stream of Best match", exact: true }).click();
+  await expect(audio).toHaveAttribute("src", /providers\/lossless\/stream/);
+  await expect(audio).toHaveCount(1);
 });

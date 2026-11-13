@@ -135,6 +135,7 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 		fail(w, 409, "This song is being kept by a pending duplicate deletion")
 		return
 	}
+	var keptSong *Song
 	if in.KeepSongID != "" {
 		if in.KeepSongID == in.SongID || len(in.KeepSongID) > 256 {
 			fail(w, 400, "Choose a different song to keep")
@@ -145,6 +146,7 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 			fail(w, 409, "The kept song is unavailable")
 			return
 		}
+		keptSong = &kept.Song
 		keptPath, _, err := a.deletionPath(r.Context(), c, kept.Song)
 		if err != nil || keptPath == rel {
 			fail(w, 409, "The kept song must be a separate available file")
@@ -167,6 +169,10 @@ func (a *App) createDeletionRequest(w http.ResponseWriter, r *http.Request, u Us
 		return
 	}
 	defer tx.Rollback()
+	if e = metadataQueueConflict(tx, []metadataChange{{Song: remote.Song, Target: keptSong}}); e != nil {
+		fail(w, 409, e.Error())
+		return
+	}
 	var pending int
 	e = tx.QueryRow("SELECT count(*) FROM song_deletions d JOIN requests r ON r.id=d.request_id LEFT JOIN jobs j ON j.request_id=r.id WHERE d.file_path=? AND (r.decision='awaiting_approval' OR (r.decision='approved' AND j.state NOT IN ('completed','failed')))", rel).Scan(&pending)
 	if e != nil {

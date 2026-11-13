@@ -110,7 +110,7 @@ func (a *App) acquireMigrationSongs(w http.ResponseWriter, r *http.Request, u Us
 			return
 		}
 		identity := fmt.Sprint(track.ID)
-		if track.Provider == "lossless" {
+		if track.Provider == "lossless" || track.Provider == "hitmo" {
 			identity = trackTarget(track)
 		}
 		sourceKey := digest(sid + identity + prior + revision)

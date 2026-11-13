@@ -41,12 +41,17 @@ func (a *App) mediaProvider(name string) (mediaProvider, error) {
 	switch name {
 	case "", "deezer":
 		return deezerProvider{a}, nil
+	case "hitmo":
+		return hitmoProvider{a}, nil
 	case "lossless":
 		return losslessProvider{a}, nil
 	}
 	return nil, errors.New("Unknown media provider")
 }
 func trackTarget(t Track) string {
+	if t.Provider == "hitmo" {
+		return "hitmo:track:" + strconv.FormatInt(t.ID, 10)
+	}
 	if t.Provider == "lossless" {
 		return "lossless:track:" + t.Source + ":" + strconv.FormatInt(t.ID, 10)
 	}
@@ -56,6 +61,9 @@ func (a *App) track(ctx context.Context, target string) (Track, error) {
 	name := "deezer"
 	if strings.HasPrefix(target, "lossless:") || strings.HasPrefix(target, "https://lossless.am/") {
 		name = "lossless"
+	}
+	if strings.HasPrefix(target, "hitmo:") || strings.HasPrefix(target, "https://eu.hitmoz.com/") {
+		name = "hitmo"
 	}
 	p, err := a.mediaProvider(name)
 	if err != nil {
@@ -81,13 +89,26 @@ func (a *App) searchProvider(w http.ResponseWriter, r *http.Request, name string
 		fail(w, 400, "Search is too long")
 		return
 	}
+	if name == "lossless" {
+		result, err := (losslessProvider{a}).searchCatalog(r.Context(), q)
+		if err != nil {
+			fail(w, 502, err.Error())
+			return
+		}
+		if r.URL.Query().Get("details") == "1" {
+			send(w, 200, result)
+		} else {
+			send(w, 200, result.Tracks)
+		}
+		return
+	}
 	tracks, err := p.Search(r.Context(), q)
 	if err != nil {
 		fail(w, 502, err.Error())
 		return
 	}
 	if r.URL.Query().Get("details") == "1" {
-		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{"Lossless.am supports individual song requests. Album requests and previews are unavailable."}})
+		send(w, 200, map[string]any{"tracks": tracks, "albums": []AlbumSummary{}, "warnings": []string{}})
 		return
 	}
 	send(w, 200, tracks)

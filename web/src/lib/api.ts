@@ -96,8 +96,26 @@ export async function uploadCoverFile(songID: string, file: File): Promise<{ id:
   return { id: data.id };
 }
 
-export type Track = {
+export type Album = {
   provider?: "deezer" | "lossless";
+  source?: string;
+  sourceId?: string;
+  id: number;
+  title: string;
+  artist: { name: string };
+  trackCount?: number;
+};
+export function albumTarget(album: Album) {
+  return album.provider === "lossless" ? `lossless:album:${album.source}:${album.sourceId ?? album.id}` : `deezer:album:${album.id}`;
+}
+export function albumURL(album: Album) {
+  return album.provider === "lossless"
+    ? `https://lossless.am/app/album/${encodeURIComponent(album.source ?? "")}/${encodeURIComponent(album.sourceId ?? String(album.id))}`
+    : `https://www.deezer.com/album/${album.id}`;
+}
+
+export type Track = {
+  provider?: "deezer" | "lossless" | "hitmo";
   source?: string;
   id: number;
   title: string;
@@ -109,9 +127,16 @@ export type Track = {
   preview?: string;
 };
 export function trackTarget(t: Track) {
- return t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+ return t.provider === "hitmo" ? `hitmo:track:${t.id}` : t.provider === "lossless" ? `lossless:track:${t.source}:${t.id}` : `deezer:track:${t.id}`;
+}
+export function providerLabel(provider: Track["provider"]) {
+  return provider === "hitmo" ? "Hitmo" : provider === "lossless" ? "Lossless.am" : "Deezer";
 }
 export type LibrarySong = {
+  albumArtist?: string;
+  coverArt?: string;
+  albumId?: string;
+  artistId?: string;
   contentType?: string;
   suffix?: string;
   bitRate?: number;

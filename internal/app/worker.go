@@ -28,6 +28,7 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 		if err := a.cleanupMetadataTemps(); err != nil {
 			slog.Warn("Metadata temporary-file cleanup failed", "error", err)
 		}
+		a.cleanReplacementInputs()
 		defer slog.Info("Background worker stopped")
 		cleanupErr := filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
 			if e == nil && !d.IsDir() && d.Name() == "d-fi.config.json" {
@@ -233,6 +234,15 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 		e = tx.QueryRow("SELECT r.owner,j.state FROM jobs j JOIN requests r ON r.id=j.request_id WHERE j.id=?", tid).Scan(&owner, &state)
 		if e != nil || (owner != u.ID && u.Role != "admin") {
 			fail(w, 404, "Task not found")
+			return
+		}
+		var mergeParent int
+		if err := tx.QueryRow(`SELECT count(*) FROM metadata_jobs m,json_each(CASE WHEN json_valid(m.changes) THEN m.changes ELSE '[]' END) c JOIN jobs j ON j.request_id=json_extract(c.value,'$.consolidation.removalId') WHERE j.id=? AND m.state<>'completed'`, tid).Scan(&mergeParent); err != nil {
+			a.internal(w, err)
+			return
+		}
+		if mergeParent > 0 {
+			fail(w, 409, "Retry the parent Merge songs operation in Activity; its removal must follow verified metadata")
 			return
 		}
 		if state != "failed" && state != "blocked" {
@@ -478,6 +488,10 @@ func (a *App) jobState(jid, state, message string) {
 	}
 	var previous, previousMessage string
 	if e := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE id=?", jid).Scan(&previous, &previousMessage); e != nil {
+		if e == sql.ErrNoRows {
+			_, _ = a.DB.Exec("UPDATE metadata_jobs SET message=? WHERE id=? AND state='running'", message, jid)
+			return
+		}
 		slog.Error("job state lookup failed", "job_id", jid)
 		return
 	}
@@ -510,6 +524,9 @@ func (a *App) fulfill(jid, rid, target, songID string) {
 		if len(parts) == 4 {
 			provider, source, number = "lossless", parts[2], parts[3]
 		}
+	}
+	if strings.HasPrefix(target, "hitmo:track:") {
+		provider, number = "hitmo", strings.TrimPrefix(target, "hitmo:track:")
 	}
 	providerID, _ := strconv.ParseInt(number, 10, 64)
 	if providerID > 0 {

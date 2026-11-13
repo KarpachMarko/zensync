@@ -72,6 +72,9 @@ func (a *App) reviewTrack(ctx context.Context, target string) (Track, error) {
 	if normalizedTarget, err := losslessTarget(target); err == nil {
 		key = normalizedTarget
 	}
+	if normalizedTarget, err := hitmoTarget(target); err == nil {
+		key = normalizedTarget
+	}
 	a.reviewMu.Lock()
 	cached, found := a.reviewTracks[key]
 	a.reviewMu.Unlock()
@@ -368,6 +371,9 @@ func (a *App) albumTracks(ctx context.Context, id string) ([]Track, error) {
 }
 
 type AlbumSummary struct {
+	Provider   string `json:"provider,omitempty"`
+	Source     string `json:"source,omitempty"`
+	SourceID   string `json:"sourceId,omitempty"`
 	ID         int64  `json:"id"`
 	Title      string `json:"title"`
 	Artist     Artist `json:"artist"`

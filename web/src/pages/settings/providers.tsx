@@ -13,6 +13,8 @@ export function MusicProviders() {
         Connect the services ZenSync uses to find and download missing music.
         Quality preferences apply to new requests.
       </Text>
+      <SectionHeading>Hitmo</SectionHeading>
+      <Text>Available without an account at eu.hitmoz.com. Choose Hitmo in Search to listen to full songs before requesting individual MP3 downloads. Enable a lossy quality tier to allow MP3 downloads.</Text>
       {result.error && <Text role="alert">{result.error.message}</Text>}
       {data && (
         <>

@@ -1,3 +1,6 @@
+import { ReviewDialogContent } from "@/components/music/review-dialog-content";
+import { LibraryRecordingDetails } from "@/components/music/library-recording-details";
+import { recordingKey, type Recording } from "@/lib/playback";
 import { AudioUpload } from "@/components/imports/audio-upload";
 import { RetainedAudioReview } from "@/components/requests/retained-audio-review";
 import { MatchDetails } from "@/components/imports/match-details";
@@ -14,13 +17,12 @@ import { parseAsString, useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useImportAction } from "@/hooks/use-import-action";
 import type { LibrarySong, Track } from "@/lib/api";
-import { api as readAPI, label, time, trackTarget } from "@/lib/api";
+import { api as readAPI, label, providerLabel, time, trackTarget } from "@/lib/api";
 import { songGuidance, status, type Migration, type Source, type RecordingMatch } from "@/lib/migration";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -62,7 +64,7 @@ export function Review({
   const [updatedSource, setUpdatedSource] = useState<Source | null>(null);
   const s = updatedSource ?? source;
   const { act: save } = useImportAction(m.id);
-  const preview = useRecordingPreview();
+  const preview = useRecordingPreview<Recording>();
   const [providerFilter, setProviderFilter] = useQueryState("recordingProvider", parseAsString.withDefault("all"));
   const [query, setQuery] = useState(
     (s.metadata.artist + " " + s.metadata.title).trim().slice(0, 500),
@@ -118,8 +120,7 @@ export function Review({
   } : null;
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <DialogContent
-        className="flex h-[min(840px,90dvh)] w-[calc(100vw-2rem)] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px] max-sm:h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+      <ReviewDialogContent
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           if (trigger.current instanceof HTMLElement && trigger.current.isConnected)
@@ -166,14 +167,14 @@ export function Review({
             <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-solid border-border px-3 py-2">
               <div className="min-w-0">
                 <h2 className="m-0 mb-1 text-xs font-semibold text-muted-foreground">{requestReplacement && !updatedSource ? "Failed recording" : "Selected recording"}</h2>
-                <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{label(s.candidate)}</strong><Badge variant="outline">{s.candidate.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
+                <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{label(s.candidate)}</strong><Badge variant="outline">{providerLabel(s.candidate.provider)}</Badge></div>
                 <Caption>
                   {s.candidate.artist.name} / {s.candidate.album.title} / {time(s.candidate.duration)}
                 </Caption>
                 {selectedRecording && (
                   <RecordingTools
                     track={selectedRecording}
-                    playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(selectedRecording)}
+                    playing={preview.playing && !!preview.active && recordingKey(preview.active) === trackTarget(selectedRecording)}
                     onPreview={preview.toggle}
                   />
                 )}
@@ -224,8 +225,7 @@ export function Review({
                 {candidates.data.library.map((t) => (
                   <Row key={t.id} className="gap-3 py-2">
                     <div className="min-w-0 break-words">
-                      <strong>{t.title}</strong>
-                      <Caption>{t.artist} / {t.album} / {time(t.duration)}</Caption>
+                      <LibraryRecordingDetails song={t} playback={preview} />
                       <MatchDetails match={candidates.data.libraryMatches?.[t.id]} />
                     </div>
                     <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { serverId: t.id })}>Use existing</Button>
@@ -245,10 +245,10 @@ export function Review({
                 {recordings.map((t) => (
                   <Row key={trackTarget(t)} className="gap-3 py-2">
                     <div className="min-w-0 break-words">
-                      <div className="flex flex-wrap items-center gap-2"><strong>{label(t)}</strong><Badge variant="outline">{t.provider === "lossless" ? "Lossless.am" : "Deezer"}</Badge></div>
+                      <div className="flex flex-wrap items-center gap-2"><strong>{label(t)}</strong><Badge variant="outline">{providerLabel(t.provider)}</Badge></div>
                       <Caption>{t.artist.name} / {t.album.title} / {time(t.duration)}</Caption>
                       <MatchDetails match={matchFor(t)} />
-                      <RecordingTools track={t} playing={preview.playing && !!preview.active && trackTarget(preview.active) === trackTarget(t)} onPreview={preview.toggle} />
+                      <RecordingTools track={t} playing={preview.playing && !!preview.active && recordingKey(preview.active) === trackTarget(t)} onPreview={preview.toggle} />
                     </div>
                     <Button variant="outline" disabled={busy || !editable || candidates.isFetching} onClick={() => void act("resolve", { target: trackTarget(t) })}>{requestReplacement ? "Use and request" : "Use this recording"}</Button>
                   </Row>
@@ -258,8 +258,6 @@ export function Review({
           )}
         </div>
         <footer className="flex min-w-0 shrink-0 flex-col gap-2 border-0 border-t border-solid border-border px-5 py-3 max-sm:px-3">
-          <PreviewPlayer preview={preview} />
-          {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Text className="m-0 text-xs">{requestReplacement ? "Choosing a provider recording creates a replacement request; approval may be required." : "Selecting a recording does not start a download."}</Text>
             {editable && !s.serverId && (
@@ -274,8 +272,9 @@ export function Review({
               </Button>
             )}
           </div>
+          <PreviewPlayer preview={preview} />
         </footer>
-      </DialogContent>
+      </ReviewDialogContent>
     </Dialog>
   );
 }

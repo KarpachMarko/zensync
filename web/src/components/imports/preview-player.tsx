@@ -1,7 +1,8 @@
-import { AudioPlayer } from "@/components/music/audio-player";
+import { DockedAudioPlayer } from "@/components/music/docked-audio-player";
 import type { useRecordingPreview } from "@/hooks/use-recording-preview";
-import { label, trackTarget } from "@/lib/api";
+import { isLibraryRecording, recordingArtist, recordingCover, recordingKey, recordingTitle, type Recording } from "@/lib/playback";
 
-export function PreviewPlayer({ preview, caption: customCaption }: { preview: ReturnType<typeof useRecordingPreview>; caption?: string }) {
-  return <AudioPlayer preview={preview} caption={customCaption ?? (preview.active?.provider === "lossless" ? "Full track stream" : "30s preview")} title={label} artist={track => track.artist.name} cover={track => track.album.cover_medium} recordingKey={trackTarget} />;
+export function PreviewPlayer<T extends Recording>({ preview, caption }: { preview: ReturnType<typeof useRecordingPreview<T>>; caption?: string }) {
+  return <DockedAudioPlayer preview={preview} caption={caption ?? (preview.active && isLibraryRecording(preview.active) ? "Library stream" : "Full track stream")}
+    title={recordingTitle} artist={recordingArtist} cover={recordingCover} recordingKey={recordingKey} />;
 }

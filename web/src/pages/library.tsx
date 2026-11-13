@@ -1,5 +1,7 @@
 import { CollectionEditButton, ArtistRenameHost } from "@/components/music/collection-edit";
 import { AutoLoadMore } from "@/components/auto-load-more";
+import { useRecordingPreview } from "@/hooks/use-recording-preview";
+import { PreviewPlayer } from "@/components/imports/preview-player";
 import { ManualMerge } from "@/components/music/manual-merge";
 import { LibrarySongRow } from "@/components/music/library-song-row";
 import { MetadataJobs } from "@/components/music/metadata-jobs";
@@ -29,6 +31,7 @@ export function Library({
   canDelete: boolean;
   canEdit?: boolean;
 }) {
+  const preview = useRecordingPreview<LibrarySong>();
   const navigate = useNavigate();
   const params = useParams();
   const view: View = views.find((v) => v === params.view) ?? "songs";
@@ -179,7 +182,7 @@ export function Library({
             )}
           </AppLink>
           {canEdit && view !== "playlists" && <CollectionEditButton kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
-          {canEdit && view !== "playlists" && <ManualMerge kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} />}
+          {canEdit && view !== "playlists" && <ManualMerge kind={view === "artists" && !state.collection ? "artist" : "album"} source={item} onOpen={preview.stop} />}
           <span className="text-xs text-muted-foreground">
             {item.songCount}{" "}
             {view === "artists" && !state.collection ? "albums" : "songs"}
@@ -190,6 +193,7 @@ export function Library({
         <LibrarySongRow
           key={`${song.id}-${index}`}
           song={song}
+          playback={preview}
           canDelete={canDelete}
           canEdit={canEdit}
         />
@@ -208,6 +212,7 @@ export function Library({
         )}
       <AutoLoadMore key={`${view}:${state.collection}:${state.q}:${state.contents}`} hasMore={!!result.hasNextPage} loading={result.isFetching}
         error={result.isFetchNextPageError} loadMore={result.fetchNextPage} />
+      <PreviewPlayer preview={preview} />
     </>
   );
 }

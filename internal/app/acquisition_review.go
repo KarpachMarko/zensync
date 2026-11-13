@@ -18,7 +18,7 @@ func (e *audioDurationMismatch) Error() string {
 }
 func audioApprovalKey(t Track) string {
 	var identity any = t.ID
-	if t.Provider == "lossless" {
+	if t.Provider == "lossless" || t.Provider == "hitmo" {
 		identity = trackTarget(t)
 	}
 	return digest(mustJSON([]any{identity, normalized(trackLabel(t)), normalized(t.Artist.Name), normalized(t.Album.Title), strings.ToUpper(t.ISRC), t.Duration}))
@@ -68,17 +68,17 @@ func (a *App) reviewAcquisitionAudio(w http.ResponseWriter, r *http.Request, u U
 			continue
 		}
 		stageQuality := q
-		if track.Provider == "lossless" {
+		if track.Provider == "lossless" || track.Provider == "hitmo" {
 			if index > 0 {
 				break
 			}
-			stageQuality = "lossless"
+			stageQuality = track.Provider
 		}
 		paths, e := stagedAudio(filepath.Join(a.dataDir, "staging", jid, stageQuality))
 		if e != nil || len(paths) != 1 || track.ID <= 0 {
 			continue
 		}
-		if track.Provider == "lossless" {
+		if track.Provider == "lossless" || track.Provider == "hitmo" {
 			actual, _, err := a.nativeAudioQuality(paths[0])
 			if err != nil || !nativeQualityAllowed(qualities, actual) {
 				continue

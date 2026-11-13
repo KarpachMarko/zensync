@@ -7,15 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
 type AlbumSnapshot struct {
-	ID     int64   `json:"id"`
-	Title  string  `json:"title"`
-	Artist Artist  `json:"artist"`
-	Tracks []Track `json:"tracks"`
+	Provider string  `json:"provider,omitempty"`
+	Source   string  `json:"source,omitempty"`
+	SourceID string  `json:"sourceId,omitempty"`
+	ID       int64   `json:"id"`
+	Title    string  `json:"title"`
+	Artist   Artist  `json:"artist"`
+	Tracks   []Track `json:"tracks"`
 }
 type AlbumItem struct {
 	Transfer *TransferProgress `json:"transfer,omitempty"`
@@ -64,9 +68,30 @@ func (a *App) albumSnapshot(ctx context.Context, id string) (AlbumSnapshot, erro
 	}
 	return album, nil
 }
+
+var albumTargetPattern = regexp.MustCompile(`^(deezer:album:[1-9][0-9]{0,18}|lossless:album:[a-zA-Z0-9_-]{1,40}:[a-zA-Z0-9_-]{1,80})$`)
+
+func albumTarget(album AlbumSummary) string {
+	if album.Provider == "lossless" {
+		return "lossless:album:" + album.Source + ":" + album.SourceID
+	}
+	return "deezer:album:" + strconv.FormatInt(album.ID, 10)
+}
+func isAlbumTarget(target string) bool {
+	return strings.HasPrefix(target, "deezer:album:") || strings.HasPrefix(target, "lossless:album:")
+}
+func (a *App) providerAlbumSnapshot(ctx context.Context, target string) (AlbumSnapshot, error) {
+	if !albumTargetPattern.MatchString(target) {
+		return AlbumSnapshot{}, errors.New("Invalid provider album identity")
+	}
+	if strings.HasPrefix(target, "lossless:") {
+		return (losslessProvider{a}).Album(ctx, target)
+	}
+	return a.albumSnapshot(ctx, strings.TrimPrefix(target, "deezer:album:"))
+}
+
 func (a *App) createAlbumRequest(w http.ResponseWriter, r *http.Request, u User, target, key string) {
-	idString := strings.TrimPrefix(target, "deezer:album:")
-	if !digits.MatchString(idString) || len(key) < 8 || len(key) > 128 {
+	if !albumTargetPattern.MatchString(target) || len(key) < 8 || len(key) > 128 {
 		fail(w, 400, "Valid album target and Idempotency-Key required")
 		return
 	}
@@ -84,7 +109,7 @@ func (a *App) createAlbumRequest(w http.ResponseWriter, r *http.Request, u User,
 		a.internal(w, e)
 		return
 	}
-	album, e := a.albumSnapshot(r.Context(), idString)
+	album, e := a.providerAlbumSnapshot(r.Context(), target)
 	if e != nil {
 		fail(w, 400, e.Error())
 		return
@@ -158,7 +183,7 @@ func (a *App) expandAlbum(tx *sql.Tx, parent string) error {
 		e := tx.QueryRow("SELECT child_id FROM request_children WHERE parent_id=? AND position=?", parent, i).Scan(&child)
 		if e == sql.ErrNoRows {
 			child = id()
-			if _, e = tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason,actor) VALUES(?,?,?,?,?,?,0,?,'approved',?,?)", child, owner, "album:"+parent+":"+strconv.Itoa(i), fmt.Sprintf("deezer:track:%d", t.ID), trackLabel(t), t.Artist.Name, quality, reason, actor); e != nil {
+			if _, e = tx.Exec("INSERT INTO requests(id,owner,idem,target,title,artist,upgrade,quality,decision,reason,actor) VALUES(?,?,?,?,?,?,0,?,'approved',?,?)", child, owner, "album:"+parent+":"+strconv.Itoa(i), trackTarget(t), trackLabel(t), t.Artist.Name, quality, reason, actor); e != nil {
 				return e
 			}
 			if _, e = tx.Exec("INSERT INTO request_metadata(request_id,metadata) VALUES(?,?)", child, mustJSON(t)); e != nil {

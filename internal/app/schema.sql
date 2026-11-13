@@ -223,3 +223,15 @@ CREATE TABLE IF NOT EXISTS deletion_restores (
  phase TEXT NOT NULL DEFAULT 'preparing', server_url TEXT NOT NULL
 );
 INSERT OR IGNORE INTO schema_version VALUES(11);
+
+-- Replacement inputs are private staging, never acquisition assets.
+CREATE TABLE IF NOT EXISTS metadata_audio_inputs (
+ id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), source_id TEXT NOT NULL,
+ path TEXT NOT NULL, checksum TEXT NOT NULL, metadata TEXT NOT NULL, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS metadata_format_changes (
+ job_id TEXT NOT NULL REFERENCES metadata_jobs(id), song_id TEXT NOT NULL,
+ old_path TEXT NOT NULL, new_path TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'prepared',
+ PRIMARY KEY(job_id,song_id)
+);
+INSERT OR IGNORE INTO schema_version VALUES(12);

@@ -73,7 +73,7 @@ func (a *App) streamLossless(w http.ResponseWriter, r *http.Request) {
 		a.losslessAuthMu.Lock()
 		session := p.session()
 		a.losslessAuthMu.Unlock()
-		query := url.Values{"id": {parts[3]}, "source": {parts[2]}, "sid": {sid}, "_token": {token}, "_net": {"wifi"}}
+		query := url.Values{"id": {parts[3]}, "source": {parts[2]}, "sid": {sid}, "_token": {token}, "_net": {"cellular"}}
 		// The captured client includes _did only when it has a device identity.
 		if device := session.deviceID(); device != "" {
 			query.Set("_did", device)
