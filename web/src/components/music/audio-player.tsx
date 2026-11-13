@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { time } from "@/lib/api";
-import { Disc3Icon, LoaderCircleIcon, PauseIcon, PlayIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import { Disc3Icon, LoaderCircleIcon, PauseIcon, PlayIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import type { useAudioPreview } from "@/hooks/use-audio-preview";
 import { useState } from "react";
 
@@ -30,6 +30,7 @@ export function AudioPlayer<T extends { duration: number }>({ preview, caption, 
         <div className="flex items-baseline justify-between gap-3">
           <div className="min-w-0 truncate text-xs"><strong>{title(track)}</strong><span className="ml-2 text-muted-foreground">{artist(track)}</span></div>
           <span className="shrink-0 text-[11px] text-muted-foreground">{caption}</span>
+          <Button variant="ghost" size="icon-sm" aria-label="Close player" onClick={preview.stop}><XIcon className="size-4" /></Button>
         </div>
       </div>
         <div className="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1 sm:col-start-2">

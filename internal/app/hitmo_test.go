@@ -163,7 +163,11 @@ func TestHitmoLive(t *testing.T) {
 	if err != nil || len(tracks) == 0 {
 		t.Fatalf("search: %d tracks, %v", len(tracks), err)
 	}
-	track, err := p.Track(ctx, hitmoOrigin+"/song/81423717")
+	target := os.Getenv("ZENSYNC_TEST_HITMO_TARGET")
+	if target == "" {
+		target = hitmoOrigin + "/song/81423717"
+	}
+	track, err := p.Track(ctx, target)
 	if err != nil {
 		t.Fatal(err)
 	}

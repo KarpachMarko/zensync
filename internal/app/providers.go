@@ -99,7 +99,7 @@ func (a *App) searchProvider(w http.ResponseWriter, r *http.Request, name string
 		if name == "hitmo" {
 			providerName = "Hitmo"
 		}
-		warning := providerName + " supports individual song requests. Album requests and previews are unavailable."
+		warning := providerName + " supports individual songs and full-song listening. Album requests are unavailable."
 		if name == "hitmo" {
 			warning = "Hitmo supports individual MP3 songs and full-song listening. Album requests are unavailable."
 		}

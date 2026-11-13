@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import type { Track } from "@/lib/api";
 import { label, providerLabel } from "@/lib/api";
-import { isFullTrackStream, previewURL } from "@/hooks/use-recording-preview";
+import { previewURL } from "@/hooks/use-recording-preview";
 import { ExternalLinkIcon, PauseIcon, PlayIcon } from "lucide-react";
 
 export function RecordingTools({
@@ -15,7 +15,7 @@ export function RecordingTools({
 }) {
   const provider = providerLabel(track.provider);
   const link = track.provider === "hitmo" ? `https://eu.hitmoz.com/song/${track.id}` : track.provider === "lossless" ? `https://lossless.am/app/track/${track.source}/${track.id}` : `https://www.deezer.com/track/${track.id}`;
-  const stream = isFullTrackStream(track);
+
   const available = !!previewURL(track);
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -24,13 +24,13 @@ export function RecordingTools({
         variant="ghost"
         className="inline-flex items-center gap-1 border-0 px-1 py-0.5 text-xs"
         disabled={!available}
-        aria-label={`${playing ? "Pause" : "Play"} ${stream ? "stream" : "30-second preview"} of ${label(track)}`}
+        aria-label={`${playing ? "Pause" : "Play"} stream of ${label(track)}`}
         aria-pressed={playing}
         title={available ? `Listen on ${provider}` : `${provider} has no preview for this recording`}
         onClick={() => onPreview(track)}
       >
         {playing ? <PauseIcon className="size-3" aria-hidden="true" /> : <PlayIcon className="size-3" aria-hidden="true" />}
-        {available ? (playing ? "Pause" : stream ? "Listen" : "Preview 30s") : "No preview"}
+        {available ? (playing ? "Pause" : "Listen") : "No preview"}
       </Button>
       <a
         href={link}

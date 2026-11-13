@@ -20,6 +20,7 @@ for (const width of [320, 390, 768, 980, 1280]) {
     const detail: Detail = { migration: { id: "migration", name: "Library.xml", state: "open", favorites: false, targetUser: "", error: "", report: { songs: 3, playlists: 0, unplaylisted: 3, missing: 0, excluded: 0, warnings: [] } }, songs, playlists: [] };
     await page.route("**/api/v2/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      if (path === "/api/v2/providers/deezer/stream") return route.fulfill({ status: 502, json: { error: "No audio in layout fixture" } });
       if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
       if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "fixture", user: { id: "user", username: "user", role: "member", quality: ["128"] } } });
       if (path === "/api/v2/imports/migration") return route.fulfill({ json: detail });
@@ -57,7 +58,7 @@ for (const width of [320, 390, 768, 980, 1280]) {
     expect(bounds?.x).toBeGreaterThanOrEqual(-1);
     expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(width + 1);
     expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-    await dialog.getByRole("button", { name: /^Play 30-second preview/ }).first().click();
+    await dialog.getByRole("button", { name: /^Play stream/ }).first().click();
     const player = dialog.getByRole("region", { name: "Preview player", exact: true });
     await expect(player).toBeVisible();
     expect(await player.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);

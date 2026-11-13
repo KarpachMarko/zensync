@@ -18,12 +18,13 @@ import (
 
 const hitmoOrigin = "https://eu.hitmoz.com"
 
-var hitmoAudioCDN = regexp.MustCompile(`^cdn[0-9]{1,3}\.deliciousoranges\.com$`)
+var hitmoAudioCDN = regexp.MustCompile(`^(cdn[0-9]{1,3}\.deliciousoranges\.com|s[0-9]{1,3}\.deliciouspeaches\.com)$`)
 
 type hitmoProvider struct{ app *App }
 type hitmoRecording struct {
 	track    Track
 	download string
+	stream   string
 }
 
 func (p hitmoProvider) Ready() error { return nil }
@@ -46,13 +47,17 @@ func hitmoTarget(input string) (string, error) {
 // Only the observed HTTPS origin and full music paths may be fetched. Never
 // follow a page-supplied external link or forward another provider's cookies.
 func hitmoDownloadURL(raw string) (string, error) {
+	return hitmoAudioURL(raw, false)
+}
+
+func hitmoAudioURL(raw string, streaming bool) (string, error) {
 	base, _ := url.Parse(hitmoOrigin)
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", errors.New("Invalid Hitmo audio URL")
 	}
 	u = base.ResolveReference(u)
-	if u.Scheme != "https" || u.Host != base.Host || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !strings.HasPrefix(u.Path, "/get/music/") || !strings.HasSuffix(u.Path, ".mp3") || strings.Contains(u.Path, "..") {
+	if u.Scheme != "https" || u.Host != base.Host || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !(strings.HasPrefix(u.Path, "/get/music/") || (streaming && strings.HasPrefix(u.Path, "/get/cuts/"))) || !strings.HasSuffix(u.Path, ".mp3") || strings.Contains(u.Path, "..") {
 		return "", errors.New("Untrusted Hitmo audio URL")
 	}
 	return u.String(), nil
@@ -78,7 +83,7 @@ func (p hitmoProvider) fetch(ctx context.Context, path, byteRange string, stream
 		// Full MP3 links redirect once to Hitmo's observed delivery CDN. Keep the
 		// selected file path intact and reject all other destinations and chains.
 		u := next.URL
-		if strings.HasPrefix(path, "/get/music/") && len(via) == 1 && u.Scheme == "https" && u.Port() == "" && u.User == nil && hitmoAudioCDN.MatchString(u.Host) && u.Path == "/s1"+via[0].URL.Path && u.RawQuery == "" && u.Fragment == "" {
+		if (strings.HasPrefix(path, "/get/music/") || strings.HasPrefix(path, "/get/cuts/")) && len(via) == 1 && u.Scheme == "https" && u.Port() == "" && u.User == nil && hitmoAudioCDN.MatchString(u.Host) && (u.Path == "/s1"+via[0].URL.Path || u.Path == via[0].URL.Path) && u.RawQuery == "" && u.Fragment == "" {
 			next.Header.Del("Cookie")
 			next.Header.Del("Authorization")
 			return nil
@@ -136,7 +141,7 @@ func parseHitmo(body io.Reader) ([]hitmoRecording, error) {
 	var visit func(*html.Node)
 	visit = func(n *html.Node) {
 		if raw := hitmoAttr(n, "data-musmeta"); raw != "" {
-			var meta struct{ ID, Title, Artist, Img string }
+			var meta struct{ ID, Title, Artist, Img, URL string }
 			if json.Unmarshal([]byte(raw), &meta) == nil && strings.HasPrefix(meta.ID, "track-id-") {
 				id, _ := strconv.ParseInt(strings.TrimPrefix(meta.ID, "track-id-"), 10, 64)
 				var duration float64
@@ -165,7 +170,11 @@ func parseHitmo(body io.Reader) ([]hitmoRecording, error) {
 					t := Track{Provider: "hitmo", ID: id, Title: meta.Title, Duration: duration, Link: fmt.Sprintf("%s/song/%d", hitmoOrigin, id)}
 					t.Artist.Name = meta.Artist
 					t.Album.Cover = meta.Img
-					out = append(out, hitmoRecording{t, download})
+					stream, _ := hitmoAudioURL(meta.URL, true)
+					if stream == "" {
+						stream = download
+					}
+					out = append(out, hitmoRecording{track: t, download: download, stream: stream})
 					seen[id] = true
 				}
 			}

@@ -63,7 +63,7 @@ func TestLosslessStreamProxiesRangesWithoutExposingTokens(t *testing.T) {
 			t.Errorf("unexpected endpoint %s", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("id") != "42" || q.Get("source") != "main" || q.Get("sid") != "session-123" || q.Get("_token") != "private-stream-token" {
+		if q.Get("id") != "42" || q.Get("source") != "main" || q.Get("sid") != "session-123" || q.Get("_token") != "private-stream-token" || q.Get("_net") != "cellular" {
 			t.Error("incorrect stream request")
 		}
 		w.Header().Set("Content-Type", "audio/mp4")

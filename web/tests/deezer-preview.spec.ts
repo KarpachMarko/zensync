@@ -14,7 +14,7 @@ function previewAudio() {
   return wav;
 }
 
-test("review previews play one at a time, stop on close, and link to Deezer", async ({ page }) => {
+test("Deezer full-song streams play one at a time, seek past 30 seconds and stop on close", async ({ page }) => {
   const first: Track = { id: 42, title: "First recording", title_version: "", duration: 180, artist: { name: "Artist" }, album: { title: "Album" }, link: "https://www.deezer.com/track/42", preview: "https://cdnt-preview.dzcdn.net/one.wav" };
   const second: Track = { ...first, id: 43, title: "Second recording", preview: "https://cdnt-preview.dzcdn.net/two.wav" };
   const missing: Track = { ...first, id: 44, title: "No clip recording", preview: "" };
@@ -28,7 +28,7 @@ test("review previews play one at a time, stop on close, and link to Deezer", as
   };
   let mediaRequests = 0;
   const mutations: string[] = [];
-  await page.route("https://cdnt-preview.dzcdn.net/**", async (route) => {
+  await page.route("**/api/v2/providers/deezer/stream?**", async (route) => {
     mediaRequests++;
     const body = previewAudio();
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
@@ -45,6 +45,7 @@ test("review previews play one at a time, stop on close, and link to Deezer", as
   });
   await page.route("**/api/v2/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v2/providers/deezer/stream") return route.fallback();
     if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
     if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "fixture", user: { id: "user", username: "user", role: "member", quality: ["128"] } } });
     if (path === "/api/v2/imports/migration") return route.fulfill({ json: detail });
@@ -57,16 +58,16 @@ test("review previews play one at a time, stop on close, and link to Deezer", as
   const results = dialog.getByRole("region", { name: /^Provider recordings/ });
   const firstRow = results.locator('[data-slot="list-row"]').filter({ hasText: "First recording" });
   const secondRow = results.locator('[data-slot="list-row"]').filter({ hasText: "Second recording" });
-  await expect(firstRow.getByRole("button", { name: "Play 30-second preview of First recording", exact: true })).toBeEnabled();
+  await expect(firstRow.getByRole("button", { name: "Play stream of First recording", exact: true })).toBeEnabled();
   expect(mediaRequests).toBe(0);
-  await expect(results.getByRole("button", { name: "Play 30-second preview of No clip recording", exact: true })).toBeDisabled();
+  await expect(results.getByRole("button", { name: "Play stream of No clip recording", exact: true })).toBeEnabled();
   const link = firstRow.getByRole("link", { name: /Open First recording in Deezer/ });
   await expect(link).toHaveAttribute("href", "https://www.deezer.com/track/42");
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   const selected = dialog.getByRole("heading", { name: "Selected recording" }).locator("..");
-  await expect(selected.getByRole("button", { name: "Play 30-second preview of First recording", exact: true })).toBeEnabled();
-  await firstRow.getByRole("button", { name: "Play 30-second preview of First recording", exact: true }).click();
+  await expect(selected.getByRole("button", { name: "Play stream of First recording", exact: true })).toBeEnabled();
+  await firstRow.getByRole("button", { name: "Play stream of First recording", exact: true }).click();
   const audio = dialog.locator("audio");
   await expect(audio).toHaveCount(1);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
@@ -87,18 +88,18 @@ test("review previews play one at a time, stop on close, and link to Deezer", as
   await seek.press("Home");
   await seek.press("ArrowRight");
   expect(await audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThan(0);
-  await expect(selected.getByRole("button", { name: "Pause 30-second preview of First recording", exact: true })).toBeVisible();
-  await firstRow.getByRole("button", { name: "Pause 30-second preview of First recording", exact: true }).click();
+  await expect(selected.getByRole("button", { name: "Pause stream of First recording", exact: true })).toBeVisible();
+  await firstRow.getByRole("button", { name: "Pause stream of First recording", exact: true }).click();
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
-  await secondRow.getByRole("button", { name: "Play 30-second preview of Second recording", exact: true }).click();
-  await expect(audio).toHaveAttribute("src", second.preview ?? "");
+  await secondRow.getByRole("button", { name: "Play stream of Second recording", exact: true }).click();
+  await expect(audio).toHaveAttribute("src", /providers\/deezer\/stream\?target=deezer%3Atrack%3A43/);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.duration)).toBe(31);
   await audio.evaluate((element: HTMLAudioElement) => { element.currentTime = 30; });
-  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => ({ paused: element.paused, currentTime: element.currentTime, seeking: element.seeking, readyState: element.readyState }))).toMatchObject({ paused: true });
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => ({ paused: element.paused, currentTime: element.currentTime, seeking: element.seeking, readyState: element.readyState }))).toMatchObject({ paused: false });
   await audio.dispatchEvent("error");
-  await expect(dialog.getByRole("alert")).toContainText("Preview unavailable");
-  await secondRow.getByRole("button", { name: "Play 30-second preview of Second recording", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Stream unavailable");
+  await secondRow.getByRole("button", { name: "Play stream of Second recording", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
   const savedAudio = await audio.elementHandle();

@@ -582,7 +582,7 @@ test("search form rejects blank input and submits a validated trimmed query", as
   await expect(
     page.getByText("Owned recording", { exact: true }),
   ).toBeVisible();
-  expect(searches).toHaveLength(2);
+  expect(searches).toHaveLength(4);
 });
 
 test("provider selection persists and requests namespaced lossless recordings", async ({
@@ -616,7 +616,7 @@ test("provider selection persists and requests namespaced lossless recordings", 
     targets.push((route.request().postDataJSON() as { target: string }).target);
     return route.fulfill({ status: 201, json: { id: "request" } });
   });
-  await page.goto("/search?q=Song");
+  await page.goto("/search?q=Song&provider=deezer");
   const candidates = page.getByRole("region", {
     name: "Candidates for import",
     exact: true,
@@ -663,4 +663,30 @@ test("Hitmo search persists its provider and requests a namespaced song", async 
   await expect.poll(() => targets).toEqual(["hitmo:track:42"]);
   await page.reload();
   await expect(page.getByRole("button", { name: "Hitmo", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("searches every provider concurrently by default and preserves partial results", async ({ page }) => {
+  await musicFixture(page, false);
+  const called: string[] = [];
+  let releaseHitmo: () => void = () => {};
+  const hitmoGate = new Promise<void>(resolve => { releaseHitmo = resolve; });
+  await page.route("**/api/v2/search?**", async route => {
+    const provider = new URL(route.request().url()).searchParams.get("provider") ?? "";
+    called.push(provider);
+    if (provider === "hitmo") await hitmoGate;
+    if (provider === "lossless") return route.fulfill({ status: 502, json: { error: "Provider offline" } });
+    return route.fulfill({ json: { tracks: [{ provider, id: 42, title: `${provider} recording`, title_version: "", duration: 90, artist: { name: "Artist" }, album: { title: "Album" } }], albums: [] } });
+  });
+  await page.goto("/search?q=Artist");
+  await expect(page.getByRole("button", { name: "All providers", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => new Set(called).size).toBe(3);
+  await expect(page.getByText("deezer recording", { exact: true })).toBeVisible();
+  releaseHitmo();
+  await expect(page.getByText("hitmo recording", { exact: true })).toBeVisible();
+  await expect(page.getByText("Lossless.am: Provider offline", { exact: true })).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "Hitmo", exact: true }).click();
+  await expect(page).toHaveURL(/provider=hitmo/);
+  await expect(page.getByText("deezer recording", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "All providers", exact: true }).click();
+  await expect(page.getByText("deezer recording", { exact: true })).toBeVisible();
 });

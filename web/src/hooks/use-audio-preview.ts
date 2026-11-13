@@ -29,6 +29,12 @@ export function useAudioPreview<T extends { duration: number }>({ resolveURL, ke
     audioRef.current = audio;
   }, []);
 
+  function stop() {
+    const audio = audioRef.current;
+    if (audio) { audio.pause(); audio.removeAttribute("src"); audio.load(); }
+    setActive(null); setPlaying(false); setLoading(false); setError("");
+  }
+
   function toggle(track: T) {
     const audio = audioRef.current;
     let url = resolveURL(track);
@@ -103,6 +109,6 @@ export function useAudioPreview<T extends { duration: number }>({ resolveURL, ke
     audio.muted = !audio.muted;
     setMuted(audio.muted);
   }
-  return { attachAudio, active, playing, error, setPlaying, toggle, started, failed,
+  return { attachAudio, stop, active, playing, error, setPlaying, toggle, started, failed,
     position, duration, volume, muted, loading, setLoading, syncTime, seek, changeVolume, toggleMute };
 }

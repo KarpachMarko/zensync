@@ -49,6 +49,8 @@ type Playlist struct {
 func (a *App) migrationRoutes(w http.ResponseWriter, r *http.Request, u User) bool {
 	path := r.URL.Path
 	switch {
+	case path == "/api/v2/providers/deezer/stream":
+		a.streamDeezer(w, r, u)
 	case path == "/api/v2/providers/hitmo/stream":
 		a.streamHitmo(w, r)
 	case path == "/api/v2/providers/lossless/stream":

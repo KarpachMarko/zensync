@@ -43,7 +43,7 @@ func (a *App) streamHitmo(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, err.Error())
 		return
 	}
-	resp, err := p.fetch(r.Context(), strings.TrimPrefix(recording.download, hitmoOrigin), byteRange, true)
+	resp, err := p.fetch(r.Context(), strings.TrimPrefix(recording.stream, hitmoOrigin), byteRange, true)
 	if err != nil {
 		fail(w, 502, err.Error())
 		return

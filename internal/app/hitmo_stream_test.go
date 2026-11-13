@@ -115,3 +115,58 @@ func TestHitmoStreamWithoutRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestHitmoStreamPrefersLowQualityAndSupportsPeaches(t *testing.T) {
+	const lowPath = "/get/cuts/aa/bb/recording/42/Artist_-_Song_b128f0d2.mp3"
+	for _, tc := range []struct{ name, mediaURL, redirect, path string }{
+		{"low quality", lowPath, "https://cdn13.deliciousoranges.com/s1" + lowPath, "/s1" + lowPath},
+		{"reported delivery host", "/get/music/20260506/Artist_-_Song_42.mp3", "https://s3.deliciouspeaches.com/get/music/20260506/Artist_-_Song_42.mp3", "/get/music/20260506/Artist_-_Song_42.mp3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			delivered := false
+			a := losslessFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/song/42" {
+					page := strings.Replace(hitmoFixture, `"img":`, `"url":"`+tc.mediaURL+`","img":`, 1)
+					io.WriteString(w, page)
+					return
+				}
+				if r.Host == "eu.hitmoz.com" {
+					if r.URL.Path != tc.mediaURL {
+						t.Errorf("did not select listening URL: %s", r.URL.Path)
+					}
+					http.Redirect(w, r, tc.redirect, 302)
+					return
+				}
+				if r.URL.Path != tc.path || r.Header.Get("Range") != "bytes=0-3" {
+					t.Errorf("selected path or seek lost: %s", r.URL.Path)
+				}
+				delivered = true
+				w.Header().Set("Content-Type", "audio/mpeg")
+				w.Header().Set("Content-Range", "bytes 0-3/10")
+				w.WriteHeader(206)
+				io.WriteString(w, "0123")
+			})
+			// Retain the original host when routing requests into the fixture server.
+			original := a.HTTP.Transport
+			a.HTTP.Transport = metadataTransport(func(r *http.Request) (*http.Response, error) {
+				copy := r.Clone(r.Context())
+				copy.Host = r.URL.Host
+				return original.RoundTrip(copy)
+			})
+			// The fixture server uses Host because its transport rewrites URL.Host.
+			// Return the selected recording and then exercise the stream through auth.
+			if err := a.createAdmin("admin", "test-password-long"); err != nil {
+				t.Fatal(err)
+			}
+			c := login(t, a, "admin")
+			if _, err := (hitmoProvider{a}).Track(context.Background(), "hitmo:track:42"); err != nil {
+				t.Fatal(err)
+			}
+			w := hitmoStreamCall(c, "hitmo:track:42", "session-123", "bytes=0-3")
+			expect(t, w, 206)
+			if !delivered || w.Body.String() != "0123" {
+				t.Fatal("listening did not reach selected media")
+			}
+		})
+	}
+}

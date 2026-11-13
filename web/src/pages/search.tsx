@@ -19,7 +19,7 @@ import { useApiMutation } from "@/hooks/use-api";
 import type { LibrarySong, Track } from "@/lib/api";
 import { api, label, providerLabel, requestKey, time, trackTarget } from "@/lib/api";
 import { searchHref } from "@/lib/url-state";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -47,7 +47,7 @@ export function Search({
   );
   const [provider, setProvider] = useQueryState(
     "provider",
-    parseAsStringLiteral(["deezer", "lossless", "hitmo"]).withDefault("deezer"),
+    parseAsStringLiteral(["all", "deezer", "lossless", "hitmo"]).withDefault("all"),
   );
   const showAlbums = resultType !== "Song";
   const showSongs = resultType !== "Album";
@@ -70,44 +70,37 @@ export function Search({
       last.length === 100 ? pages.length * 100 : undefined,
     enabled: searched,
   });
-  const candidateQuery = useQuery({
-    queryKey: ["api", "search", urlQuery, provider],
-    queryFn: () =>
-      api<
-        | Track[]
-        | {
-            tracks: Track[];
-            album?: FoundAlbum;
-            albums?: FoundAlbum[];
-            warnings?: string[];
-          }
-      >(
-        "/search?q=" +
-          encodeURIComponent(urlQuery) +
-          "&details=1&provider=" +
-          provider,
-      ),
+  type SearchResponse = Track[] | { tracks: Track[]; album?: FoundAlbum; albums?: FoundAlbum[]; warnings?: string[] };
+  const providers = ["deezer", "lossless", "hitmo"] as const;
+  const directProvider = /^(https:\/\/eu\.hitmoz\.com\/|hitmo:)/.test(urlQuery) ? "hitmo"
+    : /^(https:\/\/lossless\.am\/|lossless:)/.test(urlQuery) ? "lossless"
+    : /^(https?:|deezer:)/.test(urlQuery) ? "deezer" : null;
+  const selectedProviders = provider === "all" ? providers.filter(name => !directProvider || directProvider === name) : [provider];
+  const candidateQueries = useQueries({ queries: selectedProviders.map(name => ({
+    queryKey: ["api", "search", urlQuery, name],
+    queryFn: ({ signal }) => api<SearchResponse>("/search?q=" + encodeURIComponent(urlQuery) + "&details=1&provider=" + name, "GET", undefined, undefined, signal),
     enabled: searched,
-  });
-  const response = candidateQuery.data;
-  const found = Array.isArray(response) ? undefined : response?.album;
+  })) });
+  const responses = candidateQueries.map(query => query.data);
+  const found = responses.flatMap(response => !response || Array.isArray(response) || !response.album ? [] : [response.album])[0];
   const album = found?.trackCount === 1 ? undefined : found;
-  const albums = Array.isArray(response)
-    ? []
-    : (response?.albums ?? []).filter((album) => album.trackCount !== 1);
-  const warnings = Array.isArray(response) ? [] : (response?.warnings ?? []);
-  const results = Array.isArray(response) ? response : (response?.tracks ?? []);
+  const albums = [...new Map(responses.flatMap(response => !response || Array.isArray(response) ? [] : response.albums ?? []).filter(album => album.trackCount !== 1).map(album => [album.id, album])).values()];
+  const warnings = [...new Set(responses.flatMap(response => !response || Array.isArray(response) ? [] : response.warnings ?? []))];
+  candidateQueries.forEach((query, index) => {
+    if (query.error) warnings.push(providerLabel(selectedProviders[index] as Track["provider"]) + ": " + query.error.message);
+  });
+  const results = [...new Map(responses.flatMap(response => Array.isArray(response) ? response : response?.tracks ?? []).map(track => [trackTarget(track), track])).values()];
   const library = libraryQuery.data?.pages.flat() ?? [];
   const libraryError = libraryQuery.error?.message;
-  const error = actionError || candidateQuery.error?.message;
+  const error = actionError;
   const libraryLoading =
     libraryQuery.isFetching && !libraryQuery.isFetchingNextPage;
-  const importLoading = candidateQuery.isFetching;
+  const importLoading = candidateQueries.some(query => query.isFetching);
   const moreLibrary = libraryQuery.hasNextPage;
   async function search(query: string) {
     setError("");
     if (urlQuery === query.trim()) {
-      await Promise.all([libraryQuery.refetch(), candidateQuery.refetch()]);
+      await Promise.all([libraryQuery.refetch(), ...candidateQueries.map(query => query.refetch())]);
     } else await setUrlQuery(query.trim());
   }
   async function request(t: Track) {
@@ -154,21 +147,21 @@ export function Search({
         Find music in your library, on Deezer, lossless.am or Hitmo. Deezer also
         supports song and album links.
       </Text>
-      <div className="mb-4 flex gap-2" role="group" aria-label="Media provider">
-        {(["deezer", "lossless", "hitmo"] as const).map((name) => (
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Media provider">
+        {(["all", "deezer", "lossless", "hitmo"] as const).map((name) => (
           <Button
             key={name}
             variant="outline"
             aria-pressed={provider === name}
             onClick={() => void setProvider(name)}
           >
-            {name === "lossless" ? "lossless.am" : providerLabel(name)}
+            {name === "all" ? "All providers" : name === "lossless" ? "lossless.am" : providerLabel(name)}
           </Button>
         ))}
       </div>
       <SearchBox
         label={
-          provider === "deezer"
+          (provider === "deezer" || provider === "all")
             ? "Song, artist, album or Deezer URL"
             : provider === "hitmo" ? "Song, artist or Hitmo URL" : "Song or artist on lossless.am"
         }
@@ -240,7 +233,7 @@ export function Search({
           >
             {importLoading && (
               <Text role="status">
-                Searching {providerLabel(provider)}…
+                Searching {provider === "all" ? "all providers" : providerLabel(provider)}…
               </Text>
             )}
             {showAlbums && album && (
@@ -385,7 +378,6 @@ export function Search({
         </>
       )}
       <PreviewPlayer preview={preview} />
-      {preview.error && <Text role="alert">{preview.error}</Text>}
       {showSongs && requested.size > 0 && (
         <Text role="status">
           Requests saved. <AppLink to="/requests">View approval status</AppLink>{" "}

@@ -119,7 +119,7 @@ export function Review({
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
       <DialogContent
-        className="flex h-[min(840px,90dvh)] w-[calc(100vw-2rem)] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px] max-sm:h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+        className="data-open:animate-none data-closed:animate-none left-4 right-4 top-[5dvh] translate-none mx-auto max-sm:inset-0 flex h-[min(840px,90dvh)] w-[calc(100vw-2rem)] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1100px] max-sm:h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           if (trigger.current instanceof HTMLElement && trigger.current.isConnected)
@@ -259,7 +259,6 @@ export function Review({
         </div>
         <footer className="flex min-w-0 shrink-0 flex-col gap-2 border-0 border-t border-solid border-border px-5 py-3 max-sm:px-3">
           <PreviewPlayer preview={preview} />
-          {preview.error && <Text role="alert" className="m-0 text-xs">{preview.error}</Text>}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Text className="m-0 text-xs">{requestReplacement ? "Choosing a provider recording creates a replacement request; approval may be required." : "Selecting a recording does not start a download."}</Text>
             {editable && !s.serverId && (

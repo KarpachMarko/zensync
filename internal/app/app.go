@@ -30,6 +30,8 @@ type App struct {
 	compatMu           sync.Mutex
 	started            time.Time
 	losslessAuthMu     sync.Mutex
+	previewMu          sync.Mutex
+	deezerPreviews     map[string]*deezerPreview
 	transferMu         sync.Mutex
 	transfers          map[string]TransferProgress
 
