@@ -1,3 +1,4 @@
+import { UtilitiesBreadcrumbs } from "@/components/utilities-breadcrumbs";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
@@ -37,7 +38,7 @@ export function MetadataEnrichment({ admin }: { admin: boolean }) {
   const debouncedQuery = useDebouncedValue(queryText, 300);
   useEffect(() => { if (debouncedQuery !== q) { setVisible(50); void setQ(debouncedQuery); } }, [debouncedQuery]);
   useEffect(() => { if (q !== search.getFieldValue("q")) search.setFieldValue("q", q); }, [q]);
-  const run = useMutation({ mutationFn: (mode: EnrichmentMode) => api<{ id: string; songs: number }>("/metadata/enrichment", "POST", { mode, songIds: selectedSongs, albumIds: selectedAlbums }),
+  const run = useMutation({ mutationFn: (mode: EnrichmentMode) => api<{ id: string; songs: number }>("/metadata/enrichment", "POST", { mode, songIds: mode === "album-order" ? [] : selectedSongs, albumIds: selectedAlbums }),
     onSuccess: (result) => { toast.success(`Metadata job queued for ${result.songs} songs`); void client.invalidateQueries({ queryKey: ["api", "/metadata/jobs"] }); },
     onError: (error) => toast.error(error.message) });
   const items = useMemo(() => {
@@ -59,9 +60,9 @@ export function MetadataEnrichment({ admin }: { admin: boolean }) {
     if (view === "songs") setSelectedSongs(update); else setSelectedAlbums(update);
   };
   return <>
-    <AppLink to="/utilities" className="text-sm text-muted-foreground">← Utilities</AppLink>
-    <PageHeading tabIndex={-1}>Covers and lyrics</PageHeading>
-    <Text>Fill missing artwork and lyrics, or choose songs and albums to update. Existing lyrics are kept; uncertain matches are skipped.</Text>
+    <UtilitiesBreadcrumbs current="Library metadata" />
+    <PageHeading tabIndex={-1}>Library metadata</PageHeading>
+    <Text>Update artwork, lyrics and album track order. Choose songs or albums for artwork, and albums for track ordering. Existing lyrics are kept; uncertain matches are skipped.</Text>
     <div className="flex flex-wrap gap-2">
       <Button disabled={disabled} onClick={() => run.mutate("missing-covers")}>Fetch all missing covers</Button>
       <Button disabled={disabled} onClick={() => run.mutate("missing-lyrics")}>Fetch all missing lyrics</Button>
@@ -73,7 +74,7 @@ export function MetadataEnrichment({ admin }: { admin: boolean }) {
     {library.data?.limited && <Text role="alert">Library index is incomplete. Updates are disabled to avoid a partial operation.</Text>}
     <Separator className="my-4" />
     <h2 className="text-sm font-semibold">Update selected songs or albums</h2>
-    <Text>Album selection updates every song in that album. Open an album’s songs to edit individual covers manually. Track order checks the whole album, including when you select a song. It updates only when every track matches one release with distinct positions.</Text>
+    <Text>Album selection updates every song in that album. Open an album’s songs to edit individual covers manually. Track order uses the current album name and artist to find a reference tracklist, including Deluxe editions. Matched songs use positions from that tracklist; unmatched songs are skipped and duplicates can share a number.</Text>
     <Tabs value={view} onValueChange={value => { if (value === "songs" || value === "albums") { setVisible(50); void setView(value); } }}>
       <TabsList><TabsTrigger value="albums">Albums</TabsTrigger><TabsTrigger value="songs">Songs</TabsTrigger></TabsList>
     </Tabs>
@@ -85,7 +86,7 @@ export function MetadataEnrichment({ admin }: { admin: boolean }) {
     <Text>{selectedSongs.length} songs and {selectedAlbums.length} albums selected</Text>
     <div className="mb-3 flex flex-wrap gap-2">
       <Button disabled={disabled || !selectedSongs.length && !selectedAlbums.length} onClick={() => run.mutate("force-covers")}>Replace selected covers</Button>
-      <Button variant="outline" disabled={disabled || !selectedSongs.length && !selectedAlbums.length} onClick={() => run.mutate("album-order")}>Correct selected track order</Button>
+      {view === "albums" && <Button variant="outline" disabled={disabled || !selectedAlbums.length} onClick={() => run.mutate("album-order")}>Correct selected album order</Button>}
       <Button variant="ghost" onClick={() => { setSelectedSongs([]); setSelectedAlbums([]); }}>Clear selection</Button>
     </div>
     <div className="space-y-2">{items.slice(0, visible).map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 border-b border-solid border-border py-3">

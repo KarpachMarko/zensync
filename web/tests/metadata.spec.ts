@@ -781,7 +781,7 @@ test("metadata utilities apply missing and selected updates without approval", a
     return route.fulfill({ status: 202, json: { id: "job", songs: 1 } });
   });
   await page.goto("/utilities");
-  await page.getByRole("link", { name: "Covers and lyrics", exact: true }).click();
+  await page.getByRole("link", { name: "Library metadata", exact: true }).click();
   await page.getByRole("button", { name: "Fetch all missing covers", exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
   await page.getByRole("button", { name: "Fetch all missing lyrics", exact: true }).click();
@@ -794,9 +794,15 @@ test("metadata utilities apply missing and selected updates without approval", a
   await page.getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("tab", { name: "Songs", exact: true }).click();
   await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Correct selected track order", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Correct selected album order", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Albums", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Correct selected album order", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Correct selected album order", exact: true }).click();
   await expect.poll(() => requests.length).toBe(4);
-  expect(requests[3]).toEqual({ mode: "album-order", songIds: ["one"], albumIds: [] });
+  expect(requests[3]).toEqual({ mode: "album-order", songIds: [], albumIds: ["album-one"] });
+  await expect(page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", {name:"Utilities",exact:true})).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "breadcrumb" })).toContainText("Library metadata");
   expect(requests.slice(0,2).map(request => request.mode)).toEqual(["missing-covers", "missing-lyrics"]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });

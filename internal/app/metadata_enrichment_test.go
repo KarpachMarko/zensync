@@ -118,6 +118,9 @@ func TestEnrichmentDeezerTrackOrderAndCover(t *testing.T) {
 				if r.URL.Host == "cdn-images.dzcdn.net" {
 					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(artwork.Bytes())), Header: make(http.Header)}, nil
 				}
+				if body := albumReferenceFixture(r); body != "" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+				}
 				if strings.HasPrefix(r.URL.Path, "/search") {
 					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"album":{"id":88,"title":"Album"},"duration":1}]}`)), Header: make(http.Header)}, nil
 				}
@@ -209,7 +212,7 @@ func TestEnrichmentDeezerTrackOrderAndCover(t *testing.T) {
 	}
 }
 
-func TestAlbumOrderRejectsMixedEditionsAndDuplicatePositions(t *testing.T) {
+func TestAlbumOrderResumePreservesProcessedPositionsAndSkips(t *testing.T) {
 	a, _, _ := metadataLibraryFixture(t)
 	c, err := a.shared()
 	if err != nil {
@@ -218,8 +221,8 @@ func TestAlbumOrderRejectsMixedEditionsAndDuplicatePositions(t *testing.T) {
 	for _, kind := range []string{"mixed-release", "duplicate-position", "partial"} {
 		t.Run(kind, func(t *testing.T) {
 			changes := []metadataChange{
-				{Song: Song{ID: "a", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 1, DiscNumber: 1}},
-				{Song: Song{ID: "b", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 2, DiscNumber: 1}},
+				{Song: Song{ID: "a", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderVersion: 2, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 1, DiscNumber: 1}},
+				{Song: Song{ID: "b", AlbumID: "album"}, Enrichment: "album-order", Resolved: true, OrderVersion: 2, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 2, DiscNumber: 1}},
 			}
 			switch kind {
 			case "mixed-release":
@@ -232,11 +235,137 @@ func TestAlbumOrderRejectsMixedEditionsAndDuplicatePositions(t *testing.T) {
 			if err := a.prepareAlbumOrder(context.Background(), c, "unused", changes); err != nil {
 				t.Fatal(err)
 			}
-			for _, change := range changes {
-				if !change.Skip {
-					t.Fatalf("unsafe album plan allowed: %+v", changes)
-				}
+			if changes[0].Skip {
+				t.Fatal("matched song incorrectly skipped")
+			}
+			if changes[1].Skip != (kind == "partial") {
+				t.Fatalf("unexpected per-song skipping: %+v", changes)
 			}
 		})
 	}
+}
+
+func TestAlbumOrderOnlyAcceptsAlbumSelections(t *testing.T) {
+	_, admin, _ := metadataLibraryFixture(t)
+	for _, body := range []string{`{"mode":"album-order","songIds":["one"]}`, `{"mode":"album-order","albumIds":[]}`, `{"mode":"album-order","albumIds":[""]}`} {
+		expect(t, admin.call("POST", "/api/v2/metadata/enrichment", body, ""), 400)
+	}
+	expect(t, admin.call("POST", "/api/v2/metadata/enrichment", `{"mode":"album-order","albumIds":["album-one"]}`, ""), 202)
+}
+
+func TestAlbumOrderLookupFailureDoesNotSkipOtherSongs(t *testing.T) {
+	a, _, songs := metadataLibraryFixture(t)
+	c, err := a.shared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.HTTP.Transport = metadataTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.Path, "/search") {
+			return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader("down")), Header: make(http.Header)}, nil
+		}
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	changes := []metadataChange{
+		{Song: songs["one"], Enrichment: "album-order", Resolved: true, OrderVersion: 2, OrderAlbumID: 1, Edit: MetadataEdit{TrackNumber: 7, DiscNumber: 1}},
+		{Song: songs["two"], Enrichment: "album-order"},
+	}
+	if err := a.prepareAlbumOrder(context.Background(), c, "unused", changes); err != nil {
+		t.Fatal(err)
+	}
+	if changes[0].Skip || !changes[1].Skip || !changes[1].Resolved {
+		t.Fatalf("lookup error blocked sibling: %+v", changes)
+	}
+}
+
+func TestAlbumOrderWritesDuplicatePositionsAndSkipsMissingSong(t *testing.T) {
+	a, _, songs := metadataLibraryFixture(t)
+	duplicate := songs["two"]
+	duplicate.AlbumID = songs["one"].AlbumID
+	songs["two"] = duplicate
+	a.HTTP.Transport = metadataTransport(func(r *http.Request) (*http.Response, error) {
+		body := ""
+		if body := albumReferenceFixture(r); body != "" {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}
+		if strings.HasPrefix(r.URL.Path, "/search") {
+			body = `{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"album":{"id":88,"title":"Album"},"duration":1}]}`
+		}
+		if r.URL.Path == "/track/42" {
+			body = `{"id":42,"title":"Song","track_position":7,"disk_number":1,"album":{"id":88}}`
+		}
+		if body != "" {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	changes := []metadataChange{}
+	for _, id := range []string{"one", "two"} {
+		s := songs[id]
+		changes = append(changes, metadataChange{Song: s, Enrichment: "album-order", Edit: MetadataEdit{Title: s.Title, Artist: s.Artist, Album: s.Album, AlbumArtist: s.AlbumArtist}})
+	}
+	changes = append(changes, metadataChange{Song: Song{ID: "missing", Title: "Removed since queueing"}, Enrichment: "album-order"})
+	var uid string
+	if err := a.DB.QueryRow("SELECT id FROM users WHERE role='admin'").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	jid, err := a.queueMetadata(changes, User{ID: uid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.runMetadata(context.Background())
+	var state, message string
+	if err = a.DB.QueryRow("SELECT state,message FROM metadata_jobs WHERE id=?", jid).Scan(&state, &message); err != nil || state != "completed" || !strings.Contains(message, "2 updated, 1 skipped") {
+		t.Fatal(state, message, err)
+	}
+	for _, id := range []string{"one", "two"} {
+		p, err := a.probeUpload(filepath.Join(a.musicDir, songs[id].Path), "flac")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if uploadTags(p)["track"] != "7" {
+			t.Fatal("duplicate did not receive the matched position", uploadTags(p))
+		}
+	}
+}
+
+func TestAlbumOrderMatchesStructuredPrimaryArtist(t *testing.T) {
+	a, _, songs := metadataLibraryFixture(t)
+	s := songs["one"]
+	s.Artist = "Band / Guest"
+	s.Artists = []ArtistCredit{{Name: "Band"}, {Name: "Guest"}}
+	songs["one"] = s
+	a.HTTP.Transport = metadataTransport(func(r *http.Request) (*http.Response, error) {
+		body := ""
+		if body := albumReferenceFixture(r); body != "" {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}
+		if strings.HasPrefix(r.URL.Path, "/search") {
+			body = `{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"album":{"id":88,"title":"Album"},"duration":1}]}`
+		}
+		if r.URL.Path == "/track/42" {
+			body = `{"id":42,"track_position":7,"disk_number":1,"album":{"id":88}}`
+		}
+		if body != "" {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		}
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	c, err := a.shared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.resolveEnrichment(context.Background(), c, metadataChange{Song: s, Enrichment: "album-order"})
+	if err != nil || result.Skip || result.Edit.TrackNumber != 7 {
+		t.Fatalf("additional credit hid primary recording: %+v %v", result, err)
+	}
+}
+
+func albumReferenceFixture(r *http.Request) string {
+	if r.URL.Path == "/search/album" {
+		return `{"data":[{"id":88,"title":"Album","artist":{"name":"Band"}}]}`
+	}
+	if r.URL.Path == "/album/88/tracks" {
+		return `{"data":[{"id":42,"title":"Song","artist":{"name":"Band"},"duration":1,"track_position":7,"disk_number":2}]}`
+	}
+	return ""
 }

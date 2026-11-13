@@ -21,6 +21,7 @@ import (
 )
 
 type metadataChange struct {
+	OrderVersion  int                  `json:"orderVersion,omitempty"`
 	OrderAlbumID  int64                `json:"orderAlbumId,omitempty"`
 	Enrichment    string               `json:"enrichment,omitempty"`
 	Resolved      bool                 `json:"resolved,omitempty"`
@@ -377,7 +378,7 @@ func (a *App) runMetadata(ctx context.Context) {
 			skipped++
 		}
 	}
-	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match, inconsistent album order or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
+	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match, lookup failure or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
 	if e != nil {
 		state = "failed"
 		message = fmt.Sprintf("%d/%d songs updated: %s. Original files are unchanged for failed writes; retry resumes remaining work.", done, len(changes), e.Error())

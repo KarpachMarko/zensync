@@ -1,7 +1,8 @@
+import { UtilitiesBreadcrumbs } from "@/components/utilities-breadcrumbs";
 import { useAudioPreview } from "@/hooks/use-audio-preview";
 import type { LibrarySong } from "@/lib/api";
 import { DuplicateAudioPlayer } from "@/components/music/duplicate-song-audio";
-import { Undo2Icon, CopyIcon, ImageIcon, ChevronRightIcon } from "lucide-react";
+import { Undo2Icon, CopyIcon, TagsIcon, ChevronRightIcon } from "lucide-react";
 import { AppLink } from "@/components/navigation";
 import { DismissSuggestion } from "@/components/music/dismiss-suggestion";
 import { LibrarySongRow } from "@/components/music/library-song-row";
@@ -62,12 +63,12 @@ export function Utilities({ admin }: { admin: boolean }) {
         <PageHeading tabIndex={-1}>Utilities</PageHeading>
         <section aria-label="Organize your library" className="mx-auto mt-6 max-w-3xl rounded-xl border border-solid border-border p-4 sm:p-6">
           <h2 className="m-0 mb-3 text-sm font-medium text-muted-foreground">Organize your library</h2>
-          {[{to:"/utilities?tool=duplicates",label:"Review duplicates",icon:CopyIcon},{to:"/utilities/metadata",label:"Covers and lyrics",icon:ImageIcon}].map(item => <AppLink key={item.to} to={item.to} className="flex items-center gap-4 rounded-md px-2 py-4 hover:bg-accent focus-visible:bg-accent">
+          {[{to:"/utilities?tool=duplicates",label:"Review duplicates",icon:CopyIcon},{to:"/utilities/metadata",label:"Library metadata",icon:TagsIcon}].map(item => <AppLink key={item.to} to={item.to} className="flex items-center gap-4 rounded-md px-2 py-4 hover:bg-accent focus-visible:bg-accent">
             <item.icon aria-hidden="true" className="size-5 text-primary" /><span className="flex-1 font-medium">{item.label}</span><ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
           </AppLink>)}
         </section>
       </> : <>
-        <AppLink to="/utilities" className="text-sm text-muted-foreground">← Utilities</AppLink>
+        <UtilitiesBreadcrumbs current="Review duplicates" />
         <PageHeading tabIndex={-1}>Review duplicates</PageHeading>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
