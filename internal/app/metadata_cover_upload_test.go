@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"image"
+	"image/color"
+	"image/draw"
 	"image/png"
 	"io"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -24,7 +27,9 @@ func TestCoverUploadThenRemovePreservesSong(t *testing.T) {
 		t.Run(format.ext, func(t *testing.T) {
 			a, admin, songs := metadataLibraryFixtureFormat(t, format.ext, format.codec, format.rate)
 			var picture bytes.Buffer
-			png.Encode(&picture, image.NewRGBA(image.Rect(0, 0, 64, 64)))
+			newCover := image.NewRGBA(image.Rect(0, 0, 64, 64))
+			draw.Draw(newCover, newCover.Bounds(), image.NewUniform(color.RGBA{B: 255, A: 255}), image.Point{}, draw.Src)
+			png.Encode(&picture, newCover)
 			var actor string
 			a.DB.QueryRow("SELECT id FROM users WHERE username='admin'").Scan(&actor)
 			// The normal client helper sends JSON strings; make a real raw upload request.
@@ -54,6 +59,23 @@ func TestCoverUploadThenRemovePreservesSong(t *testing.T) {
 			}
 			s := songs["one"]
 			path := filepath.Join(a.musicDir, s.Path)
+			// Start with an existing, visibly different cover. Merely checking
+			// for an attached picture cannot prove that replacement worked.
+			oldCover := image.NewRGBA(image.Rect(0, 0, 64, 64))
+			draw.Draw(oldCover, oldCover.Bounds(), image.NewUniform(color.RGBA{R: 255, A: 255}), image.Point{}, draw.Src)
+			var oldPNG bytes.Buffer
+			png.Encode(&oldPNG, oldCover)
+			oldPath := filepath.Join(t.TempDir(), "old.png")
+			if err := os.WriteFile(oldPath, oldPNG.Bytes(), 0600); err != nil {
+				t.Fatal(err)
+			}
+			prepared := path + format.ext
+			if out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-i", oldPath, "-map", "0:a", "-map", "1:v:0", "-c", "copy", "-disposition:v:0", "attached_pic", prepared).CombinedOutput(); err != nil {
+				t.Fatalf("seed old cover: %v %s", err, out)
+			}
+			if err := os.Rename(prepared, path); err != nil {
+				t.Fatal(err)
+			}
 			before, err := metadataAudioHash(context.Background(), path)
 			if err != nil {
 				t.Fatal(err)
@@ -76,6 +98,27 @@ func TestCoverUploadThenRemovePreservesSong(t *testing.T) {
 			p, err := a.probeUpload(path, uploadFormat(format.ext))
 			if err != nil || uploadedCoverStream(p) < 0 {
 				t.Fatal("Uploaded cover missing", err)
+			}
+			covers := 0
+			for _, stream := range p.Streams {
+				if stream.Disposition.AttachedPic == 1 {
+					covers++
+				}
+			}
+			if covers != 1 {
+				t.Fatalf("old cover retained alongside replacement: %d pictures", covers)
+			}
+			encoded, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-map", "0:v:0", "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "pipe:1").Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			written, err := png.Decode(bytes.NewReader(encoded))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, _, b, _ := written.At(32, 32).RGBA()
+			if b < 60000 || r > 5000 {
+				t.Fatal("embedded artwork is not the selected blue replacement")
 			}
 			if got := readNativeCredits(t, path); len(got.Artists) != 2 || got.Artists[1] != "Collaborator" {
 				t.Fatalf("Credits changed: %+v", got)
