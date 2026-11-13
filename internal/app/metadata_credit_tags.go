@@ -155,7 +155,7 @@ func preserveEditedMetadata(ctx context.Context, change *metadataChange, origina
 		"artist":      metadataTrackArtistsChanged(*change),
 		"albumartist": metadataAlbumArtistsChanged(*change),
 		"lyrics":      change.Edit.Lyrics != "" || change.Edit.SyncedLyrics != "",
-		"grouping":    change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(*change),
+		"grouping":    metadataReleaseIdentityChanged(*change),
 	}
 	artists, albumArtists := change.Edit.ArtistNames, change.Edit.AlbumArtistNames
 	if artists != nil && !metadataTrackArtistsChanged(*change) {
@@ -192,6 +192,14 @@ func metadataTrackArtistsChanged(change metadataChange) bool {
 		return !slices.Equal(change.Edit.ArtistNames, creditNames(songCredits(change.Song, false)))
 	}
 	return change.Edit.Artist != change.Song.Artist
+}
+
+func metadataReleaseIdentityChanged(change metadataChange) bool {
+	// A collection edit renames the existing album rather than moving a song
+	// into another release. Keep its native release identifiers on every file,
+	// even when members have different original titles (or already use the new
+	// title). Clearing IDs only on renamed members splits the album on rescan.
+	return change.CollectionKind != "album" && (change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(change))
 }
 
 func metadataAlbumArtistsChanged(change metadataChange) bool {

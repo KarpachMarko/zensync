@@ -552,7 +552,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			tags[key] = ""
 		}
 	}
-	if (change.MergeKind == "" || change.MergeKind == "album") && (change.Edit.Album != change.Song.Album || metadataTrackArtistsChanged(change)) {
+	if (change.MergeKind == "" || change.MergeKind == "album") && metadataReleaseIdentityChanged(change) {
 		tags["musicbrainz_albumid"] = ""
 		tags["musicbrainz_releasegroupid"] = ""
 	}
