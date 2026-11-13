@@ -14,6 +14,7 @@ import (
 )
 
 type preserveFixture struct {
+	songs             map[string]Song
 	a                 *App
 	admin             client
 	ids               map[string][]string
@@ -27,7 +28,7 @@ type preserveFixture struct {
 func newPreserveFixture(t *testing.T) *preserveFixture {
 	t.Helper()
 	a, admin, songs := metadataLibraryFixture(t)
-	f := &preserveFixture{a: a, admin: admin, path: filepath.Join(a.musicDir, songs["one"].Path), ids: map[string][]string{
+	f := &preserveFixture{songs: songs, a: a, admin: admin, path: filepath.Join(a.musicDir, songs["one"].Path), ids: map[string][]string{
 		"service-list": {"two", "one", "two", "one"}, "personal-list": {"one", "two", "one"}, "public-other": {"one"}, "readonly": {"one"},
 	}, reads: map[string]int{}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +80,10 @@ func newPreserveFixture(t *testing.T) *preserveFixture {
 				return
 			}
 			out["playlist"] = RemotePlaylist{ID: id, Owner: user}
+		case "getScanStatus":
+			out["scanStatus"] = map[string]any{"scanning": false}
+		case "getMusicFolders":
+			out["musicFolders"] = map[string]any{"musicFolder": []map[string]any{{"id": "1"}}}
 		case "startScan":
 		default:
 			t.Errorf("unexpected endpoint %s", r.URL.Path)

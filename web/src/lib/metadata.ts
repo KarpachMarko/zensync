@@ -95,3 +95,6 @@ export type EnrichmentLibrary = { songs: (LibrarySong & { albumId: string; album
 export type EnrichmentMode = "missing-covers" | "force-covers" | "missing-lyrics" | "album-order";
 
 export type MergeCompatibility = { formatChange?: boolean; compatible: boolean; sourceFormat: string; targetFormat: string; warning?: string };
+
+export const mergeSongMetadataSchema = metadataSchema.pick({ title: true, artist: true, album: true }).extend({ albumArtist: z.string().max(10500) });
+export type MergeSongMetadata = z.infer<typeof mergeSongMetadataSchema>;

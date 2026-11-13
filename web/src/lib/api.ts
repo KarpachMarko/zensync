@@ -133,6 +133,7 @@ export function providerLabel(provider: Track["provider"]) {
   return provider === "hitmo" ? "Hitmo" : provider === "lossless" ? "Lossless.am" : "Deezer";
 }
 export type LibrarySong = {
+  albumArtist?: string;
   coverArt?: string;
   albumId?: string;
   artistId?: string;

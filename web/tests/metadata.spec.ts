@@ -734,8 +734,10 @@ test("Library song replacement keeps original metadata", async ({ page }) => {
   await dialog.getByLabel("Find destination song", { exact: true }).fill("Kept");
   await dialog.getByRole("button", { name: "Search", exact: true }).click();
   await dialog.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Library song action", exact: true }).click();
+  await page.getByRole("option", { name: "Replace audio — keep both entries", exact: true }).click();
   expect(state.merges).toEqual([]);
-  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm audio replacement", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(state.merges).toEqual([{ kind: "song", source: "one", target: "kept-recording" }]);
 });

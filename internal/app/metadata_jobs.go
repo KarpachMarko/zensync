@@ -21,6 +21,7 @@ import (
 )
 
 type metadataChange struct {
+	Consolidation  *songConsolidation    `json:"consolidation,omitempty"`
 	Replacement    *recordingReplacement `json:"replacement,omitempty"`
 	CollectionKind string                `json:"collectionKind,omitempty"`
 	CollectionName string                `json:"collectionName,omitempty"`
@@ -52,8 +53,14 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 	if e = metadataQueueConflict(tx, changes); e != nil {
 		return "", e
 	}
+	if e = consolidationDeletionConflict(tx, changes); e != nil {
+		return "", e
+	}
 	jid := id()
 	for _, change := range changes {
+		if e = prepareConsolidationRemoval(tx, jid, credentials.URL, u, change); e != nil {
+			return "", e
+		}
 		if change.Enrichment != "" {
 			continue
 		}
@@ -84,11 +91,14 @@ func metadataQueueConflict(tx *sql.Tx, changes []metadataChange, ignoredJobs ...
 	writes, reads := map[string]bool{}, map[string]bool{}
 	for _, change := range changes {
 		writes[change.Song.ID] = true
+		if change.Consolidation != nil {
+			writes[change.Consolidation.Source.ID] = true
+		}
 		if change.Target != nil {
 			reads[change.Target.ID] = true
 		}
 	}
-	rows, err := tx.Query("SELECT id,changes FROM metadata_jobs WHERE state IN ('queued','running') OR EXISTS(SELECT 1 FROM metadata_format_changes f WHERE f.job_id=metadata_jobs.id AND f.state='prepared')")
+	rows, err := tx.Query("SELECT id,changes FROM metadata_jobs WHERE state IN ('queued','running') OR (state='failed' AND CASE WHEN json_valid(changes) THEN json_type(changes,'$[0].consolidation') IS NOT NULL ELSE 0 END) OR EXISTS(SELECT 1 FROM metadata_format_changes f WHERE f.job_id=metadata_jobs.id AND f.state='prepared')")
 	if err != nil {
 		return err
 	}
@@ -106,7 +116,7 @@ func metadataQueueConflict(tx *sql.Tx, changes []metadataChange, ignoredJobs ...
 			return errors.New("An active metadata job is unreadable; review Activity before queuing changes")
 		}
 		for _, change := range previous {
-			if writes[change.Song.ID] || reads[change.Song.ID] || (change.Target != nil && writes[change.Target.ID]) {
+			if writes[change.Song.ID] || reads[change.Song.ID] || (change.Target != nil && writes[change.Target.ID]) || (change.Consolidation != nil && (writes[change.Consolidation.Source.ID] || reads[change.Consolidation.Source.ID])) {
 				return errors.New("A queued or running metadata update uses the same song or merge destination; wait for that operation and refresh before editing these files")
 			}
 		}
@@ -127,14 +137,32 @@ func (a *App) existingMetadataEdit(s Song) (MetadataEdit, error) {
 }
 func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
-		Kind              string `json:"kind"`
-		Source            string `json:"source"`
-		Target            string `json:"target"`
-		ProviderTarget    string `json:"providerTarget"`
-		UploadID          string `json:"uploadId"`
-		AllowFormatChange bool   `json:"allowFormatChange"`
+		SongOperation     string             `json:"songOperation"`
+		Metadata          *mergeSongMetadata `json:"metadata"`
+		Kind              string             `json:"kind"`
+		Source            string             `json:"source"`
+		Target            string             `json:"target"`
+		ProviderTarget    string             `json:"providerTarget"`
+		UploadID          string             `json:"uploadId"`
+		AllowFormatChange bool               `json:"allowFormatChange"`
 	}
-	if !decode(w, r, &in) {
+	if !decodeLimit(w, r, &in, 64<<10) {
+		return
+	}
+	if in.SongOperation != "" && in.SongOperation != "merge" && in.SongOperation != "replace" {
+		fail(w, 400, "Choose Merge entries or Replace audio")
+		return
+	}
+	if in.SongOperation == "merge" {
+		if in.Kind != "song" || in.ProviderTarget != "" || in.UploadID != "" {
+			fail(w, 400, "Merging entries requires two library songs")
+			return
+		}
+		a.queueSongConsolidation(w, r, u, in.Source, in.Target, in.Metadata)
+		return
+	}
+	if in.Metadata != nil {
+		fail(w, 400, "Metadata review applies to merging library entries")
 		return
 	}
 	if (in.ProviderTarget != "" || in.UploadID != "") && (in.Kind != "song" || in.Target != "") {
@@ -391,8 +419,14 @@ func (a *App) runMetadata(ctx context.Context) {
 				_, e = a.DB.Exec("UPDATE metadata_jobs SET changes=? WHERE id=?", mustJSON(changes), jid)
 			}
 		}
-		if e == nil {
+		if e == nil && change.Consolidation != nil {
+			e = a.verifyConsolidationSelected(jid, change)
+		}
+		if e == nil && (change.Consolidation == nil || change.Consolidation.WriteMetadata) {
 			e = a.publishMetadata(ctx, c, jid, change)
+		}
+		if e == nil && change.Consolidation != nil {
+			e = a.finishSongConsolidation(ctx, jid, change)
 		}
 		if errors.Is(e, errCreditRepairDismissed) {
 			logger.Info("Metadata credit repair skipped; artist marked as indivisible", "song_id", change.Song.ID)

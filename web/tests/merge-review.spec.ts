@@ -13,7 +13,7 @@ function audio() {
   body.write("data", 36); body.writeUInt32LE(size, 40); return body;
 }
 async function fixture(page: Page, admin = true) {
-  const merges: { kind: string; source: string; target?: string; providerTarget?: string; uploadId?: string; allowFormatChange?: boolean }[] = [];
+  const merges: { kind: string; source: string; target?: string; providerTarget?: string; uploadId?: string; allowFormatChange?: boolean; songOperation?: "merge"; metadata?: Record<string, string> }[] = [];
   const streams: string[] = [];
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   await page.route("**/api/v2/**", async route => {
@@ -74,8 +74,11 @@ test("song replacement reviews metadata, plays candidates and warns about format
   await expect.poll(() => player.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
   expect(streams).toContain("kept"); expect(merges).toHaveLength(0);
   await dialog.getByRole("button", { name: "Select song: MP3 recording", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Library song action", exact: true }).click();
+  await page.getByRole("option", { name: "Replace audio — keep both entries", exact: true }).click();
+  await expect(dialog.getByText(/Both entries will remain/)).toBeVisible();
   await expect(dialog.getByRole("alert")).toContainText("change from FLAC to MP3");
-  await expect(dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Confirm audio replacement", exact: true })).toBeEnabled();
   expect(merges).toHaveLength(0);
   await kept.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -83,7 +86,7 @@ test("song replacement reviews metadata, plays candidates and warns about format
   await expect(candidates.getByText("Selected destination", { exact: true })).toHaveCount(0);
   await expect(kept.getByRole("button", { name: "Select song: Kept recording", exact: true })).toHaveText("Selected");
   const handle = await player.elementHandle();
-  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm audio replacement", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(merges).toEqual([{ kind: "song", source: "source", target: "kept" }]);
   expect(await handle?.evaluate((node: HTMLAudioElement) => node.paused && !node.getAttribute("src"))).toBe(true);
@@ -124,7 +127,7 @@ test("members can listen to existing library songs without metadata permissions 
 });
 
 
-test("library replacement direction can be flipped", async ({ page }) => {
+test("library merge direction can be flipped", async ({ page }) => {
   const { merges } = await fixture(page);
   await page.goto("/library/songs");
   await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
@@ -133,10 +136,10 @@ test("library replacement direction can be flipped", async ({ page }) => {
   await dialog.getByRole("button", { name: "Flip merge direction", exact: true }).click();
   await expect(dialog.getByRole("region", { name: "Merge source", exact: true })).toContainText("Kept recording");
   await expect(dialog.getByRole("region", { name: "Selected destination", exact: true })).toContainText("Original song");
-  await expect(dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true })).toBeEnabled();
-  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Confirm merge into selected song", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Confirm merge into selected song", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect(merges).toEqual([{ kind: "song", source: "kept", target: "source" }]);
+  expect(merges).toEqual([{ kind: "song", source: "kept", target: "source", songOperation: "merge" }]);
 });
 
 for (const origin of ["provider", "upload"] as const) test(`${origin} recordings can be reviewed, played and selected for replacement`, async ({ page }) => {
@@ -164,7 +167,7 @@ for (const origin of ["provider", "upload"] as const) test(`${origin} recordings
   }
   await expect.poll(() => dialog.locator("audio").evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
   expect(merges).toHaveLength(0);
-  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm audio replacement", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(merges).toHaveLength(1);
   expect(merges[0]).toMatchObject({ kind: "song", source: "source", allowFormatChange: true, ...(origin === "provider" ? { providerTarget: "deezer:track:1" } : { uploadId: "upload-fixture" }) });
@@ -190,4 +193,46 @@ test("docked player follows expanded and collapsed sidebar and fills mobile widt
   await expect.poll(async () => (await geometry()).left).toBe(0);
   const { right, bottom, width, height } = await geometry();
   expect(right).toBe(width); expect(bottom).toBe(height);
+});
+
+
+test("library merge keeps only the selected song and reviews differing metadata in the same dialog", async ({ page }) => {
+  const { merges } = await fixture(page);
+  await page.goto("/library/songs");
+  await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge/Replace", exact: true });
+  await dialog.getByRole("button", { name: "Select song: MP3 recording", exact: true }).click();
+  await expect(dialog.getByRole("combobox", { name: "Library song action", exact: true })).toContainText("keep selected song only");
+  await expect(dialog.getByText("One entry will remain: “MP3 recording”. Remove “Original song”.", { exact: true })).toBeVisible();
+  const review = dialog.getByRole("region", { name: "Merge metadata review", exact: true });
+  await expect(review).toContainText("2 metadata fields differ");
+  await expect(review.getByLabel("After merge: Title", { exact: true })).toHaveValue("MP3 recording");
+  await expect(review.getByLabel("After merge: Album", { exact: true })).toHaveValue("Kept album");
+  await review.getByRole("button", { name: "Use original title", exact: true }).click();
+  await expect(review.getByLabel("After merge: Title", { exact: true })).toHaveValue("Original song");
+  await review.getByRole("button", { name: "Use selected title", exact: true }).click();
+  await expect(review.getByLabel("After merge: Title", { exact: true })).toHaveValue("MP3 recording");
+  await review.getByLabel("After merge: Album", { exact: true }).fill("Reviewed album");
+  await review.getByLabel("After merge: Title", { exact: true }).fill("");
+  await dialog.getByRole("button", { name: "Confirm merge into selected song", exact: true }).click();
+  await expect(review.getByLabel("After merge: Title", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  expect(merges).toHaveLength(0);
+  await review.getByRole("button", { name: "Use original title", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm merge into selected song", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(merges).toEqual([{ kind: "song", source: "source", target: "mp3", songOperation: "merge", metadata: { title: "Original song", album: "Reviewed album" } }]);
+});
+
+test("flipping merge direction resets metadata to the new survivor", async ({ page }) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/library/songs");
+  await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge/Replace", exact: true });
+  await dialog.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
+  await dialog.getByLabel("After merge: Title", { exact: true }).fill("Unsaved edit");
+  await dialog.getByRole("button", { name: "Flip merge direction", exact: true }).click();
+  await expect(dialog.getByLabel("After merge: Title", { exact: true })).toHaveValue("Original song");
+  await expect(dialog.getByLabel("After merge: Album", { exact: true })).toHaveValue("Original album");
+  expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
 });

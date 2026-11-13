@@ -236,6 +236,15 @@ func (a *App) retryTask(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 404, "Task not found")
 			return
 		}
+		var mergeParent int
+		if err := tx.QueryRow(`SELECT count(*) FROM metadata_jobs m,json_each(CASE WHEN json_valid(m.changes) THEN m.changes ELSE '[]' END) c JOIN jobs j ON j.request_id=json_extract(c.value,'$.consolidation.removalId') WHERE j.id=? AND m.state<>'completed'`, tid).Scan(&mergeParent); err != nil {
+			a.internal(w, err)
+			return
+		}
+		if mergeParent > 0 {
+			fail(w, 409, "Retry the parent Merge songs operation in Activity; its removal must follow verified metadata")
+			return
+		}
 		if state != "failed" && state != "blocked" {
 			fail(w, 409, "Only blocked or failed tasks can be retried")
 			return
