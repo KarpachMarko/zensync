@@ -21,21 +21,22 @@ import (
 )
 
 type metadataChange struct {
-	CollectionKind string               `json:"collectionKind,omitempty"`
-	CollectionName string               `json:"collectionName,omitempty"`
-	OrderVersion   int                  `json:"orderVersion,omitempty"`
-	OrderAlbumID   int64                `json:"orderAlbumId,omitempty"`
-	Enrichment     string               `json:"enrichment,omitempty"`
-	Resolved       bool                 `json:"resolved,omitempty"`
-	Skip           bool                 `json:"skip,omitempty"`
-	CreditRepairs  []creditRepairPlan   `json:"creditRepairs,omitempty"`
-	UploadedCover  string               `json:"uploadedCover,omitempty"`
-	CreditRepair   *creditRepairPlan    `json:"creditRepair,omitempty"`
-	ArtistMerge    *artistMergeIdentity `json:"artistMerge,omitempty"`
-	Song           Song                 `json:"song"`
-	Edit           MetadataEdit         `json:"edit"`
-	MergeKind      string               `json:"mergeKind,omitempty"`
-	Target         *Song                `json:"target,omitempty"`
+	Replacement    *recordingReplacement `json:"replacement,omitempty"`
+	CollectionKind string                `json:"collectionKind,omitempty"`
+	CollectionName string                `json:"collectionName,omitempty"`
+	OrderVersion   int                   `json:"orderVersion,omitempty"`
+	OrderAlbumID   int64                 `json:"orderAlbumId,omitempty"`
+	Enrichment     string                `json:"enrichment,omitempty"`
+	Resolved       bool                  `json:"resolved,omitempty"`
+	Skip           bool                  `json:"skip,omitempty"`
+	CreditRepairs  []creditRepairPlan    `json:"creditRepairs,omitempty"`
+	UploadedCover  string                `json:"uploadedCover,omitempty"`
+	CreditRepair   *creditRepairPlan     `json:"creditRepair,omitempty"`
+	ArtistMerge    *artistMergeIdentity  `json:"artistMerge,omitempty"`
+	Song           Song                  `json:"song"`
+	Edit           MetadataEdit          `json:"edit"`
+	MergeKind      string                `json:"mergeKind,omitempty"`
+	Target         *Song                 `json:"target,omitempty"`
 }
 
 func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
@@ -79,7 +80,7 @@ func (a *App) queueMetadata(changes []metadataChange, u User) (string, error) {
 
 // Jobs execute serially, but snapshots for overlapping files cannot safely be
 // prepared in advance. Shared read-only destinations are allowed.
-func metadataQueueConflict(tx *sql.Tx, changes []metadataChange) error {
+func metadataQueueConflict(tx *sql.Tx, changes []metadataChange, ignoredJobs ...string) error {
 	writes, reads := map[string]bool{}, map[string]bool{}
 	for _, change := range changes {
 		writes[change.Song.ID] = true
@@ -87,15 +88,18 @@ func metadataQueueConflict(tx *sql.Tx, changes []metadataChange) error {
 			reads[change.Target.ID] = true
 		}
 	}
-	rows, err := tx.Query("SELECT changes FROM metadata_jobs WHERE state IN ('queued','running')")
+	rows, err := tx.Query("SELECT id,changes FROM metadata_jobs WHERE state IN ('queued','running') OR EXISTS(SELECT 1 FROM metadata_format_changes f WHERE f.job_id=metadata_jobs.id AND f.state='prepared')")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var queuedID, raw string
+		if err := rows.Scan(&queuedID, &raw); err != nil {
 			return err
+		}
+		if len(ignoredJobs) > 0 && queuedID == ignoredJobs[0] {
+			continue
 		}
 		var previous []metadataChange
 		if err := json.Unmarshal([]byte(raw), &previous); err != nil {
@@ -123,11 +127,22 @@ func (a *App) existingMetadataEdit(s Song) (MetadataEdit, error) {
 }
 func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
-		Kind   string `json:"kind"`
-		Source string `json:"source"`
-		Target string `json:"target"`
+		Kind              string `json:"kind"`
+		Source            string `json:"source"`
+		Target            string `json:"target"`
+		ProviderTarget    string `json:"providerTarget"`
+		UploadID          string `json:"uploadId"`
+		AllowFormatChange bool   `json:"allowFormatChange"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if (in.ProviderTarget != "" || in.UploadID != "") && (in.Kind != "song" || in.Target != "") {
+		fail(w, 400, "Choose one replacement recording")
+		return
+	}
+	if in.Kind == "song" && (in.ProviderTarget != "" || in.UploadID != "") {
+		a.queueExternalReplacement(w, r, u, in.Source, in.ProviderTarget, in.UploadID, in.AllowFormatChange)
 		return
 	}
 	if (in.Kind != "artist" && in.Kind != "album" && in.Kind != "song") || in.Source == "" || in.Target == "" || in.Source == in.Target {
@@ -175,7 +190,7 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 409, "Cannot verify recording replacement: "+err.Error())
 			return
 		}
-		if !compatibility.Compatible {
+		if !compatibility.Compatible || (compatibility.FormatChange && !in.AllowFormatChange) {
 			fail(w, 409, compatibility.Warning)
 			return
 		}
@@ -210,7 +225,7 @@ func (a *App) mergeMetadata(w http.ResponseWriter, r *http.Request, u User) {
 				edit.AlbumArtist = target.Artist
 			}
 		}
-		changes = append(changes, metadataChange{Song: s, Edit: edit, MergeKind: in.Kind, Target: &target, ArtistMerge: identity})
+		changes = append(changes, metadataChange{Song: s, Edit: edit, MergeKind: in.Kind, Target: &target, ArtistMerge: identity, Replacement: libraryReplacement(in.Kind, in.AllowFormatChange)})
 	}
 	jid, e := a.queueMetadata(changes, u)
 	if e != nil {
@@ -283,7 +298,7 @@ func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
 			fail(w, 409, "The failed operation is unreadable")
 			return
 		}
-		if e = metadataQueueConflict(tx, changes); e != nil {
+		if e = metadataQueueConflict(tx, changes, in.ID); e != nil {
 			fail(w, 409, e.Error())
 			return
 		}
@@ -301,6 +316,14 @@ func (a *App) metadataJobRoutes(w http.ResponseWriter, r *http.Request) {
 	fail(w, 405, "Method not allowed")
 }
 func (a *App) runMetadata(ctx context.Context) {
+	cleanInputs := false
+	// Uploads take importMu before opMu. Cleanup runs after both worker locks
+	// are released, so it cannot invert that order during an active upload.
+	defer func() {
+		if cleanInputs {
+			a.cleanReplacementInputs()
+		}
+	}()
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
 	a.workMu.Lock()
@@ -361,7 +384,16 @@ func (a *App) runMetadata(ctx context.Context) {
 			}
 		}
 		logger.Info("Metadata song update started", "song_id", change.Song.ID, "kind", change.MergeKind, "artist_before", change.Song.Artist, "artist_after", change.Edit.Artist, "album_artist_before", change.Song.AlbumArtist, "album_artist_after", change.Edit.AlbumArtist)
-		e = a.publishMetadata(ctx, c, jid, change)
+		if change.Replacement != nil && change.Replacement.ProviderTarget != "" {
+			e = a.prepareProviderReplacement(ctx, jid, &change)
+			if e == nil {
+				changes[done] = change
+				_, e = a.DB.Exec("UPDATE metadata_jobs SET changes=? WHERE id=?", mustJSON(changes), jid)
+			}
+		}
+		if e == nil {
+			e = a.publishMetadata(ctx, c, jid, change)
+		}
 		if errors.Is(e, errCreditRepairDismissed) {
 			logger.Info("Metadata credit repair skipped; artist marked as indivisible", "song_id", change.Song.ID)
 			e = nil
@@ -394,7 +426,7 @@ func (a *App) runMetadata(ctx context.Context) {
 	state, message := "completed", fmt.Sprintf("%d updated, %d skipped (existing metadata, no confident match, lookup failure or unsupported format); Navidrome scan requested.", len(changes)-skipped, skipped)
 	if e != nil {
 		state = "failed"
-		message = fmt.Sprintf("%d/%d songs updated: %s. Original files are unchanged for failed writes; retry resumes remaining work.", done, len(changes), e.Error())
+		message = fmt.Sprintf("%d/%d songs updated: %s. Retry resumes remaining work and reconciles any prepared replacement.", done, len(changes), e.Error())
 	}
 	if _, err := a.DB.Exec("UPDATE metadata_jobs SET state=?,message=? WHERE id=?", state, message, jid); err != nil {
 		logger.Error("Metadata job completion persistence failed", "error", err)
@@ -402,6 +434,8 @@ func (a *App) runMetadata(ctx context.Context) {
 	if e != nil {
 		logger.Error("Metadata job failed", "done", done, "error", e)
 	} else {
+		_ = os.RemoveAll(filepath.Join(a.dataDir, "staging", jid))
+		cleanInputs = true
 		logger.Info("Metadata job completed; Navidrome scan pending", "done", done)
 	}
 	a.navIndexMu.Lock()
@@ -414,6 +448,9 @@ func (a *App) runMetadata(ctx context.Context) {
 func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, change metadataChange) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	if complete, err := a.reconcileFormatChange(jid, change.Song.ID); err != nil || complete {
+		return err
+	}
 	var rel, before, after string
 	e := a.DB.QueryRow("SELECT file_path,before_hash,after_hash FROM metadata_files WHERE job_id=? AND song_id=?", jid, change.Song.ID).Scan(&rel, &before, &after)
 	if e == sql.ErrNoRows {
@@ -455,17 +492,37 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
-	case ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aiff":
+	case ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aif", ".aiff":
 	default:
 		return errors.New("Unsupported tag format; use MP3, FLAC, M4A, OGG, OPUS, WAV or AIFF")
 	}
-	requiredSpace := uint64(info.Size()) + (256 << 20)
-	if change.MergeKind == "song" && change.Target != nil {
-		_, targetPath, err := a.metadataCanonicalTags(ctx, c, *change.Target)
-		if err != nil {
-			return err
+	audioPath := path
+	if change.MergeKind == "song" {
+		if change.Replacement != nil && change.Replacement.InputPath != "" {
+			audioPath, e = a.replacementInputPath(change.Replacement)
+		} else if change.Target != nil {
+			_, audioPath, e = a.metadataCanonicalTags(ctx, c, *change.Target)
+		} else {
+			return errors.New("Replacement recording is missing")
 		}
-		targetInfo, err := os.Stat(targetPath)
+		if e != nil {
+			return e
+		}
+	}
+	outputExt := strings.ToLower(filepath.Ext(audioPath))
+	if change.MergeKind != "song" {
+		outputExt = ext
+	}
+	formatChange := outputExt != ext
+	if formatChange && (change.Replacement == nil || !change.Replacement.AllowFormatChange) {
+		return errors.New("Recording format will change; confirm this replacement in Merge/Replace")
+	}
+	if uploadFormat(outputExt) == "" {
+		return errors.New("Unsupported replacement format")
+	}
+	requiredSpace := uint64(info.Size()) + (256 << 20)
+	if audioPath != path {
+		targetInfo, err := os.Stat(audioPath)
 		if err != nil {
 			return err
 		}
@@ -477,7 +534,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	if err := diskHeadroom(filepath.Dir(path), requiredSpace); err != nil {
 		return errors.New("Not enough free space for metadata working copy plus 256 MiB headroom")
 	}
-	tmp, e := os.CreateTemp(filepath.Dir(path), ".zensync-tags-"+jid+"-"+digest(change.Song.ID)+"-*"+ext)
+	tmp, e := os.CreateTemp(filepath.Dir(path), ".zensync-tags-"+jid+"-"+digest(change.Song.ID)+"-*"+outputExt)
 	if e != nil {
 		return e
 	}
@@ -485,23 +542,16 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	tmp.Close()
 	os.Remove(output)
 	defer os.Remove(output)
-	audioPath := path
-	if change.MergeKind == "song" && change.Target != nil {
-		_, audioPath, e = a.metadataCanonicalTags(ctx, c, *change.Target)
-		if e != nil {
-			return e
-		}
-		if strings.ToLower(filepath.Ext(audioPath)) != ext {
-			return errors.New("Recording replacement requires matching file formats; no lossy conversion is performed")
-		}
-	}
 	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path}
 	if change.MergeKind == "song" {
-		args = append(args, "-i", audioPath, "-map", "1:a", "-map", "0:v?", "-c:v", "copy")
+		args = append(args, "-i", audioPath, "-map", "1:a:0", "-map_metadata:s:a:0", "-1")
+		if outputExt == ".mp3" || outputExt == ".flac" || outputExt == ".m4a" {
+			args = append(args, "-map", "0:v?", "-c:v", "copy")
+		}
 	}
 	useCover := change.Edit.CoverURL != "" || change.UploadedCover != ""
 	if change.MergeKind == "song" {
-		// Keep the original location and metadata; replace only encoded audio.
+		// Keep original metadata while copying the selected encoded audio.
 	} else if change.Edit.RemoveCover {
 		args = append(args, "-map", "0:a")
 	} else if useCover {
@@ -596,7 +646,7 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 	for key, value := range tags {
 		args = append(args, "-metadata", key+"="+value)
 	}
-	if ext == ".aiff" {
+	if outputExt == ".aiff" || outputExt == ".aif" {
 		args = append(args, "-write_id3v2", "1")
 	}
 	args = append(args, output)
@@ -702,7 +752,12 @@ func (a *App) publishMetadata(ctx context.Context, c Credentials, jid string, ch
 			return errCreditRepairDismissed
 		}
 	}
-	if e = os.Rename(output, path); e != nil {
+	if formatChange {
+		newRel := strings.TrimSuffix(rel, filepath.Ext(rel)) + outputExt
+		if e = a.publishFormatChange(jid, change.Song.ID, rel, newRel, output); e != nil {
+			return e
+		}
+	} else if e = os.Rename(output, path); e != nil {
 		return e
 	}
 	if err := syncDir(filepath.Dir(path)); err != nil {

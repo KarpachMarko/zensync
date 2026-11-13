@@ -1,9 +1,11 @@
 """Format-aware artist credits for prepared metadata files. Paths arrive via stdin."""
+import base64
 import json
 import sys
 import mutagen
-from mutagen.id3 import ID3, TPE1, TPE2, TXXX, TRCK, TPOS
-from mutagen.mp4 import MP4Tags, MP4FreeForm
+from mutagen.id3 import ID3, TPE1, TPE2, TXXX, TRCK, TPOS, APIC
+from mutagen.flac import Picture
+from mutagen.mp4 import MP4Tags, MP4FreeForm, MP4Cover
 
 ALIASES = {
     "artist": ["artist"],
@@ -164,6 +166,40 @@ def expand_credit(values, ids, old_name, replacements):
             result_ids[match] = mbid
     return result, result_ids if any(result_ids) else []
 
+def preserve_artwork(original, output):
+    pictures = list(getattr(original, "pictures", []))
+    if isinstance(original.tags, ID3):
+        pictures = []
+        for frame in original.tags.getall("APIC"):
+            picture = Picture()
+            picture.data, picture.mime, picture.type, picture.desc = frame.data, frame.mime, frame.type, frame.desc
+            pictures.append(picture)
+    elif isinstance(original.tags, MP4Tags):
+        pictures = []
+        for cover in original.tags.get("covr", []):
+            picture = Picture()
+            picture.data = bytes(cover)
+            picture.mime = "image/png" if cover.imageformat == MP4Cover.FORMAT_PNG else "image/jpeg"
+            picture.type = 3
+            pictures.append(picture)
+    elif not pictures:
+        pictures = [Picture(base64.b64decode(value)) for value in original.tags.get("metadata_block_picture", [])]
+    if not pictures:
+        return
+    if isinstance(output.tags, ID3):
+        output.tags.delall("APIC")
+        for index, picture in enumerate(pictures):
+            output.tags.add(APIC(encoding=3, mime=picture.mime, type=picture.type, desc=picture.desc or str(index), data=picture.data))
+    elif isinstance(output.tags, MP4Tags):
+        output.tags["covr"] = [MP4Cover(picture.data, imageformat=MP4Cover.FORMAT_PNG if picture.mime == "image/png" else MP4Cover.FORMAT_JPEG) for picture in pictures if picture.mime in ("image/png", "image/jpeg")]
+    elif hasattr(output, "add_picture"):
+        output.clear_pictures()
+        for picture in pictures:
+            output.add_picture(picture)
+    else:
+        output.tags["metadata_block_picture"] = [base64.b64encode(picture.write()).decode("ascii") for picture in pictures]
+
+
 def main():
     plan = json.load(sys.stdin)
     if plan["kind"] == "edit-metadata":
@@ -175,7 +211,8 @@ def main():
                    "talb": "album", "\xa9alb": "album", "album": "album",
                    "uslt": "lyrics", "sylt": "lyrics", "\xa9lyr": "lyrics",
                    "lyrics": "lyrics", "syncedlyrics": "lyrics", "unsyncedlyrics": "lyrics"}
-        for key, value in original.tags.items():
+        same_container = type(original.tags) is type(output.tags)
+        for key, value in original.tags.items() if same_container else []:
             root = key.lower().split(":")[0]
             normal = key.lower()
             if normal.startswith("txxx:"):
@@ -214,9 +251,13 @@ def main():
                 for key in list(output.tags.keys()):
                     if logical(key) in fields:
                         del output.tags[key]
-                for key, value in original.tags.items():
-                    if logical(key) in fields:
-                        output.tags[key] = value
+                if same_container:
+                    for key, value in original.tags.items():
+                        if logical(key) in fields:
+                            output.tags[key] = value
+                else:
+                    for field in fields:
+                        write(output, field, read(original, field))
         for field, frame, atom, canonical, aliases in (
                 ("trackNumber", TRCK, "trkn", "tracknumber", {"track", "tracknumber", "tracktotal", "totaltracks"}),
                 ("discNumber", TPOS, "disk", "discnumber", {"disc", "discnumber", "disctotal", "totaldiscs"})):
@@ -236,6 +277,8 @@ def main():
                     if key.lower() in aliases:
                         del output.tags[key]
                 output.tags[canonical] = [str(number)]
+        if plan.get("preserveArtwork"):
+            preserve_artwork(original, output)
         if isinstance(output.tags, ID3):
             output.save(v2_version=4)
         else:

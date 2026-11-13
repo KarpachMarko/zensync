@@ -13,13 +13,17 @@ function audio() {
   body.write("data", 36); body.writeUInt32LE(size, 40); return body;
 }
 async function fixture(page: Page, admin = true) {
-  const merges: { kind: string; source: string; target: string }[] = [];
+  const merges: { kind: string; source: string; target?: string; providerTarget?: string; uploadId?: string; allowFormatChange?: boolean }[] = [];
   const streams: string[] = [];
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   await page.route("**/api/v2/**", async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     if (path.endsWith("/setup")) return route.fulfill({ json: { required: false } });
     if (path.endsWith("/session")) return route.fulfill({ json: { csrf: "fixture", user: { id: "user", username: "user", role: admin ? "admin" : "member", quality: ["128"] } } });
+    if (path === "/api/v2/search") return route.fulfill({ json: [{ id: url.searchParams.get("provider") === "lossless" ? 2 : 1, provider: url.searchParams.get("provider"), source: "fixture", title: "Provider song", title_version: "", artist: { name: "Provider artist" }, album: { id: 1, title: "Provider album", cover_medium: "" }, duration: 90 }] });
+    if (path === "/api/v2/metadata/replacement-upload") return route.fulfill({ status: 201, json: { id: "upload-fixture" } });
+    if (path === "/api/v2/metadata/replacement-inputs/upload-fixture") return route.fulfill({ json: { id: "upload-fixture", format: "mp3", track: { id: 0, title: "Uploaded recording", artist: { name: "Upload artist" }, album: { title: "Upload album" }, duration: 90 } } });
+    if (/\/providers\/[^/]+\/stream$/.test(path) || path.endsWith("/upload-fixture/audio")) return route.fulfill({ contentType: "audio/wav", body: audio() });
     if (path === "/api/v2/metadata/jobs") return route.fulfill({ json: [] });
     if (path === "/api/v2/library") return route.fulfill({ json: { songs: url.searchParams.get("q") ? [compatible, incompatible] : [source], nextOffset: -1 } });
     if (path === "/api/v2/library/browse") {
@@ -38,7 +42,7 @@ async function fixture(page: Page, admin = true) {
       return route.fulfill({ contentType: "audio/wav", body });
     }
     if (path === "/api/v2/metadata/merge-compatibility") return route.fulfill({ json: url.searchParams.get("target") === "mp3"
-      ? { compatible: false, sourceFormat: "flac", targetFormat: "mp3", warning: "Cannot replace FLAC with MP3 audio. Recording replacement requires matching file formats; choose another recording. No transcoding is performed." }
+      ? { compatible: true, formatChange: true, sourceFormat: "flac", targetFormat: "mp3", warning: "The recording will change from FLAC to MP3. No transcoding is performed." }
       : { compatible: true, sourceFormat: "flac", targetFormat: "flac" } });
     if (path === "/api/v2/metadata/merge") { merges.push(request.postDataJSON() as { kind: string; source: string; target: string }); return route.fulfill({ status: 202, json: { songs: 1, id: "job" } }); }
     throw new Error("Unexpected API: " + path);
@@ -46,14 +50,15 @@ async function fixture(page: Page, admin = true) {
   return { merges, streams };
 }
 
-test("song merge reviews metadata, plays candidates and blocks incompatible formats before submitting", async ({ page }) => {
+test("song replacement reviews metadata, plays candidates and warns about format changes", async ({ page }) => {
   const { merges, streams } = await fixture(page);
   await page.goto("/library/songs");
   await page.getByRole("button", { name: "Play library recording: Original song", exact: true }).click();
   const libraryAudio = await page.getByLabel("Library stream player", { exact: true }).elementHandle();
-  await page.getByRole("button", { name: "Merge song: Original song", exact: true }).click();
+  await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
   expect(await libraryAudio?.evaluate((node: HTMLAudioElement) => node.paused && !node.getAttribute("src"))).toBe(true);
-  const dialog = page.getByRole("dialog", { name: "Merge song", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Merge/Replace", exact: true });
+  await expect(dialog.getByLabel("Find destination song", { exact: true })).toHaveValue(source.title);
   await expect(dialog.getByRole("region", { name: "Merge source" })).toContainText("Original album");
   await dialog.getByLabel("Find destination song", { exact: true }).fill("recording");
   await dialog.getByRole("button", { name: "Search", exact: true }).click();
@@ -69,14 +74,16 @@ test("song merge reviews metadata, plays candidates and blocks incompatible form
   await expect.poll(() => player.evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
   expect(streams).toContain("kept"); expect(merges).toHaveLength(0);
   await dialog.getByRole("button", { name: "Select song: MP3 recording", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Cannot replace FLAC with MP3");
-  await expect(dialog.getByRole("button", { name: "Confirm merge", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("change from FLAC to MP3");
+  await expect(dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true })).toBeEnabled();
   expect(merges).toHaveLength(0);
   await kept.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect(dialog.getByRole("region", { name: "Selected destination", exact: true })).toContainText("Kept album");
+  await expect(candidates.getByText("Selected destination", { exact: true })).toHaveCount(0);
+  await expect(kept.getByRole("button", { name: "Select song: Kept recording", exact: true })).toHaveText("Selected");
   const handle = await player.elementHandle();
-  await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(merges).toEqual([{ kind: "song", source: "source", target: "kept" }]);
   expect(await handle?.evaluate((node: HTMLAudioElement) => node.paused && !node.getAttribute("src"))).toBe(true);
@@ -114,4 +121,73 @@ test("members can listen to existing library songs without metadata permissions 
   const handle = await audio.elementHandle();
   await page.getByRole("button", { name: "Close player", exact: true }).click();
   expect(await handle?.evaluate((node: HTMLAudioElement) => node.paused && !node.getAttribute("src"))).toBe(true);
+});
+
+
+test("library replacement direction can be flipped", async ({ page }) => {
+  const { merges } = await fixture(page);
+  await page.goto("/library/songs");
+  await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge/Replace", exact: true });
+  await dialog.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
+  await dialog.getByRole("button", { name: "Flip merge direction", exact: true }).click();
+  await expect(dialog.getByRole("region", { name: "Merge source", exact: true })).toContainText("Kept recording");
+  await expect(dialog.getByRole("region", { name: "Selected destination", exact: true })).toContainText("Original song");
+  await expect(dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(merges).toEqual([{ kind: "song", source: "kept", target: "source" }]);
+});
+
+for (const origin of ["provider", "upload"] as const) test(`${origin} recordings can be reviewed, played and selected for replacement`, async ({ page }) => {
+  const { merges } = await fixture(page);
+  await page.goto("/library/songs");
+  await page.getByRole("button", { name: "Merge/Replace: Original song", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge/Replace", exact: true });
+  if (origin === "provider") {
+    const searches: string[] = [];
+    page.on("request", request => { const url = new URL(request.url()); if (url.pathname === "/api/v2/search") searches.push(url.searchParams.get("provider") ?? ""); });
+    await dialog.getByRole("tab", { name: "Providers", exact: true }).click();
+    await expect(dialog.getByRole("tab", { name: "Providers", exact: true })).toHaveAttribute("aria-selected", "true");
+    await dialog.getByRole("button", { name: "Select provider recording: Provider song", exact: true }).first().click();
+    await expect.poll(() => new Set(searches).size).toBe(3);
+    await dialog.getByRole("region", { name: "Selected destination", exact: true }).getByRole("button", { name: "Play stream of Provider song", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("native audio format");
+  } else {
+    await dialog.getByRole("tab", { name: "Upload file", exact: true }).click();
+    await dialog.getByLabel("Replacement audio file", { exact: true }).setInputFiles({ name: "recording.mp3", mimeType: "audio/mpeg", buffer: audio() });
+    await dialog.getByRole("button", { name: "Upload and select", exact: true }).click();
+    const selected = dialog.getByRole("region", { name: "Selected destination", exact: true });
+    await expect(selected).toContainText("Upload artist / Upload album / 1:30");
+    await selected.getByRole("button", { name: "Play library recording: Uploaded recording", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("MP3");
+  }
+  await expect.poll(() => dialog.locator("audio").evaluate((node: HTMLAudioElement) => node.paused)).toBe(false);
+  expect(merges).toHaveLength(0);
+  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(merges).toHaveLength(1);
+  expect(merges[0]).toMatchObject({ kind: "song", source: "source", allowFormatChange: true, ...(origin === "provider" ? { providerTarget: "deezer:track:1" } : { uploadId: "upload-fixture" }) });
+});
+
+test("docked player follows expanded and collapsed sidebar and fills mobile width", async ({ page }) => {
+  await fixture(page, false);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/library/songs");
+  await page.getByRole("button", { name: "Play library recording: Original song", exact: true }).click();
+  const audio = page.getByLabel("Library stream player", { exact: true });
+  const geometry = () => audio.evaluate(node => {
+    const dock = node.closest(".fixed")!;
+    const rect = dock.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: window.innerWidth, height: window.innerHeight };
+  });
+  await expect.poll(async () => (await geometry()).left).toBe(208);
+  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  await expect.poll(async () => (await geometry()).left).toBe(60);
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
+  await expect.poll(async () => (await geometry()).left).toBe(208);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await geometry()).left).toBe(0);
+  const { right, bottom, width, height } = await geometry();
+  expect(right).toBe(width); expect(bottom).toBe(height);
 });

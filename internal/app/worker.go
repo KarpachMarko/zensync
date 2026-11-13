@@ -28,6 +28,7 @@ func (a *App) StartWorker(ctx context.Context) <-chan struct{} {
 		if err := a.cleanupMetadataTemps(); err != nil {
 			slog.Warn("Metadata temporary-file cleanup failed", "error", err)
 		}
+		a.cleanReplacementInputs()
 		defer slog.Info("Background worker stopped")
 		cleanupErr := filepath.WalkDir(filepath.Join(a.dataDir, "staging"), func(path string, d os.DirEntry, e error) error {
 			if e == nil && !d.IsDir() && d.Name() == "d-fi.config.json" {
@@ -478,6 +479,10 @@ func (a *App) jobState(jid, state, message string) {
 	}
 	var previous, previousMessage string
 	if e := a.DB.QueryRow("SELECT state,stage FROM jobs WHERE id=?", jid).Scan(&previous, &previousMessage); e != nil {
+		if e == sql.ErrNoRows {
+			_, _ = a.DB.Exec("UPDATE metadata_jobs SET message=? WHERE id=? AND state='running'", message, jid)
+			return
+		}
 		slog.Error("job state lookup failed", "job_id", jid)
 		return
 	}

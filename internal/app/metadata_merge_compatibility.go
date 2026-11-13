@@ -9,6 +9,7 @@ import (
 )
 
 type mergeCompatibilityResult struct {
+	FormatChange bool   `json:"formatChange"`
 	Compatible   bool   `json:"compatible"`
 	SourceFormat string `json:"sourceFormat"`
 	TargetFormat string `json:"targetFormat"`
@@ -27,9 +28,14 @@ func (a *App) songMergeCompatibility(ctx context.Context, c Credentials, source,
 	}
 	result.SourceFormat = strings.TrimPrefix(strings.ToLower(filepath.Ext(sourcePath)), ".")
 	result.TargetFormat = strings.TrimPrefix(strings.ToLower(filepath.Ext(targetPath)), ".")
-	result.Compatible = result.SourceFormat != "" && result.SourceFormat == result.TargetFormat
+	result.Compatible = uploadFormat("."+result.SourceFormat) != "" && uploadFormat("."+result.TargetFormat) != ""
+	result.FormatChange = result.SourceFormat != result.TargetFormat
 	if !result.Compatible {
-		result.Warning = "Cannot replace " + strings.ToUpper(result.SourceFormat) + " with " + strings.ToUpper(result.TargetFormat) + " audio. Recording replacement requires matching file formats; choose another recording. No transcoding is performed."
+		result.Warning = "Replacement supports MP3, FLAC, M4A, OGG, OPUS, WAV or AIFF audio"
+		return result, nil
+	}
+	if result.FormatChange {
+		result.Warning = "The recording will change from " + strings.ToUpper(result.SourceFormat) + " to " + strings.ToUpper(result.TargetFormat) + ". The file extension will change; audio is kept in its native format without transcoding. Navidrome IDs and playlist references may change after scanning."
 	}
 	return result, nil
 }

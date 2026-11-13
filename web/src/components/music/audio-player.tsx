@@ -7,7 +7,7 @@ import { useState } from "react";
 
 export function RecordingCover({ url, className = "size-11" }: { url?: string; className?: string }) {
   const [failed, setFailed] = useState(false);
-  const safe = url && (/^\/api\/v2\/library\/cover\?id=[^\s]+$/.test(url) || /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am|statcore\.hitmcdn\.com)\//.test(url));
+  const safe = url && (/^\/api\/v2\/library\/cover\?id=[^\s]+$/.test(url) || /^\/api\/v2\/metadata\/replacement-inputs\/[a-zA-Z0-9_-]+\/cover$/.test(url) || /^https:\/\/(?:[^/]+\.(?:dzcdn\.net|deezer\.com)|avatars\.yandex\.net|lossless\.am|statcore\.hitmcdn\.com)\//.test(url));
   return <div className={`flex ${className} shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground`}>
     {safe && !failed ? <img src={url} alt="" className="size-full object-cover" onError={() => setFailed(true)} /> : <Disc3Icon className="size-6" aria-hidden="true" />}
   </div>;

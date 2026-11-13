@@ -14,6 +14,7 @@ export function recordingArtist(recording: Recording) {
   return isLibraryRecording(recording) ? recording.artist : recording.artist.name;
 }
 export function libraryCoverURL(id?: string) {
+  if (id?.startsWith("upload:")) return `/api/v2/metadata/replacement-inputs/${encodeURIComponent(id.slice(7))}/cover`;
   return id ? `/api/v2/library/cover?id=${encodeURIComponent(id)}` : undefined;
 }
 export function recordingCover(recording: Recording) {

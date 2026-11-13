@@ -57,7 +57,7 @@ func (a *App) cleanupMetadataTemps() error {
 		if strings.HasPrefix(name, ".zensync-tags-") {
 			suffix = strings.TrimPrefix(name, ".zensync-tags-")
 			switch filepath.Ext(name) {
-			case ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aiff":
+			case ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aif", ".aiff":
 			default:
 				return nil
 			}

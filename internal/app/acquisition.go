@@ -165,7 +165,7 @@ func sameApprovedRecording(approved, current Track) bool {
 	source := apple.Song{Title: trackLabel(approved), Artist: approved.Artist.Name, Album: approved.Album.Title, Duration: current.Duration}
 	return assessRecording(source, current).Confident
 }
-func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile, arl string) (string, string, error) {
+func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile, arl string, sinks ...acquiredAudioSink) (string, string, error) {
 	root, e := os.Lstat(a.musicDir)
 	if e != nil || !root.IsDir() {
 		return "", "", errors.New("Music mount is missing; mount the directory Navidrome scans")
@@ -205,7 +205,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 			if err := a.validateAudio(paths[0], t, quality); err != nil {
 				return "", "", err
 			}
-			rel, err := a.placeAudio(jid, target, paths[0], t, quality)
+			rel, err := a.finishAcquired(jid, target, paths[0], t, quality, sinks)
 			return rel, quality, err
 		}
 	}
@@ -234,7 +234,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 		}
 		for _, path := range existing {
 			if a.validateAudio(path, t, quality) == nil {
-				rel, err := a.placeAudio(jid, target, path, t, quality)
+				rel, err := a.finishAcquired(jid, target, path, t, quality, sinks)
 				return rel, quality, err
 			}
 			if e = os.Remove(path); e != nil {
@@ -336,7 +336,7 @@ func (a *App) acquire(ctx context.Context, jid, target string, t Track, profile,
 			failures = append(failures, quality+": "+e.Error())
 			continue
 		}
-		rel, e := a.placeAudio(jid, target, paths[0], t, quality)
+		rel, e := a.finishAcquired(jid, target, paths[0], t, quality, sinks)
 		if e != nil {
 			return "", "", e
 		}
@@ -359,6 +359,16 @@ func hashFile(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+type acquiredAudioSink func(string, Track, string) (string, error)
+
+func (a *App) finishAcquired(job, target, path string, track Track, quality string, sinks []acquiredAudioSink) (string, error) {
+	if len(sinks) > 0 {
+		return sinks[0](path, track, quality)
+	}
+	return a.placeAudio(job, target, path, track, quality)
+}
+
 func (a *App) placeAudio(jid, target, source string, t Track, quality string) (string, error) {
 	a.placementMu.Lock()
 	defer a.placementMu.Unlock()

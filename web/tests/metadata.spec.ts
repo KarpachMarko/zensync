@@ -273,7 +273,7 @@ test("utilities merge into a chosen duplicate after an undo window", async ({
     .getByRole("link", { name: "Review duplicates", exact: true })
     .click();
   await expect(page.getByRole("button", { name: "Delete song: Song", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Merge song: Song", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Merge/Replace: Song", exact: true })).toHaveCount(0);
   expect(state.deletes).toEqual([]);
   await expect(page.getByText("Album artist IDs differ · review artists first", { exact: true })).toBeVisible();
   await expect(page.getByText("Artist: Band · ID: artist-one · Album artist: Band", { exact: true })).toBeVisible();
@@ -724,18 +724,18 @@ test("Library manual merges search unrelated artist and album names and require 
   ]);
 });
 
-test("Library song replacement explicitly keeps existing album and playlist references", async ({ page }) => {
+test("Library song replacement keeps original metadata", async ({ page }) => {
   const state = await fixture(page);
   await page.goto("/library");
-  await page.getByRole("button", { name: "Merge song: Song", exact: true }).click();
+  await page.getByRole("button", { name: "Merge/Replace: Song", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText(/playlist references are preserved/)).toBeVisible();
+  await expect(dialog.getByText(/Original title and album tags are kept/)).toBeVisible();
   await page.route("**/api/v2/library?**", (route) => route.fulfill({ json: { songs: [{ ...song, id: "kept-recording", title: "Kept recording" }], nextOffset: -1 } }));
   await dialog.getByLabel("Find destination song", { exact: true }).fill("Kept");
   await dialog.getByRole("button", { name: "Search", exact: true }).click();
   await dialog.getByRole("button", { name: "Select song: Kept recording", exact: true }).click();
   expect(state.merges).toEqual([]);
-  await dialog.getByRole("button", { name: "Confirm merge", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm Merge/Replace", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(state.merges).toEqual([{ kind: "song", source: "one", target: "kept-recording" }]);
 });
@@ -873,7 +873,7 @@ test("Keep song deletes only the prepared alternatives after undo expires", asyn
   const keep=page.getByRole("button",{name:"Keep song: two",exact:true});
   await expect(keep).toBeVisible();
   await expect(page.getByRole("button",{name:"Delete song: Song",exact:true})).toHaveCount(0);
-  await expect(page.getByRole("button",{name:"Merge song: Song",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Merge/Replace: Song",exact:true})).toHaveCount(0);
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now()+1000));
   await keep.click();

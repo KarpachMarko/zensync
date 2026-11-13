@@ -91,7 +91,7 @@ func (p losslessProvider) Acquire(ctx context.Context, job, target string, t Tra
 }
 
 // Native providers share staging, measured quality, validation and publication.
-func (a *App) acquireNative(ctx context.Context, job, target string, t Track, profile, stageName, providerName string, download func() (*http.Response, error)) (string, string, error) {
+func (a *App) acquireNative(ctx context.Context, job, target string, t Track, profile, stageName, providerName string, download func() (*http.Response, error), sinks ...acquiredAudioSink) (string, string, error) {
 	var qualities []string
 	if json.Unmarshal([]byte(profile), &qualities) != nil {
 		return "", "", errors.New("Invalid quality snapshot")
@@ -129,7 +129,7 @@ func (a *App) acquireNative(ctx context.Context, job, target string, t Track, pr
 	for _, path := range existing {
 		actual, _, probeErr := a.nativeAudioQuality(path)
 		if probeErr == nil && nativeQualityAllowed(qualities, actual) && a.validateAudio(path, t, actual) == nil {
-			rel, e := a.placeAudio(job, target, path, t, actual)
+			rel, e := a.finishAcquired(job, target, path, t, actual, sinks)
 			return rel, actual, e
 		}
 	}
@@ -182,7 +182,7 @@ func (a *App) acquireNative(ctx context.Context, job, target string, t Track, pr
 	if err = a.validateAudio(path, t, actual); err != nil {
 		return "", "", err
 	}
-	rel, err := a.placeAudio(job, target, path, t, actual)
+	rel, err := a.finishAcquired(job, target, path, t, actual, sinks)
 	return rel, actual, err
 }
 
